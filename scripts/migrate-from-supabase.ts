@@ -58,11 +58,16 @@ async function copy(
 async function main() {
   console.log("Migrating Supabase → new Postgres…");
 
-  // 1) users ← auth.users (preserve UUID as text id)
+  // 1) users ← auth.users, but ONLY the ones that belong to an itinerary trip.
+  // auth.users is shared across every app in this Supabase project, so we scope
+  // to members of public.trip_members (that is exactly the itinerary user set,
+  // and the ids trip_members.user_id references).
   await copy(
     "users",
-    `SELECT id, email, raw_user_meta_data->>'name' AS name, created_at
-       FROM auth.users WHERE email IS NOT NULL`,
+    `SELECT u.id, u.email, u.raw_user_meta_data->>'name' AS name, u.created_at
+       FROM auth.users u
+      WHERE u.email IS NOT NULL
+        AND u.id IN (SELECT DISTINCT user_id FROM public.trip_members)`,
     "users",
     ["id", "email", "name", "email_verified"],
     (r) => [r.id, r.email, r.name ?? null, r.created_at ?? new Date()],
