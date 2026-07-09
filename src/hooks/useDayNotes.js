@@ -1,5 +1,16 @@
+"use client"
+
 import { useState, useEffect, useCallback } from 'react'
-import { getDayNotes, upsertDayNote, deleteDayNote } from '../lib/dayNotes'
+import {
+  getDayNotesAction,
+  upsertDayNoteAction,
+  deleteDayNoteAction,
+} from '@/actions/dayNotes'
+import { unwrap } from '@/lib/friendlyError'
+
+const getDayNotes = async (tripId) => unwrap(await getDayNotesAction(tripId ?? null))
+const upsertDayNote = async (input) => unwrap(await upsertDayNoteAction(input))
+const deleteDayNote = async (id) => unwrap(await deleteDayNoteAction(id))
 
 export function useDayNotes(tripId) {
   const [dayNotes, setDayNotes] = useState([])

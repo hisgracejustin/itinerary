@@ -1,5 +1,18 @@
+"use client"
+
 import { useState, useEffect, useCallback } from 'react'
-import { getTodos, createTodo, updateTodo, deleteTodo } from '../lib/todos'
+import {
+  getTodosAction,
+  createTodoAction,
+  updateTodoAction,
+  deleteTodoAction,
+} from '@/actions/todos'
+import { unwrap } from '@/lib/friendlyError'
+
+const getTodos = async (tripId) => unwrap(await getTodosAction(tripId ?? null))
+const createTodo = async (todo) => unwrap(await createTodoAction(todo))
+const updateTodo = async (id, updates) => unwrap(await updateTodoAction(id, updates))
+const deleteTodo = async (id) => unwrap(await deleteTodoAction(id))
 
 export function useTodos(tripId) {
   const [todos, setTodos] = useState([])

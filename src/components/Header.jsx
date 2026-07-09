@@ -1,3 +1,5 @@
+"use client";
+
 export default function Header({ onToggleSidebar, onAddBooking }) {
   return (
     <header className="bg-white border-b border-outline/60 px-4 sm:px-6 h-16 flex items-center justify-between shrink-0">

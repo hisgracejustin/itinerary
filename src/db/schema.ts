@@ -1,0 +1,214 @@
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  numeric,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { createId } from "@paralleldrive/cuid2";
+import type { AdapterAccountType } from "next-auth/adapters";
+
+const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
+
+/* ------------------------------- auth (Auth.js) ------------------------------- */
+// Copied from the sibling `nav` app. `users.id` is a text column: for migrated
+// accounts we preserve the original Supabase `auth.users` UUID string as this id,
+// so every existing `trip_members.user_id` stays valid without remapping.
+
+export const users = pgTable("users", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  name: text("name"),
+  email: text("email").unique().notNull(),
+  emailVerified: timestamp("email_verified", { withTimezone: true }),
+  image: text("image"),
+});
+
+export const authAccounts = pgTable(
+  "accounts",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").$type<AdapterAccountType>().notNull(),
+    provider: text("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    refresh_token: text("refresh_token"),
+    access_token: text("access_token"),
+    expires_at: integer("expires_at"),
+    token_type: text("token_type"),
+    scope: text("scope"),
+    id_token: text("id_token"),
+    session_state: text("session_state"),
+  },
+  (t) => [primaryKey({ columns: [t.provider, t.providerAccountId] })],
+);
+
+export const sessions = pgTable("sessions", {
+  sessionToken: text("session_token").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  expires: timestamp("expires", { withTimezone: true }).notNull(),
+});
+
+export const verificationTokens = pgTable(
+  "verification_tokens",
+  {
+    identifier: text("identifier").notNull(),
+    token: text("token").notNull(),
+    expires: timestamp("expires", { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.identifier, t.token] })],
+);
+
+/* ---------------------------------- app ---------------------------------- */
+// JS property names are intentionally snake_case to match the existing UI's
+// field access (booking.start_date, trip.start_date, cost_amount, …) and the
+// DB column names, so the ported React components need no field renames.
+
+export const tripRole = pgEnum("trip_role", ["owner", "editor", "viewer"]);
+export const bookingType = pgEnum("booking_type", [
+  "flight",
+  "train",
+  "bus",
+  "cruise",
+  "hotel",
+  "activity",
+]);
+export const bookingSource = pgEnum("booking_source", ["manual", "parsed"]);
+
+export const trips = pgTable("trips", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  start_date: text("start_date").notNull(),
+  end_date: text("end_date").notNull(),
+  created_at: createdAt(),
+});
+
+export const tripMembers = pgTable(
+  "trip_members",
+  {
+    trip_id: uuid("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: tripRole("role").notNull().default("editor"),
+    created_at: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.trip_id, t.user_id] }),
+    index("idx_trip_members_user").on(t.user_id),
+  ],
+);
+
+export const bookings = pgTable(
+  "bookings",
+  {
+    id: text("id").primaryKey(),
+    trip_id: uuid("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
+    type: bookingType("type").notNull(),
+    title: text("title").notNull(),
+    start_date: text("start_date").notNull(),
+    end_date: text("end_date"),
+    confirmation_number: text("confirmation_number"),
+    provider: text("provider"),
+    details: jsonb("details").$type<Record<string, unknown>>(),
+    cost_amount: numeric("cost_amount", { mode: "number" }),
+    cost_currency: text("cost_currency"),
+    cost_share: numeric("cost_share", { mode: "number" }).default(1),
+    source: bookingSource("source").default("manual"),
+    source_file: text("source_file"),
+    raw_text: text("raw_text"),
+    created_at: createdAt(),
+  },
+  (t) => [
+    index("idx_bookings_trip_id").on(t.trip_id),
+    index("idx_bookings_start_date").on(t.start_date),
+    index("idx_bookings_type").on(t.type),
+  ],
+);
+
+export const todos = pgTable(
+  "todos",
+  {
+    id: text("id").primaryKey(),
+    trip_id: uuid("trip_id").references(() => trips.id, { onDelete: "set null" }),
+    title: text("title").notNull(),
+    due_date: text("due_date"),
+    completed: boolean("completed").notNull().default(false),
+    created_at: createdAt(),
+  },
+  (t) => [
+    index("idx_todos_trip_id").on(t.trip_id),
+    index("idx_todos_due_date").on(t.due_date),
+  ],
+);
+
+export const dayNotes = pgTable(
+  "day_notes",
+  {
+    id: text("id").primaryKey(),
+    date: text("date").notNull(),
+    trip_id: uuid("trip_id").references(() => trips.id, { onDelete: "set null" }),
+    title: text("title").notNull(),
+    created_at: createdAt(),
+  },
+  (t) => [
+    index("idx_day_notes_date").on(t.date),
+    index("idx_day_notes_trip_id").on(t.trip_id),
+  ],
+);
+
+/* -------------------------------- relations -------------------------------- */
+
+export const usersRelations = relations(users, ({ many }) => ({
+  tripMembers: many(tripMembers),
+}));
+
+export const tripsRelations = relations(trips, ({ many }) => ({
+  members: many(tripMembers),
+  bookings: many(bookings),
+  todos: many(todos),
+  dayNotes: many(dayNotes),
+}));
+
+export const tripMembersRelations = relations(tripMembers, ({ one }) => ({
+  trip: one(trips, { fields: [tripMembers.trip_id], references: [trips.id] }),
+  user: one(users, { fields: [tripMembers.user_id], references: [users.id] }),
+}));
+
+export const bookingsRelations = relations(bookings, ({ one }) => ({
+  trip: one(trips, { fields: [bookings.trip_id], references: [trips.id] }),
+}));
+
+export const todosRelations = relations(todos, ({ one }) => ({
+  trip: one(trips, { fields: [todos.trip_id], references: [trips.id] }),
+}));
+
+export const dayNotesRelations = relations(dayNotes, ({ one }) => ({
+  trip: one(trips, { fields: [dayNotes.trip_id], references: [trips.id] }),
+}));
+
+/* ---------------------------------- types ---------------------------------- */
+
+export type TripRole = (typeof tripRole.enumValues)[number];
+export type Trip = typeof trips.$inferSelect;
+export type TripMember = typeof tripMembers.$inferSelect;
+export type Booking = typeof bookings.$inferSelect;
+export type NewBooking = typeof bookings.$inferInsert;
+export type Todo = typeof todos.$inferSelect;
+export type NewTodo = typeof todos.$inferInsert;
+export type DayNote = typeof dayNotes.$inferSelect;

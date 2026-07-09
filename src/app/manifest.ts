@@ -1,0 +1,17 @@
+import type { MetadataRoute } from "next";
+
+export default function manifest(): MetadataRoute.Manifest {
+  return {
+    name: "Itinerary",
+    short_name: "Itinerary",
+    description: "Travel itinerary planner",
+    start_url: "/",
+    display: "standalone",
+    background_color: "#ffffff",
+    theme_color: "#1a73e8",
+    icons: [
+      { src: "/icon.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icon.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
+  };
+}

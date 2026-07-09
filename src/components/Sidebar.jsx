@@ -1,46 +1,48 @@
-import { useState } from 'react'
-import { useTrips } from '../hooks/useBookings'
-import { createTrip } from '../lib/bookings'
-import { useLocation, Link } from 'react-router-dom'
-import { useAuth } from '../contexts/AuthContext'
-import { supabase } from '../lib/supabase'
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useTrips } from "../hooks/useBookings";
+import { createTripAction } from "@/actions/bookings";
+import { unwrap } from "@/lib/friendlyError";
+import { signOutAction } from "../actions/auth";
+
+const createTrip = async (input) => unwrap(await createTripAction(input));
 
 const BOOKING_TYPES = [
-  { id: 'flight', label: 'Flights', color: 'bg-flight', icon: '✈️' },
-  { id: 'train', label: 'Trains', color: 'bg-train', icon: '🚂' },
-  { id: 'bus', label: 'Buses', color: 'bg-bus', icon: '🚌' },
-  { id: 'cruise', label: 'Cruises', color: 'bg-cruise', icon: '🚢' },
-  { id: 'hotel', label: 'Accomm', color: 'bg-hotel', icon: '🏡' },
-  { id: 'activity', label: 'Activities', color: 'bg-activity', icon: '🎯' },
-]
+  { id: "flight", label: "Flights", color: "bg-flight", icon: "✈️" },
+  { id: "train", label: "Trains", color: "bg-train", icon: "🚂" },
+  { id: "bus", label: "Buses", color: "bg-bus", icon: "🚌" },
+  { id: "cruise", label: "Cruises", color: "bg-cruise", icon: "🚢" },
+  { id: "hotel", label: "Accomm", color: "bg-hotel", icon: "🏡" },
+  { id: "activity", label: "Activities", color: "bg-activity", icon: "🎯" },
+];
 
-export default function Sidebar({ selectedTrip, onSelectTrip, onNavigate }) {
-  const { trips, loading, refetch } = useTrips()
-  const { user, signOut } = useAuth()
-  const location = useLocation()
-  const [showAddTrip, setShowAddTrip] = useState(false)
-  const [newTrip, setNewTrip] = useState({ name: '', start_date: '', end_date: '' })
-  const [saving, setSaving] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [newPassword, setNewPassword] = useState('')
-  const [pwSaving, setPwSaving] = useState(false)
-  const [pwMsg, setPwMsg] = useState(null)
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0";
+
+export default function Sidebar({ user, selectedTrip, onSelectTrip, onNavigate }) {
+  const { trips, loading, refetch } = useTrips();
+  const pathname = usePathname();
+  const [showAddTrip, setShowAddTrip] = useState(false);
+  const [newTrip, setNewTrip] = useState({ name: "", start_date: "", end_date: "" });
+  const [saving, setSaving] = useState(false);
 
   const handleAddTrip = async (e) => {
-    e.preventDefault()
-    if (!newTrip.name.trim() || !newTrip.start_date || !newTrip.end_date) return
-    setSaving(true)
+    e.preventDefault();
+    if (!newTrip.name.trim() || !newTrip.start_date || !newTrip.end_date) return;
+    setSaving(true);
     try {
-      await createTrip(newTrip)
-      await refetch()
-      setNewTrip({ name: '', start_date: '', end_date: '' })
-      setShowAddTrip(false)
+      await createTrip(newTrip);
+      await refetch();
+      setNewTrip({ name: "", start_date: "", end_date: "" });
+      setShowAddTrip(false);
     } catch (err) {
-      alert(err.message)
+      alert(err.message);
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
-  }
+  };
 
   return (
     <aside className="w-72 bg-white h-full overflow-y-auto shrink-0 border-r border-outline/40 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
@@ -48,7 +50,7 @@ export default function Sidebar({ selectedTrip, onSelectTrip, onNavigate }) {
       <nav className="p-3 pt-4">
         <NavItem
           to="/"
-          active={location.pathname === '/'}
+          active={pathname === "/"}
           onClick={onNavigate}
           icon={
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -59,7 +61,7 @@ export default function Sidebar({ selectedTrip, onSelectTrip, onNavigate }) {
         />
         <NavItem
           to="/todos"
-          active={location.pathname === '/todos'}
+          active={pathname === "/todos"}
           onClick={onNavigate}
           icon={
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -70,7 +72,7 @@ export default function Sidebar({ selectedTrip, onSelectTrip, onNavigate }) {
         />
         <NavItem
           to="/costs"
-          active={location.pathname === '/costs'}
+          active={pathname === "/costs"}
           onClick={onNavigate}
           icon={
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -91,7 +93,7 @@ export default function Sidebar({ selectedTrip, onSelectTrip, onNavigate }) {
             onClick={() => setShowAddTrip(!showAddTrip)}
             className="text-xs text-primary hover:text-primary/80 font-medium"
           >
-            {showAddTrip ? 'Cancel' : '+ Add'}
+            {showAddTrip ? "Cancel" : "+ Add"}
           </button>
         </div>
         {showAddTrip && (
@@ -128,7 +130,7 @@ export default function Sidebar({ selectedTrip, onSelectTrip, onNavigate }) {
               disabled={saving}
               className="w-full py-1.5 text-xs font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-50"
             >
-              {saving ? 'Creating...' : 'Create Trip'}
+              {saving ? "Creating..." : "Create Trip"}
             </button>
           </form>
         )}
@@ -141,29 +143,29 @@ export default function Sidebar({ selectedTrip, onSelectTrip, onNavigate }) {
                 onClick={() => onSelectTrip(null)}
                 className={`w-full text-left px-3 py-2 rounded-full text-sm transition-all duration-150 ${
                   !selectedTrip
-                    ? 'bg-primary-light text-primary font-medium'
-                    : 'text-on-surface hover:bg-surface-container'
+                    ? "bg-primary-light text-primary font-medium"
+                    : "text-on-surface hover:bg-surface-container"
                 }`}
               >
                 All Trips
               </button>
             </li>
             {trips.map((trip) => {
-              const isActive = selectedTrip === trip.id
+              const isActive = selectedTrip === trip.id;
               return (
                 <li key={trip.id}>
                   <button
                     onClick={() => onSelectTrip(trip.id)}
                     className={`w-full text-left px-3 py-2 rounded-full text-sm transition-all duration-150 ${
                       isActive
-                        ? 'bg-primary-light text-primary font-medium'
-                        : 'text-on-surface hover:bg-surface-container'
+                        ? "bg-primary-light text-primary font-medium"
+                        : "text-on-surface hover:bg-surface-container"
                     }`}
                   >
                     {trip.name}
                   </button>
                 </li>
-              )
+              );
             })}
           </ul>
         )}
@@ -176,23 +178,23 @@ export default function Sidebar({ selectedTrip, onSelectTrip, onNavigate }) {
         <h2 className="px-3 py-2 text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Booking Types</h2>
         <ul className="space-y-0.5">
           {BOOKING_TYPES.map(({ id, label, icon }) => {
-            const isActive = location.pathname === `/bookings/${id}`
+            const isActive = pathname === `/bookings/${id}`;
             return (
               <li key={id}>
                 <Link
-                  to={`/bookings/${id}`}
+                  href={`/bookings/${id}`}
                   onClick={onNavigate}
                   className={`flex items-center gap-3 px-3 py-2 rounded-full text-sm transition-all duration-150 ${
                     isActive
-                      ? 'bg-primary-light text-primary font-medium'
-                      : 'text-on-surface hover:bg-surface-container'
+                      ? "bg-primary-light text-primary font-medium"
+                      : "text-on-surface hover:bg-surface-container"
                   }`}
                 >
                   <span className="text-base">{icon}</span>
                   {label}
                 </Link>
               </li>
-            )
+            );
           })}
         </ul>
       </div>
@@ -200,81 +202,27 @@ export default function Sidebar({ selectedTrip, onSelectTrip, onNavigate }) {
       {/* User + Version */}
       <div className="mt-auto p-3 px-4 space-y-2">
         {user && (
-          <>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-on-surface-variant truncate max-w-[160px]">{user.email}</span>
-              <button
-                onClick={signOut}
-                className="text-[10px] text-on-surface-variant/60 hover:text-red-500 transition-colors"
-              >
-                Sign out
-              </button>
-            </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-on-surface-variant truncate max-w-[160px]">{user.email}</span>
             <button
-              onClick={() => { setShowPassword(!showPassword); setPwMsg(null) }}
-              className="text-[10px] text-primary hover:text-primary/80 font-medium"
+              onClick={() => signOutAction()}
+              className="text-[10px] text-on-surface-variant/60 hover:text-red-500 transition-colors"
             >
-              {showPassword ? 'Cancel' : 'Set / change password'}
+              Sign out
             </button>
-            {showPassword && (
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault()
-                  if (!newPassword || newPassword.length < 6) {
-                    setPwMsg({ type: 'error', text: 'Minimum 6 characters' })
-                    return
-                  }
-                  setPwSaving(true)
-                  setPwMsg(null)
-                  try {
-                    const { error } = await supabase.auth.updateUser({ password: newPassword })
-                    if (error) throw error
-                    setPwMsg({ type: 'success', text: 'Password updated!' })
-                    setNewPassword('')
-                    setTimeout(() => { setShowPassword(false); setPwMsg(null) }, 1500)
-                  } catch (err) {
-                    setPwMsg({ type: 'error', text: err.message })
-                  } finally {
-                    setPwSaving(false)
-                  }
-                }}
-                className="flex gap-1.5 items-center"
-              >
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="New password"
-                  className="flex-1 px-2 py-1 text-[11px] bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary/30"
-                  minLength={6}
-                />
-                <button
-                  type="submit"
-                  disabled={pwSaving}
-                  className="px-2 py-1 text-[10px] font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {pwSaving ? '...' : 'Save'}
-                </button>
-              </form>
-            )}
-            {pwMsg && (
-              <p className={`text-[10px] ${pwMsg.type === 'error' ? 'text-red-500' : 'text-green-600'}`}>
-                {pwMsg.text}
-              </p>
-            )}
-          </>
+          </div>
         )}
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-on-surface-variant/50">v{__APP_VERSION__}</span>
+          <span className="text-[10px] text-on-surface-variant/50">v{APP_VERSION}</span>
           <button
             onClick={async () => {
-              const regs = await navigator.serviceWorker?.getRegistrations()
-              if (regs) await Promise.all(regs.map(r => r.unregister()))
-              if ('caches' in window) {
-                const keys = await caches.keys()
-                await Promise.all(keys.map(k => caches.delete(k)))
+              const regs = await navigator.serviceWorker?.getRegistrations();
+              if (regs) await Promise.all(regs.map((r) => r.unregister()));
+              if ("caches" in window) {
+                const keys = await caches.keys();
+                await Promise.all(keys.map((k) => caches.delete(k)));
               }
-              window.location.reload(true)
+              window.location.reload();
             }}
             className="text-on-surface-variant/40 hover:text-primary transition-colors"
             title="Check for updates"
@@ -286,22 +234,22 @@ export default function Sidebar({ selectedTrip, onSelectTrip, onNavigate }) {
         </div>
       </div>
     </aside>
-  )
+  );
 }
 
 function NavItem({ to, active, onClick, icon, label }) {
   return (
     <Link
-      to={to}
+      href={to}
       onClick={onClick}
       className={`flex items-center gap-3 px-4 py-2.5 rounded-full text-sm transition-all duration-150 mb-0.5 ${
         active
-          ? 'bg-primary-light text-primary font-medium'
-          : 'text-on-surface hover:bg-surface-container'
+          ? "bg-primary-light text-primary font-medium"
+          : "text-on-surface hover:bg-surface-container"
       }`}
     >
-      <span className={active ? 'text-primary' : 'text-on-surface-variant'}>{icon}</span>
+      <span className={active ? "text-primary" : "text-on-surface-variant"}>{icon}</span>
       {label}
     </Link>
-  )
+  );
 }

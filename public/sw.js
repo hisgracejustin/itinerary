@@ -1,69 +1,67 @@
-const CACHE_NAME = 'itinerary-v1'
-const PRECACHE_URLS = [
-  '/',
-  '/icon.png',
-]
+// PWA service worker for the Next.js app.
+//  - cache-first for immutable static assets (/_next/static, icon, pdf worker)
+//  - network-first for navigations and /api/* (with an offline fallback)
+const CACHE_NAME = "itinerary-v3";
 
-self.addEventListener('install', (event) => {
+self.addEventListener("install", () => {
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
-  )
-  self.skipWaiting()
-})
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  );
+});
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
-  )
-  self.clients.claim()
-})
+function isStaticAsset(url) {
+  // NB: the pdf.js worker is intentionally NOT cached here. It has a stable URL
+  // but versioned content, so cache-first would pin a stale worker and break
+  // parsing with an API/Worker version mismatch. It's fetched network-first.
+  return (
+    url.pathname.startsWith("/_next/static/") ||
+    url.pathname === "/icon.png" ||
+    url.pathname === "/manifest.webmanifest"
+  );
+}
 
-self.addEventListener('fetch', (event) => {
-  const { request } = event
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  if (request.method !== "GET" || request.url.startsWith("chrome-extension")) return;
 
-  // Skip non-GET and chrome-extension requests
-  if (request.method !== 'GET' || request.url.startsWith('chrome-extension')) return
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return; // don't touch cross-origin (e.g. Google/Poe)
 
-  // Network-first for API/supabase calls
-  if (request.url.includes('supabase') || request.url.includes('/rest/')) {
+  // Cache-first for immutable static assets.
+  if (isStaticAsset(url)) {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const clone = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone))
-          return response
-        })
-        .catch(async () => {
-          const cached = await caches.match(request)
-          return cached || new Response('Offline', { status: 503 })
-        })
-    )
-    return
+      caches.match(request).then(
+        (cached) =>
+          cached ||
+          fetch(request).then((response) => {
+            if (response.ok) {
+              const clone = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+            }
+            return response;
+          }),
+      ),
+    );
+    return;
   }
 
-  // Cache-first for static assets, network fallback
+  // Network-first for everything else (navigations, /api, RSC payloads).
   event.respondWith(
-    (async () => {
-      const cached = await caches.match(request)
-      if (cached) return cached
-
-      try {
-        const response = await fetch(request)
-        if (response.ok) {
-          const cache = await caches.open(CACHE_NAME)
-          cache.put(request, response.clone())
-        }
-        return response
-      } catch (e) {
-        // SPA fallback for navigation requests
-        if (request.mode === 'navigate') {
-          const fallback = await caches.match('/')
-          if (fallback) return fallback
-        }
-        return new Response('Offline', { status: 503 })
+    fetch(request).catch(async () => {
+      const cached = await caches.match(request);
+      if (cached) return cached;
+      if (request.mode === "navigate") {
+        const home = await caches.match("/");
+        if (home) return home;
       }
-    })()
-  )
-})
+      return new Response("Offline", { status: 503 });
+    }),
+  );
+});
