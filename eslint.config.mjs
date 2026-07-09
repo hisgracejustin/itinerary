@@ -3,7 +3,7 @@ import next from "eslint-config-next";
 const eslintConfig = [
   ...next,
   {
-    ignores: [".next/**", "node_modules/**", "drizzle/**", "supabase/**"],
+    ignores: [".next/**", "node_modules/**", "drizzle/**"],
   },
   {
     // The UI was ported verbatim from the original Vite SPA. These rules from
