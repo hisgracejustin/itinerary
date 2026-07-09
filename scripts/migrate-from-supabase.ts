@@ -58,20 +58,31 @@ async function copy(
 async function main() {
   console.log("Migrating Supabase → new Postgres…");
 
-  // 1) users ← auth.users, but ONLY the ones that belong to an itinerary trip.
-  // auth.users is shared across every app in this Supabase project, so we scope
-  // to members of public.trip_members (that is exactly the itinerary user set,
-  // and the ids trip_members.user_id references).
-  await copy(
-    "users",
+  // 1) Resolve itinerary users → target user id, BY EMAIL. auth.users is shared
+  // across every app in this Supabase project, so scope to members of
+  // public.trip_members. Because you may have already logged into the new app
+  // (fresh id), remap by email instead of preserving the old UUID; only create a
+  // user row (with the old UUID) for members who haven't logged in yet.
+  const { rows: authUsers } = await source.query(
     `SELECT u.id, u.email, u.raw_user_meta_data->>'name' AS name, u.created_at
        FROM auth.users u
       WHERE u.email IS NOT NULL
         AND u.id IN (SELECT DISTINCT user_id FROM public.trip_members)`,
-    "users",
-    ["id", "email", "name", "email_verified"],
-    (r) => [r.id, r.email, r.name ?? null, r.created_at ?? new Date()],
   );
+  const targetIdByOldId = new Map<string, string>();
+  for (const u of authUsers) {
+    const found = await target.query(`SELECT id FROM users WHERE lower(email) = lower($1) LIMIT 1`, [u.email]);
+    if (found.rows[0]) {
+      targetIdByOldId.set(u.id, found.rows[0].id);
+    } else {
+      await target.query(
+        `INSERT INTO users (id, email, name, email_verified) VALUES ($1,$2,$3, now()) ON CONFLICT DO NOTHING`,
+        [u.id, u.email, u.name ?? null],
+      );
+      targetIdByOldId.set(u.id, u.id);
+    }
+  }
+  console.log(`[users] resolved ${targetIdByOldId.size} itinerary users`);
 
   // 2) trips
   await copy(
@@ -82,14 +93,21 @@ async function main() {
     (r) => [r.id, r.name, r.start_date, r.end_date, r.created_at],
   );
 
-  // 3) trip_members (user_id UUID string == the migrated users.id text)
-  await copy(
-    "trip_members",
+  // 3) trip_members (user_id remapped by email to the target user)
+  const { rows: members } = await source.query(
     `SELECT trip_id, user_id, role, created_at FROM public.trip_members`,
-    "trip_members",
-    ["trip_id", "user_id", "role", "created_at"],
-    (r) => [r.trip_id, r.user_id, r.role, r.created_at],
   );
+  let memberN = 0;
+  for (const m of members) {
+    const targetId = targetIdByOldId.get(m.user_id as string);
+    if (!targetId) continue;
+    const r = await target.query(
+      `INSERT INTO trip_members (trip_id, user_id, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+      [m.trip_id, targetId, m.role, m.created_at],
+    );
+    memberN += r.rowCount ?? 0;
+  }
+  console.log(`[trip_members] ${memberN}/${members.length} inserted`);
 
   // 4) bookings
   await copy(
