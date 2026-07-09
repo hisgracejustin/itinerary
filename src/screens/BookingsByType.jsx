@@ -33,7 +33,7 @@ export default function BookingsByType({ type }) {
   }
 
   return (
-    <div className="h-full flex flex-col max-w-2xl mx-auto">
+    <div className="h-full flex flex-col w-full max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2.5">
           <span className="text-2xl">{icon}</span>
@@ -60,7 +60,7 @@ export default function BookingsByType({ type }) {
             <p className="text-sm font-medium">No {label.toLowerCase()} booked yet</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {filtered.map((booking) => (
               <BookingCard
                 key={booking.id}

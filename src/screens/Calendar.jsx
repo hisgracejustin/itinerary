@@ -174,6 +174,7 @@ export default function Calendar() {
                     todos={todos}
                     dayNotes={dayNotes}
                     tripMeta={tripMeta}
+                    selectedTrip={selectedTrip}
                     onSelectDate={handleSelectDate}
                     onBookingClick={openEditModal}
                     onUpsertDayNote={upsertDayNote}
@@ -188,7 +189,9 @@ export default function Calendar() {
                     dayNotes={dayNotes}
                     tripMeta={tripMeta}
                     selectedTrip={selectedTrip}
-                    onSelectDate={handleSelectDate}                    onDayHighlight={(date) => setCurrentDate(date)}                    onBookingClick={openEditModal}
+                    onSelectDate={handleSelectDate}
+                    onDayHighlight={(date) => setCurrentDate(date)}
+                    onBookingClick={openEditModal}
                     onUpsertDayNote={upsertDayNote}
                     collapsed={calendarCollapsed}
                     onCollapsedChange={setCalendarCollapsed}

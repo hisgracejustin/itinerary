@@ -38,7 +38,7 @@ export default function Todos() {
   }
 
   return (
-    <div className="h-full flex flex-col max-w-2xl mx-auto">
+    <div className="h-full flex flex-col w-full max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-xl font-medium text-on-surface">To-dos</h2>
         {tripMeta && (
@@ -50,38 +50,35 @@ export default function Todos() {
 
       {/* Add form */}
       <form onSubmit={handleAdd} className="mat-surface p-4 mb-4 shrink-0">
-        <div className="flex gap-2 mb-3">
+        <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
             value={newTodo}
             onChange={(e) => setNewTodo(e.target.value)}
             placeholder="What needs to be done?"
-            className="mat-input"
+            className="mat-input sm:flex-1"
           />
-          <button
-            type="submit"
-            className="mat-btn-filled shrink-0"
-          >
-            Add
-          </button>
-        </div>
-        <div className="flex gap-2">
-          <input
-            type="date"
-            value={newTodoDate}
-            onChange={(e) => setNewTodoDate(e.target.value)}
-            className="mat-input text-sm"
-          />
-          <select
-            value={newTodoTrip}
-            onChange={(e) => setNewTodoTrip(e.target.value)}
-            className="mat-select"
-          >
-            <option value="">No trip</option>
-            {trips.map((trip) => (
-              <option key={trip.id} value={trip.id}>{trip.name}</option>
-            ))}
-          </select>
+          <div className="flex gap-2">
+            <input
+              type="date"
+              value={newTodoDate}
+              onChange={(e) => setNewTodoDate(e.target.value)}
+              className="mat-input text-sm sm:w-40"
+            />
+            <select
+              value={newTodoTrip}
+              onChange={(e) => setNewTodoTrip(e.target.value)}
+              className="mat-select flex-1 sm:flex-none"
+            >
+              <option value="">No trip</option>
+              {trips.map((trip) => (
+                <option key={trip.id} value={trip.id}>{trip.name}</option>
+              ))}
+            </select>
+            <button type="submit" className="mat-btn-filled shrink-0">
+              Add
+            </button>
+          </div>
         </div>
       </form>
 

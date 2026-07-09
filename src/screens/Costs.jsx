@@ -34,7 +34,7 @@ export default function Costs() {
   const sorted = [...withCosts].sort((a, b) => toHKD(effectiveCost(b), b.cost_currency) - toHKD(effectiveCost(a), a.cost_currency))
 
   return (
-    <div className="h-full flex flex-col max-w-2xl mx-auto">
+    <div className="h-full flex flex-col w-full max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-xl font-medium text-on-surface">Costs</h2>
         {tripMeta && (
@@ -58,9 +58,9 @@ export default function Costs() {
           <p className="text-xs mt-1 text-on-surface-variant/70">Add costs to your bookings to see the breakdown here</p>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto space-y-4">
+        <div className="flex-1 overflow-y-auto grid gap-4 lg:grid-cols-2 auto-rows-min content-start">
           {/* Total */}
-          <div className="mat-surface p-6">
+          <div className="mat-surface p-6 lg:col-span-2">
             <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1">Total (approx. HKD)</div>
             <div className="text-3xl font-medium text-on-surface">
               ~HK${totalHKD.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}

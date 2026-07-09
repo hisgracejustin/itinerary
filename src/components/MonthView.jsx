@@ -1,8 +1,20 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { getMonthGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, TYPE_ICONS } from '../lib/calendar'
 import BookingChip from './BookingChip'
+import BookingCard from './BookingCard'
+import useMediaQuery from '../hooks/useMediaQuery'
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MAX_CHIPS = 4
+
+// Timezone-safe local date string (YYYY-MM-DD) — matches MobileMonthView so day
+// notes written on either view resolve to the same key (avoids a UTC off-by-one).
+function toLocalDateStr(date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
 
 // Sort bookings: check-outs first, then normal by time, then check-ins last
 function sortBookingsForDay(dayBookings, day) {
@@ -27,7 +39,11 @@ function sortBookingsForDay(dayBookings, day) {
   })
 }
 
-export default function MonthView({ currentDate, bookings, todos = [], dayNotes = [], tripMeta, onSelectDate, onBookingClick, onUpsertDayNote }) {
+export default function MonthView({ currentDate, bookings, todos = [], dayNotes = [], tripMeta, selectedTrip, onSelectDate, onBookingClick, onUpsertDayNote }) {
+  // Wide desktop → show the agenda side panel and select-a-day inline; below that
+  // width the panel is hidden and clicking a day navigates to the Day view.
+  const isWide = useMediaQuery('(min-width: 1024px)')
+  const [selectedDay, setSelectedDay] = useState(currentDate)
   const [editingNoteDate, setEditingNoteDate] = useState(null)
   const [noteText, setNoteText] = useState('')
 
@@ -35,6 +51,16 @@ export default function MonthView({ currentDate, bookings, todos = [], dayNotes 
   const month = currentDate.getMonth()
   const days = getMonthGrid(year, month)
   const today = new Date()
+
+  // Keep the agenda's selected day sensible: default to the trip start (if a trip
+  // with dates is selected) or today, and re-anchor when the trip changes.
+  useEffect(() => {
+    if (selectedTrip && tripMeta?.start_date) {
+      setSelectedDay(new Date(tripMeta.start_date + 'T00:00:00'))
+    } else {
+      setSelectedDay(new Date())
+    }
+  }, [selectedTrip, tripMeta?.start_date])
 
   // Trip date range (if a trip with dates is selected)
   const tripStart = tripMeta?.start_date ? new Date(tripMeta.start_date + 'T00:00:00') : null
@@ -53,245 +79,409 @@ export default function MonthView({ currentDate, bookings, todos = [], dayNotes 
     })
   }
 
+  // A day tap selects it (wide) or opens Day view (narrow).
+  const handleDayActivate = (day) => {
+    if (isWide) setSelectedDay(day)
+    else onSelectDate(day)
+  }
+
   return (
-    <div className="h-full flex flex-col">
-      {/* Day headers */}
-      <div className="grid grid-cols-7 border-b border-outline/40">
-        {DAY_NAMES.map((name) => (
-          <div key={name} className="py-2 text-center text-[11px] font-medium text-on-surface-variant uppercase tracking-wide">
-            {name}
+    <div className="h-full flex">
+      {/* Calendar grid column */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* Day headers */}
+        <div className="grid grid-cols-7 border-b border-outline/40 shrink-0">
+          {DAY_NAMES.map((name) => (
+            <div key={name} className="py-2 text-center text-[11px] font-medium text-on-surface-variant uppercase tracking-wide">
+              {name}
+            </div>
+          ))}
+        </div>
+
+        {/* Scrollable day grid */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="grid grid-cols-7 auto-rows-[minmax(116px,auto)]">
+            {days.map((day, i) => {
+              const isCurrentMonth = day.getMonth() === month
+              const isToday = isSameDay(day, today)
+              const outsideTrip = isOutsideTrip(day)
+
+              if (!isCurrentMonth && (!tripMeta || outsideTrip)) {
+                return <div key={i} className="border-b border-r border-outline/20" />
+              }
+
+              const dayBookings = sortBookingsForDay(getBookingsForDate(bookings, day), day)
+              const dayTodos = getTodosForDate(day)
+              const dateStr = toLocalDateStr(day)
+              const dayNote = dayNotes.find((n) => n.date === dateStr)
+              const isEditingThis = editingNoteDate === dateStr
+              const isSelected = isWide && isSameDay(day, selectedDay)
+
+              return (
+                <div
+                  key={i}
+                  onClick={() => handleDayActivate(day)}
+                  className={`group border-b border-r border-outline/20 p-1.5 cursor-pointer transition-colors duration-150 ${
+                    isSelected ? 'bg-primary-light/60 ring-1 ring-inset ring-primary/40' : 'hover:bg-primary-light/30'
+                  } ${outsideTrip ? 'bg-surface-container/50 opacity-40' : ''}`}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <span
+                      className={`text-xs w-6 h-6 flex items-center justify-center rounded-full transition-colors ${
+                        isToday
+                          ? 'bg-primary text-white font-medium'
+                          : 'text-on-surface-variant'
+                      }`}
+                    >
+                      {day.getDate()}
+                    </span>
+                    {/* Add note button */}
+                    {!isEditingThis && !dayNote && onUpsertDayNote && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setEditingNoteDate(dateStr); setNoteText('') }}
+                        className="text-outline hover:text-on-surface-variant transition-colors duration-150 opacity-0 group-hover:opacity-100"
+                        title="Add day title"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Day note / title */}
+                  {isEditingThis ? (
+                    <form
+                      className="mb-1"
+                      onClick={(e) => e.stopPropagation()}
+                      onSubmit={async (e) => {
+                        e.preventDefault()
+                        await onUpsertDayNote?.({ date: dateStr, title: noteText })
+                        setEditingNoteDate(null)
+                      }}
+                    >
+                      <input
+                        type="text"
+                        autoFocus
+                        value={noteText}
+                        onChange={(e) => setNoteText(e.target.value)}
+                        onBlur={async () => {
+                          await onUpsertDayNote?.({ date: dateStr, title: noteText })
+                          setEditingNoteDate(null)
+                        }}
+                        placeholder="Day title"
+                        className="w-full px-1.5 py-0.5 text-[10px] italic text-on-surface-variant bg-surface-container border-0 rounded focus:outline-none focus:ring-1 focus:ring-primary/30"
+                      />
+                    </form>
+                  ) : dayNote ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingNoteDate(dateStr); setNoteText(dayNote.title) }}
+                      className="text-[10px] italic text-on-surface-variant mb-1 block truncate hover:text-primary transition-colors duration-150 max-w-full"
+                    >
+                      {dayNote.title}
+                    </button>
+                  ) : null}
+
+                  <div className="space-y-0.5">
+                    {/* Hotel mid-stay chips */}
+                    {dayBookings.filter((b) => {
+                      if (b.type !== 'hotel' || !b.end_date) return false
+                      const details = typeof b.details === 'string' ? (() => { try { return JSON.parse(b.details) } catch { return {} } })() : (b.details || {})
+                      const start = new Date(b.start_date)
+                      const end = new Date(b.end_date)
+                      const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                      const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                      const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+                      if (endDay <= startDay) return false
+                      // Informal stays: chip on all days (not check-out)
+                      if (details.informal) return viewDay.getTime() !== endDay.getTime()
+                      // Regular hotels: chip on middle days only
+                      return viewDay.getTime() !== endDay.getTime() && viewDay.getTime() !== startDay.getTime()
+                    }).map((b) => {
+                      const start = new Date(b.start_date)
+                      const end = new Date(b.end_date)
+                      const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                      const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                      const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+                      const totalNights = Math.round((endDay - startDay) / (1000 * 60 * 60 * 24))
+                      const nightNumber = Math.round((viewDay - startDay) / (1000 * 60 * 60 * 24)) + 1
+                      return (
+                        <button
+                          key={b.id}
+                          onClick={(e) => { e.stopPropagation(); onBookingClick?.(b) }}
+                          className="w-full text-left inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-medium hover:bg-amber-200 transition-colors truncate"
+                        >
+                          🏡 {b.title}
+                          <span className="text-amber-600 font-normal ml-auto shrink-0">{nightNumber}/{totalNights}</span>
+                        </button>
+                      )
+                    })}
+                    {/* Cruise mid-stay chips */}
+                    {dayBookings.filter((b) => {
+                      if (b.type !== 'cruise' || !b.end_date) return false
+                      const start = new Date(b.start_date)
+                      const end = new Date(b.end_date)
+                      const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                      const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                      const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+                      return endDay > startDay && viewDay.getTime() !== endDay.getTime() && viewDay.getTime() !== startDay.getTime()
+                    }).map((b) => {
+                      const start = new Date(b.start_date)
+                      const end = new Date(b.end_date)
+                      const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                      const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                      const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+                      const totalNights = Math.round((endDay - startDay) / (1000 * 60 * 60 * 24))
+                      const nightNumber = Math.round((viewDay - startDay) / (1000 * 60 * 60 * 24)) + 1
+                      return (
+                        <button
+                          key={b.id}
+                          onClick={(e) => { e.stopPropagation(); onBookingClick?.(b) }}
+                          className="w-full text-left inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 text-[10px] font-medium hover:bg-purple-200 transition-colors truncate"
+                        >
+                          🚢 On board
+                          <span className="text-purple-600 font-normal ml-auto shrink-0">{nightNumber}/{totalNights}</span>
+                        </button>
+                      )
+                    })}
+                    {/* Overnight flight/train/bus chip */}
+                    {dayBookings.filter((b) => {
+                      if (b.type !== 'flight' && b.type !== 'train' && b.type !== 'bus') return false
+                      if (!b.end_date) return false
+                      const start = new Date(b.start_date)
+                      const end = new Date(b.end_date)
+                      const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                      const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                      const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+                      return endDay > startDay && viewDay.getTime() === startDay.getTime()
+                    }).map((b) => {
+                      const typeIcon = TYPE_ICONS[b.type] || '📌'
+                      const chipColors = b.type === 'flight'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-emerald-100 text-emerald-800'
+                      return (
+                        <span
+                          key={`overnight-${b.id}`}
+                          className={`w-full inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${chipColors} truncate`}
+                        >
+                          {typeIcon} Overnight
+                        </span>
+                      )
+                    })}
+                    {/* No accommodation warning */}
+                    {tripMeta?.start_date && tripMeta?.end_date && (() => {
+                      const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+                      const tripEndDay = new Date(tripMeta.end_date + 'T00:00:00')
+                      const tripStartDay = new Date(tripMeta.start_date + 'T00:00:00')
+                      if (viewDay < tripStartDay || viewDay >= tripEndDay) return null
+                      if (!hasOvernightCoverage(bookings, day)) {
+                        return (
+                          <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-50 text-amber-500 text-[10px]" title="No accommodation booked">
+                            <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span className="font-medium truncate">No stay</span>
+                          </div>
+                        )
+                      }
+                      return null
+                    })()}
+                    {/* Todos */}
+                    {dayTodos.map((todo) => (
+                      <div key={todo.id} className="flex items-center gap-1 px-1 py-0.5">
+                        <span className={`w-3 h-3 rounded-sm border flex items-center justify-center text-[8px] shrink-0 ${
+                          todo.completed ? 'bg-primary/10 border-primary/30 text-primary' : 'border-gray-300'
+                        }`}>
+                          {todo.completed && '✓'}
+                        </span>
+                        <span className={`text-[11px] truncate ${todo.completed ? 'line-through text-on-surface-variant' : 'text-on-surface'}`}>
+                          {todo.title}
+                        </span>
+                      </div>
+                    ))}
+                    {/* Bookings (excluding hotel mid-stay/informal) */}
+                    {(() => {
+                      const visible = dayBookings.filter((b) => {
+                        if (b.type !== 'hotel' || !b.end_date) return true
+                        const details = typeof b.details === 'string' ? (() => { try { return JSON.parse(b.details) } catch { return {} } })() : (b.details || {})
+                        const start = new Date(b.start_date)
+                        const end = new Date(b.end_date)
+                        const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                        const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                        const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+                        if (endDay <= startDay) return true
+                        // Informal: never show as full card
+                        if (details.informal) return false
+                        // Regular: hide on middle days only
+                        return !(viewDay.getTime() !== endDay.getTime() && viewDay.getTime() !== startDay.getTime())
+                      })
+                      return (
+                        <>
+                          {visible.slice(0, MAX_CHIPS).map((booking) => (
+                            <BookingChip
+                              key={booking.id}
+                              booking={booking}
+                              compact
+                              onClick={(b) => { onBookingClick?.(b) }}
+                            />
+                          ))}
+                          {visible.length > MAX_CHIPS && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleDayActivate(day) }}
+                              className="text-[11px] text-primary font-medium px-1.5 hover:underline"
+                            >
+                              +{visible.length - MAX_CHIPS} more
+                            </button>
+                          )}
+                        </>
+                      )
+                    })()}
+                  </div>
+                </div>
+              )
+            })}
           </div>
-        ))}
+        </div>
       </div>
 
-      {/* Day grid */}
-      <div className="grid grid-cols-7 flex-1 auto-rows-fr">
-        {days.map((day, i) => {
-          const isCurrentMonth = day.getMonth() === month
-          const isToday = isSameDay(day, today)
-          const outsideTrip = isOutsideTrip(day)
+      {/* Agenda side panel (wide desktop only) */}
+      {isWide && (
+        <aside className="w-[360px] shrink-0 border-l border-outline/40 bg-surface-dim/40 flex flex-col">
+          <AgendaPanel
+            key={toLocalDateStr(selectedDay)}
+            day={selectedDay}
+            bookings={bookings}
+            todos={todos}
+            dayNotes={dayNotes}
+            onBookingClick={onBookingClick}
+            onUpsertDayNote={onUpsertDayNote}
+            onOpenDay={() => onSelectDate(selectedDay)}
+          />
+        </aside>
+      )}
+    </div>
+  )
+}
 
-          if (!isCurrentMonth && (!tripMeta || outsideTrip)) {
-            return <div key={i} className="border-b border-r border-outline/20 min-h-[80px]" />
-          }
+/** Rich schedule for the selected day — the desktop equivalent of the mobile agenda. */
+function AgendaPanel({ day, bookings, todos, dayNotes, onBookingClick, onUpsertDayNote, onOpenDay }) {
+  const [editingNote, setEditingNote] = useState(false)
+  const [noteText, setNoteText] = useState('')
 
-          const dayBookings = sortBookingsForDay(getBookingsForDate(bookings, day), day)
-          const dayTodos = getTodosForDate(day)
-          const dateStr = day.toISOString().split('T')[0]
-          const dayNote = dayNotes.find((n) => n.date === dateStr)
-          const isEditingThis = editingNoteDate === dateStr
+  const dateStr = toLocalDateStr(day)
+  const dayNote = dayNotes.find((n) => n.date === dateStr)
+  const dayBookings = sortBookingsForDay(getBookingsForDate(bookings, day), day)
+  const dayTodos = todos.filter((t) => t.due_date && isSameDay(new Date(t.due_date + 'T00:00:00'), day))
+  const isToday = isSameDay(day, new Date())
 
-          return (
-            <div
-              key={i}
-              onClick={() => onSelectDate(day)}
-              className={`group border-b border-r border-outline/20 p-1.5 min-h-[80px] cursor-pointer hover:bg-primary-light/30 transition-colors duration-150 ${outsideTrip ? 'bg-surface-container/50 opacity-40' : ''}`}
-            >
-              <div className="flex justify-between items-center mb-1">
-                <span
-                  className={`text-xs w-6 h-6 flex items-center justify-center rounded-full transition-colors ${
-                    isToday
-                      ? 'bg-primary text-white font-medium'
-                      : 'text-on-surface-variant'
-                  }`}
-                >
-                  {day.getDate()}
-                </span>
-                {/* Add note button */}
-                {!isEditingThis && !dayNote && onUpsertDayNote && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setEditingNoteDate(dateStr); setNoteText('') }}
-                    className="text-outline hover:text-on-surface-variant transition-colors duration-150 opacity-0 group-hover:opacity-100"
-                    title="Add day title"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                  </button>
-                )}
+  const saveNote = async () => {
+    await onUpsertDayNote?.({ date: dateStr, title: noteText })
+    setEditingNote(false)
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="px-4 py-3.5 border-b border-outline/30 shrink-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[11px] text-on-surface-variant uppercase tracking-wide">
+              {day.toLocaleDateString(undefined, { weekday: 'long' })}
+            </div>
+            <div className="text-lg font-medium text-on-surface flex items-center gap-2">
+              {day.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}
+              {isToday && (
+                <span className="text-[10px] bg-primary-light text-primary px-2 py-0.5 rounded-full font-medium">Today</span>
+              )}
+            </div>
+          </div>
+          <button onClick={onOpenDay} className="mat-btn-outlined text-xs px-3 py-1.5 shrink-0" title="Open day view">
+            Open day
+          </button>
+        </div>
+
+        {/* Day title / note */}
+        {editingNote ? (
+          <form
+            className="mt-2"
+            onSubmit={(e) => { e.preventDefault(); saveNote() }}
+          >
+            <input
+              type="text"
+              autoFocus
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              onBlur={saveNote}
+              placeholder="Day title (optional)"
+              className="w-full px-3 py-1.5 text-xs italic text-on-surface-variant bg-surface-container border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </form>
+        ) : dayNote ? (
+          <button
+            onClick={() => { setEditingNote(true); setNoteText(dayNote.title) }}
+            className="mt-1.5 text-xs italic text-on-surface-variant hover:text-primary transition-colors block truncate max-w-full text-left"
+          >
+            {dayNote.title}
+          </button>
+        ) : onUpsertDayNote ? (
+          <button
+            onClick={() => { setEditingNote(true); setNoteText('') }}
+            className="mt-1.5 inline-flex items-center gap-1 text-xs text-on-surface-variant/70 hover:text-primary transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add day title
+          </button>
+        ) : null}
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+        {dayTodos.length > 0 && (
+          <div>
+            <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">To-dos</div>
+            <ul className="space-y-1.5">
+              {dayTodos.map((todo) => (
+                <li key={todo.id} className="flex items-center gap-2.5">
+                  <span className={`w-4 h-4 rounded-md border flex items-center justify-center text-[10px] shrink-0 ${
+                    todo.completed ? 'bg-primary/10 border-primary/30 text-primary' : 'border-gray-300'
+                  }`}>
+                    {todo.completed && '✓'}
+                  </span>
+                  <span className={`text-sm ${todo.completed ? 'line-through text-on-surface-variant' : 'text-on-surface'}`}>
+                    {todo.title}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {dayBookings.length === 0 ? (
+          dayTodos.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-on-surface-variant">
+              <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center mb-3">
+                <svg className="w-6 h-6 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
               </div>
-
-              {/* Day note / title */}
-              {isEditingThis ? (
-                <form
-                  className="mb-1"
-                  onClick={(e) => e.stopPropagation()}
-                  onSubmit={async (e) => {
-                    e.preventDefault()
-                    await onUpsertDayNote?.({ date: dateStr, title: noteText })
-                    setEditingNoteDate(null)
-                  }}
-                >
-                  <input
-                    type="text"
-                    autoFocus
-                    value={noteText}
-                    onChange={(e) => setNoteText(e.target.value)}
-                    onBlur={async () => {
-                      await onUpsertDayNote?.({ date: dateStr, title: noteText })
-                      setEditingNoteDate(null)
-                    }}
-                    placeholder="Day title"
-                    className="w-full px-1.5 py-0.5 text-[10px] italic text-on-surface-variant bg-surface-container border-0 rounded focus:outline-none focus:ring-1 focus:ring-primary/30"
-                  />
-                </form>
-              ) : dayNote ? (
-                <button
-                  onClick={(e) => { e.stopPropagation(); setEditingNoteDate(dateStr); setNoteText(dayNote.title) }}
-                  className="text-[10px] italic text-on-surface-variant mb-1 block truncate hover:text-primary transition-colors duration-150 max-w-full"
-                >
-                  {dayNote.title}
-                </button>
-              ) : null}
-
-              <div className="space-y-0.5 overflow-hidden">
-                {/* Hotel mid-stay chips */}
-                {dayBookings.filter((b) => {
-                  if (b.type !== 'hotel' || !b.end_date) return false
-                  const details = typeof b.details === 'string' ? (() => { try { return JSON.parse(b.details) } catch { return {} } })() : (b.details || {})
-                  const start = new Date(b.start_date)
-                  const end = new Date(b.end_date)
-                  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
-                  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
-                  const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
-                  if (endDay <= startDay) return false
-                  // Informal stays: chip on all days (not check-out)
-                  if (details.informal) return viewDay.getTime() !== endDay.getTime()
-                  // Regular hotels: chip on middle days only
-                  return viewDay.getTime() !== endDay.getTime() && viewDay.getTime() !== startDay.getTime()
-                }).map((b) => {
-                  const start = new Date(b.start_date)
-                  const end = new Date(b.end_date)
-                  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
-                  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
-                  const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
-                  const totalNights = Math.round((endDay - startDay) / (1000 * 60 * 60 * 24))
-                  const nightNumber = Math.round((viewDay - startDay) / (1000 * 60 * 60 * 24)) + 1
-                  return (
-                    <button
-                      key={b.id}
-                      onClick={(e) => { e.stopPropagation(); onBookingClick?.(b) }}
-                      className="w-full text-left inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-medium hover:bg-amber-200 transition-colors truncate"
-                    >
-                      🏡 {b.title}
-                      <span className="text-amber-600 font-normal ml-auto shrink-0">{nightNumber}/{totalNights}</span>
-                    </button>
-                  )
-                })}
-                {/* Cruise mid-stay chips */}
-                {dayBookings.filter((b) => {
-                  if (b.type !== 'cruise' || !b.end_date) return false
-                  const start = new Date(b.start_date)
-                  const end = new Date(b.end_date)
-                  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
-                  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
-                  const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
-                  return endDay > startDay && viewDay.getTime() !== endDay.getTime() && viewDay.getTime() !== startDay.getTime()
-                }).map((b) => {
-                  const start = new Date(b.start_date)
-                  const end = new Date(b.end_date)
-                  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
-                  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
-                  const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
-                  const totalNights = Math.round((endDay - startDay) / (1000 * 60 * 60 * 24))
-                  const nightNumber = Math.round((viewDay - startDay) / (1000 * 60 * 60 * 24)) + 1
-                  return (
-                    <button
-                      key={b.id}
-                      onClick={(e) => { e.stopPropagation(); onBookingClick?.(b) }}
-                      className="w-full text-left inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 text-[10px] font-medium hover:bg-purple-200 transition-colors truncate"
-                    >
-                      🚢 On board
-                      <span className="text-purple-600 font-normal ml-auto shrink-0">{nightNumber}/{totalNights}</span>
-                    </button>
-                  )
-                })}
-                {/* Overnight flight/train/bus chip */}
-                {dayBookings.filter((b) => {
-                  if (b.type !== 'flight' && b.type !== 'train' && b.type !== 'bus') return false
-                  if (!b.end_date) return false
-                  const start = new Date(b.start_date)
-                  const end = new Date(b.end_date)
-                  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
-                  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
-                  const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
-                  return endDay > startDay && viewDay.getTime() === startDay.getTime()
-                }).map((b) => {
-                  const typeIcon = TYPE_ICONS[b.type] || '📌'
-                  const chipColors = b.type === 'flight'
-                    ? 'bg-blue-100 text-blue-800'
-                    : 'bg-emerald-100 text-emerald-800'
-                  return (
-                    <span
-                      key={`overnight-${b.id}`}
-                      className={`w-full inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${chipColors} truncate`}
-                    >
-                      {typeIcon} Overnight
-                    </span>
-                  )
-                })}
-                {/* No accommodation warning */}
-                {tripMeta?.start_date && tripMeta?.end_date && (() => {
-                  const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
-                  const tripEndDay = new Date(tripMeta.end_date + 'T00:00:00')
-                  const tripStartDay = new Date(tripMeta.start_date + 'T00:00:00')
-                  if (viewDay < tripStartDay || viewDay >= tripEndDay) return null
-                  if (!hasOvernightCoverage(bookings, day)) {
-                    return (
-                      <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-50 text-amber-500 text-[10px]" title="No accommodation booked">
-                        <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="font-medium truncate">No stay</span>
-                      </div>
-                    )
-                  }
-                  return null
-                })()}
-                {/* Todos */}
-                {dayTodos.map((todo) => (
-                  <div key={todo.id} className="flex items-center gap-1 px-1 py-0.5">
-                    <span className={`w-3 h-3 rounded-sm border flex items-center justify-center text-[8px] shrink-0 ${
-                      todo.completed ? 'bg-primary/10 border-primary/30 text-primary' : 'border-gray-300'
-                    }`}>
-                      {todo.completed && '✓'}
-                    </span>
-                    <span className={`text-[11px] truncate ${todo.completed ? 'line-through text-on-surface-variant' : 'text-on-surface'}`}>
-                      {todo.title}
-                    </span>
-                  </div>
-                ))}
-                {/* Bookings (excluding hotel mid-stay/informal) */}
-                {dayBookings.filter((b) => {
-                  if (b.type !== 'hotel' || !b.end_date) return true
-                  const details = typeof b.details === 'string' ? (() => { try { return JSON.parse(b.details) } catch { return {} } })() : (b.details || {})
-                  const start = new Date(b.start_date)
-                  const end = new Date(b.end_date)
-                  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
-                  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
-                  const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
-                  if (endDay <= startDay) return true
-                  // Informal: never show as full card
-                  if (details.informal) return false
-                  // Regular: hide on middle days only
-                  return !(viewDay.getTime() !== endDay.getTime() && viewDay.getTime() !== startDay.getTime())
-                }).slice(0, 3).map((booking) => (
-                  <BookingChip
-                    key={booking.id}
-                    booking={booking}
-                    compact
-                    onClick={(b) => { onBookingClick?.(b) }}
-                  />
-                ))}
-                {dayBookings.length > 3 && (
-                  <div className="text-[11px] text-primary font-medium px-1.5 cursor-pointer hover:underline">
-                    +{dayBookings.length - 3} more
-                  </div>
-                )}
-              </div>
+              <p className="text-sm font-medium">Nothing planned</p>
             </div>
           )
-        })}
+        ) : (
+          <div className="space-y-2.5">
+            {dayBookings.map((booking) => (
+              <BookingCard
+                key={booking.id}
+                booking={booking}
+                onClick={onBookingClick}
+                hideTrip
+                displayDate={day}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
