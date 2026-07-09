@@ -1,5 +1,6 @@
 import {
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -16,6 +17,14 @@ import { createId } from "@paralleldrive/cuid2";
 import type { AdapterAccountType } from "next-auth/adapters";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
+
+// pg-core has no built-in bytea. Both drivers hand back the raw bytes on read
+// (node-postgres → Buffer, PGlite → Uint8Array); we always write a Buffer.
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 /* ------------------------------- auth (Auth.js) ------------------------------- */
 // Copied from the sibling `nav` app. `users.id` is a text column: for migrated
@@ -141,6 +150,25 @@ export const bookings = pgTable(
   ],
 );
 
+export const bookingAttachments = pgTable(
+  "booking_attachments",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    booking_id: text("booking_id")
+      .notNull()
+      .references(() => bookings.id, { onDelete: "cascade" }),
+    filename: text("filename").notNull(),
+    mime_type: text("mime_type").notNull(),
+    size_bytes: integer("size_bytes").notNull(),
+    content: bytea("content").notNull(),
+    uploaded_by: text("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+    created_at: createdAt(),
+  },
+  (t) => [index("idx_booking_attachments_booking_id").on(t.booking_id)],
+);
+
 export const todos = pgTable(
   "todos",
   {
@@ -190,8 +218,20 @@ export const tripMembersRelations = relations(tripMembers, ({ one }) => ({
   user: one(users, { fields: [tripMembers.user_id], references: [users.id] }),
 }));
 
-export const bookingsRelations = relations(bookings, ({ one }) => ({
+export const bookingsRelations = relations(bookings, ({ one, many }) => ({
   trip: one(trips, { fields: [bookings.trip_id], references: [trips.id] }),
+  attachments: many(bookingAttachments),
+}));
+
+export const bookingAttachmentsRelations = relations(bookingAttachments, ({ one }) => ({
+  booking: one(bookings, {
+    fields: [bookingAttachments.booking_id],
+    references: [bookings.id],
+  }),
+  uploadedBy: one(users, {
+    fields: [bookingAttachments.uploaded_by],
+    references: [users.id],
+  }),
 }));
 
 export const todosRelations = relations(todos, ({ one }) => ({
@@ -209,6 +249,8 @@ export type Trip = typeof trips.$inferSelect;
 export type TripMember = typeof tripMembers.$inferSelect;
 export type Booking = typeof bookings.$inferSelect;
 export type NewBooking = typeof bookings.$inferInsert;
+export type BookingAttachment = typeof bookingAttachments.$inferSelect;
+export type NewBookingAttachment = typeof bookingAttachments.$inferInsert;
 export type Todo = typeof todos.$inferSelect;
 export type NewTodo = typeof todos.$inferInsert;
 export type DayNote = typeof dayNotes.$inferSelect;

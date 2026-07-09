@@ -78,10 +78,9 @@ export default function BookingsByType({ type }) {
           selectedTrip={selectedTrip}
           tripName={tripMeta?.name}
           onClose={() => setModalOpen(false)}
-          onSave={async (data) => {
-            if (editingBooking) {
-              await update(editingBooking.id, data)
-            }
+          onSave={async (data, existingId) => {
+            const id = existingId ?? editingBooking?.id
+            if (id) return await update(id, data)
           }}
           onDelete={async (id) => {
             await remove(id)

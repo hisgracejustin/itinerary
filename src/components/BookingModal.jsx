@@ -1,8 +1,24 @@
 import { useState, useRef } from 'react'
 import BookingForm from './BookingForm'
+import BookingDetails from './BookingDetails'
+import AttachmentsSection from './AttachmentsSection'
 import UploadBooking from './UploadBooking'
 import { useToast } from './Toast'
 import { friendlyError } from '../lib/friendlyError'
+
+/** Upload files staged in the browser to a saved booking. Best-effort per file. */
+async function uploadStagedFiles(bookingId, files) {
+  for (const file of files) {
+    const body = new FormData()
+    body.append('booking_id', bookingId)
+    body.append('file', file)
+    const res = await fetch('/api/attachments', { method: 'POST', body })
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(data?.error || `Failed to attach ${file.name}`)
+    }
+  }
+}
 
 function mergeAsLayover(legs) {
   // Merge multiple flight legs into one booking with layover info
@@ -38,9 +54,15 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
   const [savedCount, setSavedCount] = useState(0)
   const [savedIndices, setSavedIndices] = useState(new Set())
   const [treatAsLayover, setTreatAsLayover] = useState(false)
+  // The booking currently shown (updated in place after save so view mode reflects
+  // fresh data). null until a brand-new booking is created.
+  const [current, setCurrent] = useState(booking)
+  const [editing, setEditing] = useState(!booking) // existing → view first; new → edit
+  const [stagedFiles, setStagedFiles] = useState([]) // pending attachments for a not-yet-saved booking
   const { toast } = useToast()
   const formRef = useRef(null)
   const isEdit = !!booking
+  const viewMode = !!current && !editing && mode !== 'multi-review'
 
   // Whether all parsed bookings are flights (layover-eligible)
   const allFlights = parsedBookings.length > 1 && parsedBookings.every(b => b.type === 'flight')
@@ -48,8 +70,14 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
   const handleSave = async (formData) => {
     setSaving(true)
     try {
-      await onSave(formData)
+      // Pass the existing id (if any) so the caller updates rather than inserts —
+      // e.g. re-editing a booking just created in this same modal session.
+      const saved = await onSave(formData, current?.id ?? null)
       if (mode === 'multi-review') {
+        // Attach the source document to each saved booking, then advance.
+        if (saved?.id && stagedFiles.length > 0) {
+          try { await uploadStagedFiles(saved.id, stagedFiles) } catch (e) { toast.error(friendlyError(e)) }
+        }
         const newSaved = savedCount + 1
         setSavedCount(newSaved)
         setSavedIndices(prev => new Set([...prev, currentIndex]))
@@ -63,8 +91,19 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
           toast.success(`Booking saved! (${parsedBookings.length - newSaved} remaining)`)
         }
       } else {
+        // Upload any staged attachments (new bookings) now that we have an id.
+        if (saved?.id && stagedFiles.length > 0) {
+          try { await uploadStagedFiles(saved.id, stagedFiles) } catch (e) { toast.error(friendlyError(e)) }
+        }
+        setStagedFiles([])
         toast.success(isEdit ? 'Booking updated' : 'Booking added')
-        onClose()
+        // Return to the read-only view showing fresh data + attachments.
+        if (saved?.id) {
+          setCurrent(saved)
+          setEditing(false)
+        } else {
+          onClose()
+        }
       }
     } catch (err) {
       toast.error(friendlyError(err))
@@ -100,7 +139,7 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
 
   const handleDelete = async () => {
     try {
-      await onDelete(booking.id)
+      await onDelete((current || booking).id)
       toast.success('Booking deleted')
       onClose()
     } catch (err) {
@@ -108,8 +147,10 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
     }
   }
 
-  const handleParsed = (bookings) => {
+  const handleParsed = (bookings, sourceFile) => {
     setParsedBookings(bookings)
+    // Keep the uploaded document so it's attached to the resulting booking(s).
+    if (sourceFile) setStagedFiles([sourceFile])
     if (bookings.length === 1) {
       setMode('manual')
       toast.success('Booking parsed! Review and save.')
@@ -138,9 +179,26 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
         <div className="bg-white border-b border-outline/30 px-6 py-5 flex items-center justify-between rounded-t-2xl z-10 shrink-0">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-medium text-on-surface">
-                {isEdit ? 'Edit Booking' : mode === 'multi-review' ? `Booking ${currentIndex + 1} of ${parsedBookings.length}` : 'New Booking'}
+              <h2 className="text-xl font-medium text-on-surface truncate max-w-[16rem]">
+                {viewMode
+                  ? (current?.title || 'Booking')
+                  : mode === 'multi-review'
+                  ? `Booking ${currentIndex + 1} of ${parsedBookings.length}`
+                  : current
+                  ? 'Edit Booking'
+                  : 'New Booking'}
               </h2>
+              {viewMode && (
+                <button
+                  onClick={() => setEditing(true)}
+                  className="mat-icon-btn shrink-0"
+                  title="Edit booking"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+              )}
               {mode === 'multi-review' && !treatAsLayover && parsedBookings.length > 1 && (
                 <div className="flex items-center gap-1 ml-2">
                   <button
@@ -160,7 +218,7 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
                 </div>
               )}
             </div>
-            {!isEdit && mode !== 'multi-review' && (
+            {!current && mode !== 'multi-review' && (
               <div className="flex items-center gap-1 mt-2">
                 <button
                   onClick={() => setMode('manual')}
@@ -223,7 +281,7 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
               </div>
               <h3 className="text-lg font-medium text-on-surface mb-2">Delete this booking?</h3>
               <p className="text-sm text-on-surface-variant mb-8">
-                "{booking?.title}" will be permanently removed. This cannot be undone.
+                "{(current || booking)?.title}" will be permanently removed. This cannot be undone.
               </p>
               <div className="flex items-center justify-center gap-3">
                 <button
@@ -240,29 +298,53 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
                 </button>
               </div>
             </div>
-          ) : mode === 'upload' && !isEdit ? (
+          ) : viewMode ? (
+            <div className="space-y-6">
+              <BookingDetails booking={current} />
+              <AttachmentsSection bookingId={current.id} mode="view" />
+            </div>
+          ) : mode === 'upload' && !current ? (
             <UploadBooking trip={tripName} onParsed={handleParsed} />
           ) : mode === 'multi-review' && treatAsLayover ? (
             <LayoverPreview legs={parsedBookings} />
           ) : (
-            <BookingForm
-              key={mode === 'multi-review' ? `parsed-${currentIndex}` : 'form'}
-              booking={currentParsedBooking || booking}
-              onSave={handleSave}
-              onDelete={() => setShowDelete(true)}
-              onCancel={onClose}
-              saving={saving}
-              formRef={formRef}
-              selectedTrip={selectedTrip}
-            />
+            <div className="space-y-6">
+              <BookingForm
+                key={mode === 'multi-review' ? `parsed-${currentIndex}` : 'form'}
+                booking={currentParsedBooking || current}
+                onSave={handleSave}
+                onDelete={() => setShowDelete(true)}
+                onCancel={onClose}
+                saving={saving}
+                formRef={formRef}
+                selectedTrip={selectedTrip}
+              />
+              {mode !== 'multi-review' && (
+                <AttachmentsSection
+                  bookingId={current?.id ?? null}
+                  mode="edit"
+                  stagedFiles={stagedFiles}
+                  setStagedFiles={setStagedFiles}
+                />
+              )}
+            </div>
           )}
         </div>
 
+        {/* View-mode footer */}
+        {viewMode && (
+          <div className="border-t border-outline/20 px-6 py-4 flex items-center justify-end shrink-0 rounded-b-2xl">
+            <button type="button" onClick={onClose} className="mat-btn-outlined">
+              Close
+            </button>
+          </div>
+        )}
+
         {/* Fixed footer */}
-        {!showDelete && !(mode === 'upload' && !isEdit) && (
+        {!viewMode && !showDelete && !(mode === 'upload' && !current) && (
           <div className="border-t border-outline/20 px-6 py-4 flex items-center justify-between shrink-0 rounded-b-2xl">
             <div>
-              {isEdit && (
+              {current && (
                 <button
                   type="button"
                   onClick={() => setShowDelete(true)}
@@ -303,7 +385,7 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
                 >
                   {saving
                     ? 'Saving...'
-                    : isEdit
+                    : current
                     ? 'Update'
                     : mode === 'multi-review'
                     ? savedIndices.has(currentIndex) ? `✓ Saved` : `Save Booking ${currentIndex + 1}`

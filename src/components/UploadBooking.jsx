@@ -48,7 +48,8 @@ export default function UploadBooking({ trip, onParsed }) {
     setError(null)
     try {
       const bookings = await parseBookingFromImage(file, trip)
-      onParsed(bookings)
+      // Pass the original document up so it's attached to the resulting booking(s).
+      onParsed(bookings, file)
     } catch (err) {
       setError(err.message)
       setStatus('error')

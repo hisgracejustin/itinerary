@@ -222,12 +222,9 @@ export default function Calendar() {
           selectedTrip={selectedTrip}
           tripName={tripMeta?.name}
           onClose={() => setModalOpen(false)}
-          onSave={async (data) => {
-            if (editingBooking) {
-              await update(editingBooking.id, data)
-            } else {
-              await add(data)
-            }
+          onSave={async (data, existingId) => {
+            const id = existingId ?? editingBooking?.id
+            return id ? await update(id, data) : await add(data)
           }}
           onDelete={async (id) => {
             await remove(id)
