@@ -1,0 +1,200 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+ * Design tokens (ported from the old tailwind.config.js `theme.extend`).
+ * Tailwind v4 reads these CSS vars to generate utilities: `--color-flight`
+ * → `bg-flight`/`text-flight`, `--shadow-elevation-1` → `shadow-elevation-1`,
+ * `--ease-material` → `ease-material`, etc.
+ * ------------------------------------------------------------------------- */
+@theme {
+  --color-primary: #1a73e8;
+  --color-primary-dark: #1557b0;
+  --color-primary-light: #e8f0fe;
+
+  --color-surface: #ffffff;
+  --color-surface-dim: #f8f9fa;
+  --color-surface-container: #f1f3f4;
+
+  --color-on-surface: #202124;
+  --color-on-surface-variant: #5f6368;
+
+  --color-outline: #dadce0;
+  --color-outline-variant: #e8eaed;
+
+  --color-flight: #1a73e8;
+  --color-train: #0d652d;
+  --color-bus: #0d9488;
+  --color-cruise: #7627bb;
+  --color-hotel: #e37400;
+  --color-activity: #c5221f;
+
+  --font-sans: var(--font-inter), "Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  --radius-2xl: 16px;
+  --radius-3xl: 24px;
+
+  --shadow-elevation-1: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+  --shadow-elevation-2: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 2px 6px 2px rgba(60, 64, 67, 0.15);
+  --shadow-elevation-3: 0 4px 8px 3px rgba(60, 64, 67, 0.15), 0 1px 3px rgba(60, 64, 67, 0.3);
+  --shadow-elevation-4: 0 6px 10px 4px rgba(60, 64, 67, 0.15), 0 2px 3px rgba(60, 64, 67, 0.3);
+
+  --ease-material: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-material-decel: cubic-bezier(0, 0, 0.2, 1);
+  --ease-material-accel: cubic-bezier(0.4, 0, 1, 1);
+}
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Prevent iOS Safari zoom on input focus */
+  @supports (-webkit-touch-callout: none) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+    input[type="date"],
+    input[type="datetime-local"] {
+      min-height: 0;
+      line-height: 1.2;
+    }
+  }
+
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    overscroll-behavior-y: none;
+  }
+
+  html {
+    background: #1a73e8;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: #f8f9fa;
+    color: #202124;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #dadce0;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #bdc1c6;
+  }
+}
+
+@layer components {
+  .mat-press {
+    @apply active:scale-[0.97] transition-transform duration-100;
+  }
+
+  .mat-surface {
+    @apply bg-white rounded-2xl shadow-sm border border-gray-100;
+  }
+
+  .mat-btn-filled {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium
+           bg-primary text-white shadow-md shadow-primary/25
+           hover:shadow-lg hover:shadow-primary/30 hover:bg-primary-dark
+           active:scale-[0.97] transition-all duration-200;
+  }
+
+  .mat-btn-tonal {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium
+           bg-primary/10 text-primary
+           hover:bg-primary/15 active:scale-[0.97] transition-all duration-200;
+  }
+
+  .mat-btn-outlined {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium
+           border border-gray-300 text-gray-700
+           hover:bg-gray-50 hover:border-gray-400 active:scale-[0.97] transition-all duration-200;
+  }
+
+  .mat-icon-btn {
+    @apply p-2 rounded-full text-gray-600 hover:bg-gray-100 active:bg-gray-200
+           transition-colors duration-150;
+  }
+
+  .mat-input {
+    @apply w-full px-4 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+           focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-white
+           transition-all duration-200 placeholder:text-gray-400;
+  }
+
+  .mat-select {
+    @apply px-4 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+           focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-white
+           transition-all duration-200 appearance-none cursor-pointer;
+  }
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scale-in {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.animate-fade-in {
+  animation: fade-in 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.animate-scale-in {
+  animation: scale-in 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.animate-slide-up {
+  animation: slide-up 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}

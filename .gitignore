@@ -8,6 +8,15 @@ node_modules/
 
 # Build output
 dist/
+.next/
+out/
+
+# Local dev DB (PGlite)
+.data/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
 
 # Environment
 .env

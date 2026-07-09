@@ -1,13 +1,27 @@
+"use client"
+
 import { useState, useEffect, useCallback } from 'react'
 import {
-  getBookings,
-  getBooking,
-  createBooking,
-  updateBooking,
-  deleteBooking,
-  getTrips,
-  getTripMeta,
-} from '../lib/bookings'
+  getBookingsAction,
+  getBookingAction,
+  createBookingAction,
+  updateBookingAction,
+  deleteBookingAction,
+  getTripsAction,
+  getTripMetaAction,
+} from '@/actions/bookings'
+import { unwrap } from '@/lib/friendlyError'
+
+// Client wrappers over the Server Actions (return data / throw on error) — the
+// client → "use server" import establishes the RPC boundary so the DB layer
+// never enters the browser bundle.
+const getBookings = async (tripId) => unwrap(await getBookingsAction(tripId ?? null))
+const getBooking = async (id) => unwrap(await getBookingAction(id))
+const createBooking = async (booking) => unwrap(await createBookingAction(booking))
+const updateBooking = async (id, updates) => unwrap(await updateBookingAction(id, updates))
+const deleteBooking = async (id) => unwrap(await deleteBookingAction(id))
+const getTrips = async () => unwrap(await getTripsAction())
+const getTripMeta = async (tripId) => unwrap(await getTripMetaAction(tripId ?? null))
 
 export function useBookings(tripId) {
   const [bookings, setBookings] = useState([])
