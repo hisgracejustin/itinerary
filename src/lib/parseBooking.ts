@@ -7,7 +7,9 @@ const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 /** Extract text from a PDF file using pdf.js (lazy-loaded). */
 async function extractTextFromPDF(file: File): Promise<string> {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+  // Pin the worker URL to the API version so it can never mismatch and so a
+  // version bump busts any HTTP/service-worker cache of the old worker.
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs?v=${pdfjsLib.version}`;
 
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;

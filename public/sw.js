@@ -1,7 +1,7 @@
 // PWA service worker for the Next.js app.
 //  - cache-first for immutable static assets (/_next/static, icon, pdf worker)
 //  - network-first for navigations and /api/* (with an offline fallback)
-const CACHE_NAME = "itinerary-v2";
+const CACHE_NAME = "itinerary-v3";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -17,10 +17,12 @@ self.addEventListener("activate", (event) => {
 });
 
 function isStaticAsset(url) {
+  // NB: the pdf.js worker is intentionally NOT cached here. It has a stable URL
+  // but versioned content, so cache-first would pin a stale worker and break
+  // parsing with an API/Worker version mismatch. It's fetched network-first.
   return (
     url.pathname.startsWith("/_next/static/") ||
     url.pathname === "/icon.png" ||
-    url.pathname === "/pdf.worker.min.mjs" ||
     url.pathname === "/manifest.webmanifest"
   );
 }
