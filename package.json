@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "migrate:supabase": "tsx scripts/migrate-from-supabase.ts"
+    "migrate:supabase": "tsx scripts/migrate-from-supabase.ts",
+    "migrate:supabase:rest": "tsx scripts/migrate-from-supabase-rest.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",
