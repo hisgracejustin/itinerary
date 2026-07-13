@@ -9,6 +9,12 @@ const nextConfig: NextConfig = {
   //  - PGlite (local-dev embedded Postgres) ships wasm assets.
   //  - pg (node-postgres) is the production driver.
   serverExternalPackages: ["@electric-sql/pglite", "pg"],
+  // Serverless (Vercel): dbReady() reads drizzle/meta/_journal.json from the
+  // filesystem at runtime; file tracing can't see fs reads, so include the
+  // migrations folder in every function bundle explicitly.
+  outputFileTracingIncludes: {
+    "/*": ["./drizzle/**/*"],
+  },
 
   ...(process.env.NODE_ENV !== "production" && {
     experimental: {
