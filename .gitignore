@@ -33,6 +33,5 @@ next-env.d.ts
 .DS_Store
 Thumbs.db
 
-# Local Netlify folder
-.netlify
 itinerary-pdf-example.pdf
+*.dump

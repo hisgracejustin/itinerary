@@ -1,10 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Self-hosted Docker (Coolify): emit a minimal traced server + node_modules at
-  // .next/standalone so the runtime image can skip a full `npm install`.
-  output: "standalone",
-
   // Native / wasm packages that must be loaded by Node directly, not bundled:
   //  - PGlite (local-dev embedded Postgres) ships wasm assets.
   //  - pg (node-postgres) is the production driver.

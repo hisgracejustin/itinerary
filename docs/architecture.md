@@ -1,9 +1,10 @@
 # Architecture
 
 A private travel-itinerary app: **Next.js 16 (App Router) + React 19 + TypeScript**,
-**NextAuth v5**, **Drizzle ORM over Postgres**, deployed as a Docker image on
-**Coolify**. It began as a Vite + Supabase SPA and was fully rewritten; this
-document describes the current state.
+**NextAuth v5**, **Drizzle ORM over Postgres**, deployed on **Vercel** with a
+**Neon** (serverless Postgres) database and **Cloudflare** DNS
+(`itinerary.pondlab.app`). It began as a Vite + Supabase SPA and was fully
+rewritten; this document describes the current state.
 
 ## Authentication
 
@@ -92,13 +93,14 @@ src/
 ├── lib/                        # action-utils, authz, schemas, parseBooking, currencies, calendar…
 ├── screens/                    # Calendar, Todos, Costs, BookingsByType (client screens)
 └── types/next-auth.d.ts        # session.user.id augmentation
-drizzle/                        # generated SQL migrations
-scripts/                        # copy-pdf-worker, migrate-from-supabase(-rest)
-Dockerfile                      # standalone runtime + drizzle/ for boot migrations
+drizzle/                        # generated SQL migrations (shipped in the build for boot migrations)
+scripts/                        # copy-pdf-worker
 ```
 
 ## Deployment
 
-Docker (standalone) on Coolify — see the [README](../README.md#deployment-coolify).
-Migrations apply automatically on first request (`dbReady`), and `drizzle/` is
-copied into the runtime image.
+Vercel (Next.js build) with a Neon Postgres database; Cloudflare DNS points
+`itinerary.pondlab.app` at the Vercel deployment — see the
+[README](../README.md#deployment-vercel--neon). Migrations apply automatically on
+first request (`dbReady`); `drizzle/` ships in the build so a cold serverless
+instance self-migrates.

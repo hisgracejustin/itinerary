@@ -5,7 +5,7 @@ import * as schema from "./schema";
 /**
  * Driver switch:
  *  - DATABASE_URL set (postgres://… → node-postgres Pool): production/preview,
- *    pointed at the self-hosted Coolify Postgres.
+ *    pointed at Neon (use the pooled `-pooler` connection string on Vercel).
  *  - No DATABASE_URL: embedded PGlite persisted under .data/pglite — zero-setup
  *    local dev. Migrations are applied automatically on first touch via dbReady().
  */
@@ -36,8 +36,8 @@ export const db: Db = globalThis.__itinDb ?? (globalThis.__itinDb = createDb());
 /**
  * Await before queries. Applies pending migrations from ./drizzle exactly once
  * per process (memoized): node-postgres in production, PGlite in local dev.
- * The static import specifiers let Next trace both migrators into the standalone
- * build, and `drizzle/` is copied into the runtime image (see Dockerfile).
+ * The static import specifiers let Next trace both migrators into the build, and
+ * `drizzle/` ships with it so a cold serverless instance can self-migrate.
  */
 export function dbReady(): Promise<void> {
   if (globalThis.__itinDbReady) return globalThis.__itinDbReady;
