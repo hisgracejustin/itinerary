@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react'
+import { useState, useOptimistic, useTransition } from 'react'
 import { useTripContext } from '../lib/trip-context'
 import { createBooking, updateBooking, deleteBooking, upsertDayNote } from '@/lib/client-actions'
 import MonthView from '../components/MonthView'
@@ -11,11 +11,37 @@ import BookingModal from '../components/BookingModal'
 
 const VIEWS = ['month', 'week', 'day']
 
+// Day notes are props-only (server-rendered), so a plain `await onUpsertDayNote()`
+// then close-the-editor can flash blank for a frame or two: the save resolves
+// before the revalidated RSC payload commits new props. Layer a small optimistic
+// overlay (mirroring useTodoList.js) so the saved/deleted note is reflected the
+// instant the editor closes, then reconciles silently once fresh props land.
+// A day note is unique per (date, trip_id) — in the all-trips view the same date
+// can carry both a tripless note and a trip's note, so the overlay must match the
+// exact slot the server will touch (resolvedTripId), not every note on that date.
+const sameSlot = (n, date, tripId) => n.date === date && (n.trip_id ?? null) === (tripId ?? null)
+
+function dayNoteReducer(state, action) {
+  switch (action.type) {
+    case 'upsert': {
+      const { date, trip_id } = action.note
+      const exists = state.some((n) => sameSlot(n, date, trip_id))
+      if (exists) return state.map((n) => (sameSlot(n, date, trip_id) ? { ...n, ...action.note } : n))
+      return [...state, action.note]
+    }
+    case 'remove':
+      return state.filter((n) => !sameSlot(n, action.date, action.trip_id))
+    default:
+      return state
+  }
+}
+
 export default function Calendar({ initialBookings, initialTodos, initialDayNotes }) {
   const { selectedTrip, tripMeta, onOpenAdd } = useTripContext()
   const bookings = initialBookings
   const todos = initialTodos
-  const dayNotes = initialDayNotes
+  const [dayNotes, applyOptimisticDayNote] = useOptimistic(initialDayNotes, dayNoteReducer)
+  const [, startDayNoteTransition] = useTransition()
 
   const [view, setView] = useState('month')
   // The component is remounted (keyed by trip) on trip change, so the initial
@@ -49,8 +75,24 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   // Register the openAdd handler so the Header's "+" button can call it.
   if (onOpenAdd) onOpenAdd.current = openAddModal
 
-  const handleUpsertDayNote = async ({ date, title, trip_id }) => {
-    await upsertDayNote({ date, title, trip_id: trip_id ?? selectedTrip ?? null })
+  const handleUpsertDayNote = ({ date, title, trip_id }) => {
+    const resolvedTripId = trip_id ?? selectedTrip ?? null
+    const trimmed = title.trim()
+    return new Promise((resolve, reject) => {
+      startDayNoteTransition(async () => {
+        try {
+          if (trimmed) {
+            applyOptimisticDayNote({ type: 'upsert', note: { id: `optimistic-${date}`, date, title: trimmed, trip_id: resolvedTripId } })
+          } else {
+            applyOptimisticDayNote({ type: 'remove', date, trip_id: resolvedTripId })
+          }
+          await upsertDayNote({ date, title, trip_id: resolvedTripId })
+          resolve()
+        } catch (err) {
+          reject(err)
+        }
+      })
+    })
   }
 
   const navigate = (direction) => {

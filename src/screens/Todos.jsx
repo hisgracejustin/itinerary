@@ -34,7 +34,7 @@ export default function Todos({ initialTodos }) {
     // typed text for a retry.
     add(
       { title: newTodo.trim(), trip_id: newTodoTrip || null, due_date: newTodoDate || null },
-      { onSuccess: () => { setNewTodo(''); setNewTodoDate('') } },
+      { onSuccess: () => { setNewTodo(''); setNewTodoDate(''); toast.success('To-do added') } },
     )
   }
 
