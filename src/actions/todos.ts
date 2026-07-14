@@ -1,38 +1,16 @@
 "use server";
 
-import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { db, tables } from "@/db";
-import { requireUser, runAction } from "@/lib/action-utils";
-import { accessibleTripIds, requireTripAccess, WRITE_ROLES } from "@/lib/authz";
+import { runAction } from "@/lib/action-utils";
+import { requireTripAccess, WRITE_ROLES } from "@/lib/authz";
 import { todoInsertSchema, todoUpdateSchema } from "@/lib/schemas";
 
-export async function getTodosAction(tripId?: string | null) {
-  return runAction(async () => {
-    const user = await requireUser();
-    if (tripId) {
-      await requireTripAccess(user.id, tripId);
-      return db
-        .select()
-        .from(tables.todos)
-        .where(eq(tables.todos.trip_id, tripId))
-        .orderBy(asc(tables.todos.due_date), asc(tables.todos.created_at));
-    }
-    // No trip → tripless todos plus todos of any accessible trip.
-    const ids = await accessibleTripIds(user.id);
-    const filter = ids.length
-      ? or(isNull(tables.todos.trip_id), inArray(tables.todos.trip_id, ids))
-      : isNull(tables.todos.trip_id);
-    return db
-      .select()
-      .from(tables.todos)
-      .where(filter)
-      .orderBy(asc(tables.todos.due_date), asc(tables.todos.created_at));
-  });
-}
+const revalidateApp = () => revalidatePath("/", "layout");
 
 export async function createTodoAction(input: unknown) {
-  return runAction(async () => {
-    const user = await requireUser();
+  return runAction(async (user) => {
     const data = todoInsertSchema.parse(input);
     if (data.trip_id) await requireTripAccess(user.id, data.trip_id, WRITE_ROLES);
     const [row] = await db
@@ -45,13 +23,13 @@ export async function createTodoAction(input: unknown) {
         completed: data.completed ?? false,
       })
       .returning();
+    revalidateApp();
     return row;
   });
 }
 
 export async function updateTodoAction(id: string, input: unknown) {
-  return runAction(async () => {
-    const user = await requireUser();
+  return runAction(async (user) => {
     const updates = todoUpdateSchema.parse(input);
     const [existing] = await db
       .select({ trip_id: tables.todos.trip_id })
@@ -65,13 +43,13 @@ export async function updateTodoAction(id: string, input: unknown) {
       .set(updates)
       .where(eq(tables.todos.id, id))
       .returning();
+    revalidateApp();
     return row;
   });
 }
 
 export async function deleteTodoAction(id: string) {
-  return runAction(async () => {
-    const user = await requireUser();
+  return runAction(async (user) => {
     const [existing] = await db
       .select({ trip_id: tables.todos.trip_id })
       .from(tables.todos)
@@ -80,6 +58,7 @@ export async function deleteTodoAction(id: string) {
     if (!existing) return { id };
     if (existing.trip_id) await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     await db.delete(tables.todos).where(eq(tables.todos.id, id));
+    revalidateApp();
     return { id };
   });
 }

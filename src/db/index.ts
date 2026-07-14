@@ -20,7 +20,15 @@ function createDb(): Db {
   const url = process.env.DATABASE_URL;
   if (url && url.startsWith("postgres")) {
     const { Pool } = require("pg");
-    return drizzleNode(new Pool({ connectionString: url }), { schema, casing: "snake_case" });
+    // Serverless-friendly pool: a small cap per warm instance (Neon's pooler
+    // multiplexes across instances) and an idle timeout well under Neon's
+    // autosuspend so we don't hold connections open against a suspended compute.
+    const pool = new Pool({
+      connectionString: url,
+      max: 5,
+      idleTimeoutMillis: 10_000,
+    });
+    return drizzleNode(pool, { schema, casing: "snake_case" });
   }
   // Local dev fallback — persistent embedded Postgres.
   const dir = process.env.PGLITE_DIR ?? ".data/pglite";

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { CURRENCIES, formatCurrency } from '../lib/currencies'
-import { useTrips } from '../hooks/useBookings'
+import { useTripContext } from '../lib/trip-context'
 
 const BOOKING_TYPES = ['flight', 'train', 'bus', 'cruise', 'hotel', 'activity']
 
@@ -69,7 +69,7 @@ function toLocalDatetime(isoString) {
 
 export default function BookingForm({ booking, onSave, onDelete, onCancel, saving, formRef, selectedTrip }) {
   const isEdit = !!booking
-  const { trips } = useTrips()
+  const { trips } = useTripContext()
 
   const [form, setForm] = useState({
     trip_id: selectedTrip || '',

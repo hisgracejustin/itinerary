@@ -1,49 +1,19 @@
 "use server";
 
-import { asc, eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { db, tables } from "@/db";
-import { requireUser, runAction } from "@/lib/action-utils";
-import { accessibleTripIds, requireTripAccess, WRITE_ROLES } from "@/lib/authz";
+import { runAction } from "@/lib/action-utils";
+import { requireTripAccess, WRITE_ROLES } from "@/lib/authz";
 import { bookingInsertSchema, bookingUpdateSchema, tripInsertSchema } from "@/lib/schemas";
 
-export async function getBookingsAction(tripId?: string | null) {
-  return runAction(async () => {
-    const user = await requireUser();
-    if (tripId) {
-      await requireTripAccess(user.id, tripId);
-      return db
-        .select()
-        .from(tables.bookings)
-        .where(eq(tables.bookings.trip_id, tripId))
-        .orderBy(asc(tables.bookings.start_date));
-    }
-    const ids = await accessibleTripIds(user.id);
-    if (ids.length === 0) return [];
-    return db
-      .select()
-      .from(tables.bookings)
-      .where(inArray(tables.bookings.trip_id, ids))
-      .orderBy(asc(tables.bookings.start_date));
-  });
-}
-
-export async function getBookingAction(id: string) {
-  return runAction(async () => {
-    const user = await requireUser();
-    const [booking] = await db
-      .select()
-      .from(tables.bookings)
-      .where(eq(tables.bookings.id, id))
-      .limit(1);
-    if (!booking) throw new Error("Booking not found");
-    await requireTripAccess(user.id, booking.trip_id);
-    return booking;
-  });
-}
+// Reads are done server-side in RSC pages via @/lib/queries; these actions are
+// the write path. Each revalidates the app layout so every screen re-renders
+// from fresh server props.
+const revalidateApp = () => revalidatePath("/", "layout");
 
 export async function createBookingAction(input: unknown) {
-  return runAction(async () => {
-    const user = await requireUser();
+  return runAction(async (user) => {
     const data = bookingInsertSchema.parse(input);
     await requireTripAccess(user.id, data.trip_id, WRITE_ROLES);
     const [row] = await db
@@ -66,13 +36,13 @@ export async function createBookingAction(input: unknown) {
         raw_text: data.raw_text ?? null,
       })
       .returning();
+    revalidateApp();
     return row;
   });
 }
 
 export async function updateBookingAction(id: string, input: unknown) {
-  return runAction(async () => {
-    const user = await requireUser();
+  return runAction(async (user) => {
     const updates = bookingUpdateSchema.parse(input);
     const [existing] = await db
       .select({ trip_id: tables.bookings.trip_id })
@@ -90,13 +60,13 @@ export async function updateBookingAction(id: string, input: unknown) {
       .set(updates)
       .where(eq(tables.bookings.id, id))
       .returning();
+    revalidateApp();
     return row;
   });
 }
 
 export async function deleteBookingAction(id: string) {
-  return runAction(async () => {
-    const user = await requireUser();
+  return runAction(async (user) => {
     const [existing] = await db
       .select({ trip_id: tables.bookings.trip_id })
       .from(tables.bookings)
@@ -105,57 +75,25 @@ export async function deleteBookingAction(id: string) {
     if (!existing) return { id };
     await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     await db.delete(tables.bookings).where(eq(tables.bookings.id, id));
+    revalidateApp();
     return { id };
   });
 }
 
-export async function getTripsAction() {
-  return runAction(async () => {
-    const user = await requireUser();
-    const ids = await accessibleTripIds(user.id);
-    if (ids.length === 0) return [];
-    return db
-      .select({
-        id: tables.trips.id,
-        name: tables.trips.name,
-        start_date: tables.trips.start_date,
-        end_date: tables.trips.end_date,
-      })
-      .from(tables.trips)
-      .where(inArray(tables.trips.id, ids))
-      .orderBy(asc(tables.trips.start_date));
-  });
-}
-
-export async function getTripMetaAction(tripId?: string | null) {
-  return runAction(async () => {
-    const user = await requireUser();
-    if (!tripId) return null;
-    const ids = await accessibleTripIds(user.id);
-    if (!ids.includes(tripId)) return null;
-    const [trip] = await db
-      .select()
-      .from(tables.trips)
-      .where(eq(tables.trips.id, tripId))
-      .limit(1);
-    return trip ?? null;
-  });
-}
-
 export async function createTripAction(input: unknown) {
-  return runAction(async () => {
-    const user = await requireUser();
+  return runAction(async (user) => {
     const data = tripInsertSchema.parse(input);
     const [trip] = await db
       .insert(tables.trips)
       .values({ name: data.name, start_date: data.start_date, end_date: data.end_date })
       .returning();
-    // Auto-assign the creator as owner (replaces the old supabase.auth.getUser() step).
+    // Auto-assign the creator as owner.
     await db.insert(tables.tripMembers).values({
       trip_id: trip.id,
       user_id: user.id,
       role: "owner",
     });
+    revalidateApp();
     return trip;
   });
 }

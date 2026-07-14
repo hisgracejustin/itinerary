@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useTrips } from "../hooks/useBookings";
 import { createTripAction } from "@/actions/bookings";
 import { unwrap } from "@/lib/friendlyError";
 import { signOutAction } from "../actions/auth";
@@ -21,8 +20,12 @@ const BOOKING_TYPES = [
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0";
 
-export default function Sidebar({ user, selectedTrip, onSelectTrip, onNavigate }) {
-  const { trips, loading, refetch } = useTrips();
+/** Keep the selected trip in the URL as we navigate between screens. */
+function hrefWithTrip(path, trip) {
+  return trip ? `${path}?trip=${encodeURIComponent(trip)}` : path;
+}
+
+export default function Sidebar({ user, trips, selectedTrip, onNavigate }) {
   const pathname = usePathname();
   const [showAddTrip, setShowAddTrip] = useState(false);
   const [newTrip, setNewTrip] = useState({ name: "", start_date: "", end_date: "" });
@@ -33,8 +36,9 @@ export default function Sidebar({ user, selectedTrip, onSelectTrip, onNavigate }
     if (!newTrip.name.trim() || !newTrip.start_date || !newTrip.end_date) return;
     setSaving(true);
     try {
+      // createTripAction revalidates the app layout, so the trips list (a server
+      // prop) refreshes on its own — no client refetch needed.
       await createTrip(newTrip);
-      await refetch();
       setNewTrip({ name: "", start_date: "", end_date: "" });
       setShowAddTrip(false);
     } catch (err) {
@@ -44,12 +48,19 @@ export default function Sidebar({ user, selectedTrip, onSelectTrip, onNavigate }
     }
   };
 
+  const tripLinkClass = (active) =>
+    `block w-full text-left px-3 py-2 rounded-full text-sm transition-all duration-150 ${
+      active
+        ? "bg-primary-light text-primary font-medium"
+        : "text-on-surface hover:bg-surface-container"
+    }`;
+
   return (
     <aside className="w-72 bg-white h-full overflow-y-auto shrink-0 border-r border-outline/40 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       {/* Navigation */}
       <nav className="p-3 pt-4">
         <NavItem
-          to="/"
+          to={hrefWithTrip("/", selectedTrip)}
           active={pathname === "/"}
           onClick={onNavigate}
           icon={
@@ -60,7 +71,7 @@ export default function Sidebar({ user, selectedTrip, onSelectTrip, onNavigate }
           label="Calendar"
         />
         <NavItem
-          to="/todos"
+          to={hrefWithTrip("/todos", selectedTrip)}
           active={pathname === "/todos"}
           onClick={onNavigate}
           icon={
@@ -71,7 +82,7 @@ export default function Sidebar({ user, selectedTrip, onSelectTrip, onNavigate }
           label="To-dos"
         />
         <NavItem
-          to="/costs"
+          to={hrefWithTrip("/costs", selectedTrip)}
           active={pathname === "/costs"}
           onClick={onNavigate}
           icon={
@@ -134,41 +145,30 @@ export default function Sidebar({ user, selectedTrip, onSelectTrip, onNavigate }
             </button>
           </form>
         )}
-        {loading ? (
-          <p className="text-xs text-gray-400 px-3 py-2">Loading...</p>
-        ) : (
-          <ul className="space-y-0.5">
-            <li>
-              <button
-                onClick={() => onSelectTrip(null)}
-                className={`w-full text-left px-3 py-2 rounded-full text-sm transition-all duration-150 ${
-                  !selectedTrip
-                    ? "bg-primary-light text-primary font-medium"
-                    : "text-on-surface hover:bg-surface-container"
-                }`}
+        <ul className="space-y-0.5">
+          <li>
+            <Link
+              href={hrefWithTrip(pathname, null)}
+              scroll={false}
+              onClick={onNavigate}
+              className={tripLinkClass(!selectedTrip)}
+            >
+              All Trips
+            </Link>
+          </li>
+          {trips.map((trip) => (
+            <li key={trip.id}>
+              <Link
+                href={hrefWithTrip(pathname, trip.id)}
+                scroll={false}
+                onClick={onNavigate}
+                className={tripLinkClass(selectedTrip === trip.id)}
               >
-                All Trips
-              </button>
+                {trip.name}
+              </Link>
             </li>
-            {trips.map((trip) => {
-              const isActive = selectedTrip === trip.id;
-              return (
-                <li key={trip.id}>
-                  <button
-                    onClick={() => onSelectTrip(trip.id)}
-                    className={`w-full text-left px-3 py-2 rounded-full text-sm transition-all duration-150 ${
-                      isActive
-                        ? "bg-primary-light text-primary font-medium"
-                        : "text-on-surface hover:bg-surface-container"
-                    }`}
-                  >
-                    {trip.name}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+          ))}
+        </ul>
       </div>
 
       <div className="mx-4 border-t border-outline/40" />
@@ -182,7 +182,7 @@ export default function Sidebar({ user, selectedTrip, onSelectTrip, onNavigate }
             return (
               <li key={id}>
                 <Link
-                  href={`/bookings/${id}`}
+                  href={hrefWithTrip(`/bookings/${id}`, selectedTrip)}
                   onClick={onNavigate}
                   className={`flex items-center gap-3 px-3 py-2 rounded-full text-sm transition-all duration-150 ${
                     isActive

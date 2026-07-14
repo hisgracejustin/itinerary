@@ -2,39 +2,40 @@
 
 import { useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
-import { useTodos } from '../hooks/useTodos'
-import { useTrips } from '../hooks/useBookings'
+import { useTodoList } from '../hooks/useTodoList'
 import { friendlyError } from '../lib/friendlyError'
-import Spinner from '../components/Spinner'
 import { useToast } from '../components/Toast'
 
-export default function Todos() {
-  const { selectedTrip, tripMeta } = useTripContext()
-  const { todos, loading, add, toggle, remove } = useTodos(selectedTrip)
-  const { trips } = useTrips()
+export default function Todos({ initialTodos }) {
+  const { selectedTrip, tripMeta, trips } = useTripContext()
   const { toast } = useToast()
+  const { todos, add, toggle, remove } = useTodoList(initialTodos, {
+    onError: (err) => toast.error(friendlyError(err)),
+  })
   const [newTodo, setNewTodo] = useState('')
   const [newTodoDate, setNewTodoDate] = useState('')
   const [newTodoTrip, setNewTodoTrip] = useState(selectedTrip || '')
 
-  const incompleteTodos = todos.filter((t) => !t.completed)
-  const completedTodos = todos.filter((t) => t.completed)
+  // Match the server ordering (due_date asc, nulls last) so an optimistically
+  // added todo lands in place instead of appearing at the bottom then jumping.
+  const byDue = (a, b) => {
+    if (!a.due_date && !b.due_date) return 0
+    if (!a.due_date) return 1
+    if (!b.due_date) return -1
+    return a.due_date.localeCompare(b.due_date)
+  }
+  const incompleteTodos = todos.filter((t) => !t.completed).sort(byDue)
+  const completedTodos = todos.filter((t) => t.completed).sort(byDue)
 
-  const handleAdd = async (e) => {
+  const handleAdd = (e) => {
     e.preventDefault()
     if (!newTodo.trim()) return
-    try {
-      await add({
-        title: newTodo.trim(),
-        trip_id: newTodoTrip || null,
-        due_date: newTodoDate || null,
-      })
-      setNewTodo('')
-      setNewTodoDate('')
-      toast.success('To-do added')
-    } catch (err) {
-      toast.error(friendlyError(err))
-    }
+    // Clear only on success so a failed add (offline / no permission) keeps the
+    // typed text for a retry.
+    add(
+      { title: newTodo.trim(), trip_id: newTodoTrip || null, due_date: newTodoDate || null },
+      { onSuccess: () => { setNewTodo(''); setNewTodoDate('') } },
+    )
   }
 
   return (
@@ -84,12 +85,7 @@ export default function Todos() {
 
       {/* Todo list */}
       <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-12 gap-3">
-            <Spinner />
-            <span className="text-sm text-on-surface-variant">Loading to-dos...</span>
-          </div>
-        ) : todos.length === 0 ? (
+        {todos.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant">
             <div className="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center mb-4">
               <svg className="w-8 h-8 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -124,7 +120,7 @@ export default function Todos() {
 function TodoItem({ todo, onToggle, onRemove }) {
   return (
     <div className={`flex items-start gap-3 p-3.5 rounded-xl bg-white border border-outline/20 hover:shadow-elevation-1 transition-all duration-150 group ${
-      todo.completed ? 'opacity-50' : ''
+      todo.completed ? 'opacity-50' : todo._pending ? 'opacity-60' : ''
     }`}>
       <input
         type="checkbox"

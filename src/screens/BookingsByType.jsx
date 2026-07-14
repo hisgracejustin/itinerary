@@ -1,12 +1,11 @@
 "use client";
 
-import { useBookings } from '../hooks/useBookings'
+import { useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
+import { updateBooking, deleteBooking } from '@/lib/client-actions'
 import BookingCard from '../components/BookingCard'
 import BookingModal from '../components/BookingModal'
-import { useState } from 'react'
 import { TYPE_ICONS } from '../lib/calendar'
-import Spinner from '../components/Spinner'
 
 const TYPE_LABELS = {
   flight: 'Flights',
@@ -17,9 +16,8 @@ const TYPE_LABELS = {
   activity: 'Activities',
 }
 
-export default function BookingsByType({ type }) {
+export default function BookingsByType({ type, bookings }) {
   const { selectedTrip, tripMeta } = useTripContext()
-  const { bookings, loading, update, remove } = useBookings(selectedTrip)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState(null)
 
@@ -47,12 +45,7 @@ export default function BookingsByType({ type }) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-12 gap-3">
-            <Spinner />
-            <span className="text-sm text-on-surface-variant">Loading...</span>
-          </div>
-        ) : filtered.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant">
             <div className="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center mb-4">
               <span className="text-2xl">{icon}</span>
@@ -80,10 +73,10 @@ export default function BookingsByType({ type }) {
           onClose={() => setModalOpen(false)}
           onSave={async (data, existingId) => {
             const id = existingId ?? editingBooking?.id
-            if (id) return await update(id, data)
+            if (id) return await updateBooking(id, data)
           }}
           onDelete={async (id) => {
-            await remove(id)
+            await deleteBooking(id)
           }}
         />
       )}

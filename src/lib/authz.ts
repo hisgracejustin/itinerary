@@ -26,12 +26,3 @@ export async function requireTripAccess(
   if (!member || !roles.includes(member.role)) throw new Error("Forbidden");
   return member;
 }
-
-/** All trip ids the user can see (RLS `SELECT` equivalent). */
-export async function accessibleTripIds(userId: string): Promise<string[]> {
-  const rows = await db
-    .select({ trip_id: tables.tripMembers.trip_id })
-    .from(tables.tripMembers)
-    .where(eq(tables.tripMembers.user_id, userId));
-  return rows.map((r) => r.trip_id);
-}

@@ -12,8 +12,13 @@ const nextConfig: NextConfig = {
     "/*": ["./drizzle/**/*"],
   },
 
-  ...(process.env.NODE_ENV !== "production" && {
-    experimental: {
+  experimental: {
+    // Keep dynamic route segments in the client Router Cache for 30s, so
+    // re-selecting a recently viewed trip (?trip=…) renders instantly from
+    // cache. Mutations purge it via revalidatePath("/", "layout").
+    staleTimes: { dynamic: 30 },
+
+    ...(process.env.NODE_ENV !== "production" && {
       serverActions: {
         // Dev-only: devcontainer / port-forward proxies rewrite the Origin, so
         // Server Actions otherwise fail CSRF with "Invalid Server Actions request".
@@ -24,8 +29,8 @@ const nextConfig: NextConfig = {
           "*.app.github.dev",
         ],
       },
-    },
-  }),
+    }),
+  },
 };
 
 export default nextConfig;

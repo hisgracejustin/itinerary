@@ -1,11 +1,20 @@
 "use client";
 
 import { createContext, useContext, type MutableRefObject } from "react";
-import type { Trip } from "@/db/schema";
+
+/** The trip fields the shell + screens actually read (matches getTripsForUser). */
+export type TripSummary = {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+};
 
 export type TripContextValue = {
   selectedTrip: string | null;
-  tripMeta: Trip | null;
+  tripMeta: TripSummary | null;
+  /** All the user's trips (from the layout) — for pickers that need the full list. */
+  trips: TripSummary[];
   /** Calendar registers its "open add booking" handler here; Header calls it. */
   onOpenAdd: MutableRefObject<(() => void) | null>;
 };

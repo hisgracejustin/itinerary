@@ -1,29 +1,29 @@
 "use client";
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
-import { useBookings } from '../hooks/useBookings'
-import { useTodos } from '../hooks/useTodos'
-import { useDayNotes } from '../hooks/useDayNotes'
+import { createBooking, updateBooking, deleteBooking, upsertDayNote } from '@/lib/client-actions'
 import MonthView from '../components/MonthView'
 import MobileMonthView from '../components/MobileMonthView'
 import WeekView from '../components/WeekView'
 import DayView from '../components/DayView'
 import BookingModal from '../components/BookingModal'
-import Spinner from '../components/Spinner'
-import { useToast } from '../components/Toast'
 
 const VIEWS = ['month', 'week', 'day']
 
-export default function Calendar() {
+export default function Calendar({ initialBookings, initialTodos, initialDayNotes }) {
   const { selectedTrip, tripMeta, onOpenAdd } = useTripContext()
+  const bookings = initialBookings
+  const todos = initialTodos
+  const dayNotes = initialDayNotes
+
   const [view, setView] = useState('month')
-  const [currentDate, setCurrentDate] = useState(new Date())
+  // The component is remounted (keyed by trip) on trip change, so the initial
+  // month is derived once here — jumping to the trip's start, or today otherwise.
+  const [currentDate, setCurrentDate] = useState(() =>
+    tripMeta?.start_date ? new Date(tripMeta.start_date + 'T00:00:00') : new Date()
+  )
   const [calendarCollapsed, setCalendarCollapsed] = useState(false)
-  const { bookings, loading, error, add, update, remove } = useBookings(selectedTrip)
-  const { todos } = useTodos(selectedTrip)
-  const { dayNotes, upsert: upsertDayNote } = useDayNotes(selectedTrip)
-  const { toast } = useToast()
   const [modalOpen, setModalOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState(null)
 
@@ -36,22 +36,6 @@ export default function Calendar() {
     }
   }
 
-  // Show toast when error occurs
-  useEffect(() => {
-    if (error) toast.error('Failed to load bookings: ' + error)
-  }, [error])
-
-  // Jump to the trip's start month when a trip is selected, or today when deselected
-  useEffect(() => {
-    if (tripMeta?.start_date) {
-      setCurrentDate(new Date(tripMeta.start_date + 'T00:00:00'))
-    } else {
-      setCurrentDate(new Date())
-    }
-  }, [selectedTrip, tripMeta])
-
-  // Expose open-add to Layout via ref-like pattern
-  // Layout calls onOpenAdd which sets this
   const openAddModal = () => {
     setEditingBooking(null)
     setModalOpen(true)
@@ -62,8 +46,12 @@ export default function Calendar() {
     setModalOpen(true)
   }
 
-  // Register the openAdd handler so Header can call it
+  // Register the openAdd handler so the Header's "+" button can call it.
   if (onOpenAdd) onOpenAdd.current = openAddModal
+
+  const handleUpsertDayNote = async ({ date, title, trip_id }) => {
+    await upsertDayNote({ date, title, trip_id: trip_id ?? selectedTrip ?? null })
+  }
 
   const navigate = (direction) => {
     const d = new Date(currentDate)
@@ -149,73 +137,56 @@ export default function Calendar() {
       </div>
 
       <div className="flex-1 mat-surface overflow-hidden">
-        {loading ? (
-          <div className="h-full flex flex-col items-center justify-center gap-3">
-            <Spinner size="lg" />
-            <span className="text-sm text-on-surface-variant">Loading bookings...</span>
-          </div>
-        ) : error ? (
-          <div className="h-full flex flex-col items-center justify-center gap-3">
-            <svg className="w-8 h-8 text-red-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-sm text-red-500">Failed to load bookings</span>
-            <p className="text-xs text-on-surface-variant">{error}</p>
-          </div>
-        ) : (
+        {view === 'month' && (
           <>
-            {view === 'month' && (
-              <>
-                {/* Desktop: full month grid */}
-                <div className="hidden sm:block h-full">
-                  <MonthView
-                    currentDate={currentDate}
-                    bookings={bookings}
-                    todos={todos}
-                    dayNotes={dayNotes}
-                    tripMeta={tripMeta}
-                    selectedTrip={selectedTrip}
-                    onSelectDate={handleSelectDate}
-                    onBookingClick={openEditModal}
-                    onUpsertDayNote={upsertDayNote}
-                  />
-                </div>
-                {/* Mobile: compact calendar + agenda */}
-                <div className="sm:hidden h-full">
-                  <MobileMonthView
-                    currentDate={currentDate}
-                    bookings={bookings}
-                    todos={todos}
-                    dayNotes={dayNotes}
-                    tripMeta={tripMeta}
-                    selectedTrip={selectedTrip}
-                    onSelectDate={handleSelectDate}
-                    onDayHighlight={(date) => setCurrentDate(date)}
-                    onBookingClick={openEditModal}
-                    onUpsertDayNote={upsertDayNote}
-                    collapsed={calendarCollapsed}
-                    onCollapsedChange={setCalendarCollapsed}
-                  />
-                </div>
-              </>
-            )}
-            {view === 'week' && (
-              <WeekView
-                currentDate={currentDate}
-                bookings={bookings}
-                onSelectDate={handleSelectDate}
-                onBookingClick={openEditModal}
-              />
-            )}
-            {view === 'day' && (
-              <DayView
+            {/* Desktop: full month grid */}
+            <div className="hidden sm:block h-full">
+              <MonthView
                 currentDate={currentDate}
                 bookings={bookings}
                 todos={todos}
+                dayNotes={dayNotes}
+                tripMeta={tripMeta}
+                selectedTrip={selectedTrip}
+                onSelectDate={handleSelectDate}
                 onBookingClick={openEditModal}
+                onUpsertDayNote={handleUpsertDayNote}
               />
-            )}
+            </div>
+            {/* Mobile: compact calendar + agenda */}
+            <div className="sm:hidden h-full">
+              <MobileMonthView
+                currentDate={currentDate}
+                bookings={bookings}
+                todos={todos}
+                dayNotes={dayNotes}
+                tripMeta={tripMeta}
+                selectedTrip={selectedTrip}
+                onSelectDate={handleSelectDate}
+                onDayHighlight={(date) => setCurrentDate(date)}
+                onBookingClick={openEditModal}
+                onUpsertDayNote={handleUpsertDayNote}
+                collapsed={calendarCollapsed}
+                onCollapsedChange={setCalendarCollapsed}
+              />
+            </div>
           </>
+        )}
+        {view === 'week' && (
+          <WeekView
+            currentDate={currentDate}
+            bookings={bookings}
+            onSelectDate={handleSelectDate}
+            onBookingClick={openEditModal}
+          />
+        )}
+        {view === 'day' && (
+          <DayView
+            currentDate={currentDate}
+            bookings={bookings}
+            todos={todos}
+            onBookingClick={openEditModal}
+          />
         )}
       </div>
 
@@ -227,10 +198,10 @@ export default function Calendar() {
           onClose={() => setModalOpen(false)}
           onSave={async (data, existingId) => {
             const id = existingId ?? editingBooking?.id
-            return id ? await update(id, data) : await add(data)
+            return id ? await updateBooking(id, data) : await createBooking(data)
           }}
           onDelete={async (id) => {
-            await remove(id)
+            await deleteBooking(id)
           }}
         />
       )}

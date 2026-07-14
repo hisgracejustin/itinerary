@@ -1,37 +1,16 @@
 "use server";
 
-import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { db, tables } from "@/db";
-import { requireUser, runAction } from "@/lib/action-utils";
-import { accessibleTripIds, requireTripAccess, WRITE_ROLES } from "@/lib/authz";
+import { runAction } from "@/lib/action-utils";
+import { requireTripAccess, WRITE_ROLES } from "@/lib/authz";
 import { dayNoteUpsertSchema } from "@/lib/schemas";
 
-export async function getDayNotesAction(tripId?: string | null) {
-  return runAction(async () => {
-    const user = await requireUser();
-    if (tripId) {
-      await requireTripAccess(user.id, tripId);
-      return db
-        .select()
-        .from(tables.dayNotes)
-        .where(eq(tables.dayNotes.trip_id, tripId))
-        .orderBy(asc(tables.dayNotes.date));
-    }
-    const ids = await accessibleTripIds(user.id);
-    const filter = ids.length
-      ? or(isNull(tables.dayNotes.trip_id), inArray(tables.dayNotes.trip_id, ids))
-      : isNull(tables.dayNotes.trip_id);
-    return db
-      .select()
-      .from(tables.dayNotes)
-      .where(filter)
-      .orderBy(asc(tables.dayNotes.date));
-  });
-}
+const revalidateApp = () => revalidatePath("/", "layout");
 
 export async function upsertDayNoteAction(input: unknown) {
-  return runAction(async () => {
-    const user = await requireUser();
+  return runAction(async (user) => {
     const { date, title, trip_id } = dayNoteUpsertSchema.parse(input);
     if (trip_id) await requireTripAccess(user.id, trip_id, WRITE_ROLES);
 
@@ -43,6 +22,7 @@ export async function upsertDayNoteAction(input: unknown) {
     // Empty title deletes the note.
     if (!title.trim()) {
       if (existing) await db.delete(tables.dayNotes).where(eq(tables.dayNotes.id, existing.id));
+      revalidateApp();
       return null;
     }
 
@@ -52,6 +32,7 @@ export async function upsertDayNoteAction(input: unknown) {
         .set({ title: title.trim() })
         .where(eq(tables.dayNotes.id, existing.id))
         .returning();
+      revalidateApp();
       return row;
     }
     const [row] = await db
@@ -63,13 +44,13 @@ export async function upsertDayNoteAction(input: unknown) {
         trip_id: trip_id ?? null,
       })
       .returning();
+    revalidateApp();
     return row;
   });
 }
 
 export async function deleteDayNoteAction(id: string) {
-  return runAction(async () => {
-    const user = await requireUser();
+  return runAction(async (user) => {
     const [existing] = await db
       .select({ trip_id: tables.dayNotes.trip_id })
       .from(tables.dayNotes)
@@ -78,6 +59,7 @@ export async function deleteDayNoteAction(id: string) {
     if (!existing) return { id };
     if (existing.trip_id) await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     await db.delete(tables.dayNotes).where(eq(tables.dayNotes.id, id));
+    revalidateApp();
     return { id };
   });
 }

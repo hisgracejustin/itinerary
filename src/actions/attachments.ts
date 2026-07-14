@@ -2,7 +2,7 @@
 
 import { asc, eq } from "drizzle-orm";
 import { db, tables } from "@/db";
-import { requireUser, runAction } from "@/lib/action-utils";
+import { runAction } from "@/lib/action-utils";
 import { requireTripAccess } from "@/lib/authz";
 
 /**
@@ -11,8 +11,7 @@ import { requireTripAccess } from "@/lib/authz";
  * membership of the booking's trip, mirroring getBookingAction.
  */
 export async function getBookingAttachmentsAction(bookingId: string) {
-  return runAction(async () => {
-    const user = await requireUser();
+  return runAction(async (user) => {
     const [booking] = await db
       .select({ trip_id: tables.bookings.trip_id })
       .from(tables.bookings)

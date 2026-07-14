@@ -1,14 +1,11 @@
 "use client";
 
-import { useBookings } from '../hooks/useBookings'
 import { useTripContext } from '../lib/trip-context'
-import { toHKD, formatCurrency, CURRENCIES } from '../lib/currencies'
+import { toHKD, formatCurrency } from '../lib/currencies'
 import { TYPE_ICONS } from '../lib/calendar'
-import Spinner from '../components/Spinner'
 
-export default function Costs() {
-  const { selectedTrip, tripMeta } = useTripContext()
-  const { bookings, loading } = useBookings(selectedTrip)
+export default function Costs({ bookings }) {
+  const { tripMeta } = useTripContext()
 
   // Only bookings with costs
   const withCosts = bookings.filter((b) => b.cost_amount && b.cost_currency)
@@ -44,12 +41,7 @@ export default function Costs() {
         )}
       </div>
 
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-12 gap-3">
-          <Spinner />
-          <span className="text-sm text-on-surface-variant">Loading costs...</span>
-        </div>
-      ) : withCosts.length === 0 ? (
+      {withCosts.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant">
           <div className="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center mb-4">
             <span className="text-2xl">💰</span>

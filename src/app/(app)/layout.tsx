@@ -1,15 +1,19 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { requirePageUser } from "@/lib/page-auth";
+import { getTripsForUser } from "@/lib/queries";
 import { AppShell } from "@/components/AppShell";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const sessionUser = await requirePageUser();
+  const trips = await getTripsForUser(sessionUser.id);
 
   const user = {
-    email: session.user.email ?? "",
-    name: session.user.name ?? null,
+    email: sessionUser.email ?? "",
+    name: sessionUser.name ?? null,
   };
 
-  return <AppShell user={user}>{children}</AppShell>;
+  return (
+    <AppShell user={user} trips={trips}>
+      {children}
+    </AppShell>
+  );
 }
