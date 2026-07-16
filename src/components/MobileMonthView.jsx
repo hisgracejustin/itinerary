@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react'
 import { getMonthGrid, getBookingsForDate, isSameDay, TYPE_COLORS, TYPE_ICONS, formatTime, hasOvernightCoverage } from '../lib/calendar'
 import BookingCard from './BookingCard'
+import DayReminders from './DayReminders'
 
 const DAY_NAMES = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
@@ -12,7 +13,7 @@ function toLocalDateStr(date) {
   return `${y}-${m}-${d}`
 }
 
-export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], tripMeta, selectedTrip, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, collapsed = false, onCollapsedChange }) {
+export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, selectedTrip, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, collapsed = false, onCollapsedChange }) {
   // Default: if trip selected → first day of trip, else today
   const getDefaultDay = useCallback(() => {
     if (selectedTrip && tripMeta?.start_date) {
@@ -195,9 +196,10 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
     const dayTodos = getTodosForDate(d)
     const dateStr = toLocalDateStr(d)
     const hasDayNote = dayNotes.some((n) => n.date === dateStr)
+    const hasReminder = dayReminders.some((r) => r.date === dateStr)
     const showDay = tripMeta?.start_date
       ? true
-      : (dayBookings.length > 0 || dayTodos.length > 0 || hasDayNote || d.getTime() === new Date(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate()).getTime())
+      : (dayBookings.length > 0 || dayTodos.length > 0 || hasDayNote || hasReminder || d.getTime() === new Date(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate()).getTime())
     if (showDay) {
       agendaDays.push({ date: new Date(d), bookings: dayBookings, todos: dayTodos })
     }
@@ -664,6 +666,20 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                     }).map((booking) => (
                       <AgendaItem key={booking.id} booking={booking} displayDate={date} onClick={onBookingClick} />
                     ))}
+                  </div>
+                )}
+
+                {onAddReminder && (
+                  <div className="mt-2">
+                    <DayReminders
+                      reminders={dayReminders.filter((r) => r.date === dateStr)}
+                      date={dateStr}
+                      tripId={selectedTrip ?? null}
+                      onAdd={onAddReminder}
+                      onEdit={onEditReminder}
+                      onRemove={onRemoveReminder}
+                      variant="agenda"
+                    />
                   </div>
                 )}
               </div>

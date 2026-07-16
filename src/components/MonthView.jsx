@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { getMonthGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, TYPE_ICONS } from '../lib/calendar'
 import BookingChip from './BookingChip'
 import BookingCard from './BookingCard'
+import DayReminders from './DayReminders'
 import useMediaQuery from '../hooks/useMediaQuery'
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -39,7 +40,7 @@ function sortBookingsForDay(dayBookings, day) {
   })
 }
 
-export default function MonthView({ currentDate, days: propDays, bookings, todos = [], dayNotes = [], tripMeta, selectedTrip, onSelectDate, onBookingClick, onUpsertDayNote }) {
+export default function MonthView({ currentDate, days: propDays, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, selectedTrip, onSelectDate, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder }) {
   // Wide desktop → show the agenda side panel and select-a-day inline; below that
   // width the panel is hidden and clicking a day navigates to the Day view.
   const isWide = useMediaQuery('(min-width: 1024px)')
@@ -221,6 +222,20 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
                       {dayNote.title}
                     </button>
                   ) : null}
+
+                  {onAddReminder && (
+                    <div className="mb-1">
+                      <DayReminders
+                        reminders={dayReminders.filter((r) => r.date === dateStr)}
+                        date={dateStr}
+                        tripId={selectedTrip ?? null}
+                        onAdd={onAddReminder}
+                        onEdit={onEditReminder}
+                        onRemove={onRemoveReminder}
+                        variant="cell"
+                      />
+                    </div>
+                  )}
 
                   <div className="space-y-0.5">
                     {/* Hotel mid-stay chips */}
@@ -427,8 +442,13 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
             bookings={bookings}
             todos={todos}
             dayNotes={dayNotes}
+            dayReminders={dayReminders}
+            selectedTrip={selectedTrip}
             onBookingClick={onBookingClick}
             onUpsertDayNote={onUpsertDayNote}
+            onAddReminder={onAddReminder}
+            onEditReminder={onEditReminder}
+            onRemoveReminder={onRemoveReminder}
             onOpenDay={() => onSelectDate(selectedDay)}
           />
         </aside>
@@ -438,12 +458,13 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
 }
 
 /** Rich schedule for the selected day — the desktop equivalent of the mobile agenda. */
-function AgendaPanel({ day, bookings, todos, dayNotes, onBookingClick, onUpsertDayNote, onOpenDay }) {
+function AgendaPanel({ day, bookings, todos, dayNotes, dayReminders = [], selectedTrip, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onOpenDay }) {
   const [editingNote, setEditingNote] = useState(false)
   const [noteText, setNoteText] = useState('')
 
   const dateStr = toLocalDateStr(day)
   const dayNote = dayNotes.find((n) => n.date === dateStr)
+  const dayRems = dayReminders.filter((r) => r.date === dateStr)
   const dayBookings = sortBookingsForDay(getBookingsForDate(bookings, day), day)
   const dayTodos = todos.filter((t) => t.due_date && isSameDay(new Date(t.due_date + 'T00:00:00'), day))
   const isToday = isSameDay(day, new Date())
@@ -512,6 +533,18 @@ function AgendaPanel({ day, bookings, todos, dayNotes, onBookingClick, onUpsertD
 
       {/* Body */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+        {onAddReminder && (
+          <DayReminders
+            reminders={dayRems}
+            date={dateStr}
+            tripId={selectedTrip ?? null}
+            onAdd={onAddReminder}
+            onEdit={onEditReminder}
+            onRemove={onRemoveReminder}
+            variant="panel"
+          />
+        )}
+
         {dayTodos.length > 0 && (
           <div>
             <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">To-dos</div>
@@ -533,7 +566,7 @@ function AgendaPanel({ day, bookings, todos, dayNotes, onBookingClick, onUpsertD
         )}
 
         {dayBookings.length === 0 ? (
-          dayTodos.length === 0 && (
+          dayTodos.length === 0 && dayRems.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-on-surface-variant">
               <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center mb-3">
                 <svg className="w-6 h-6 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">

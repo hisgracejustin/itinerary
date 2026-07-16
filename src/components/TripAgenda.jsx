@@ -1,5 +1,6 @@
 import { getBookingsForDate, isSameDay } from '../lib/calendar'
 import BookingCard from './BookingCard'
+import DayReminders from './DayReminders'
 
 // Timezone-safe local date string (YYYY-MM-DD) — matches the calendar views.
 function toLocalDateStr(date) {
@@ -15,7 +16,7 @@ function toLocalDateStr(date) {
  * a due to-do, or a day note), reusing BookingCard so it matches the calendar's
  * day detail. Empty days are skipped to keep the list tight.
  */
-export default function TripAgenda({ tripStart, tripEnd, bookings, todos = [], dayNotes = [], onBookingClick }) {
+export default function TripAgenda({ tripStart, tripEnd, bookings, todos = [], dayNotes = [], dayReminders = [], selectedTrip, onBookingClick, onAddReminder, onEditReminder, onRemoveReminder }) {
   const today = new Date()
   const days = []
   for (let d = new Date(tripStart); d <= tripEnd; d.setDate(d.getDate() + 1)) {
@@ -32,9 +33,10 @@ export default function TripAgenda({ tripStart, tripEnd, bookings, todos = [], d
         (t) => t.due_date && isSameDay(new Date(t.due_date + 'T00:00:00'), day),
       )
       const dayNote = dayNotes.find((n) => n.date === dateStr)
-      return { day, dateStr, dayBookings, dayTodos, dayNote }
+      const dayRems = dayReminders.filter((r) => r.date === dateStr)
+      return { day, dateStr, dayBookings, dayTodos, dayNote, dayRems }
     })
-    .filter((s) => s.dayBookings.length || s.dayTodos.length || s.dayNote)
+    .filter((s) => s.dayBookings.length || s.dayTodos.length || s.dayNote || s.dayRems.length)
 
   return (
     <div className="h-full overflow-y-auto px-3 py-4 space-y-5">
@@ -43,7 +45,7 @@ export default function TripAgenda({ tripStart, tripEnd, bookings, todos = [], d
           <p className="text-sm font-medium">Nothing planned yet</p>
         </div>
       ) : (
-        sections.map(({ day, dateStr, dayBookings, dayTodos, dayNote }) => {
+        sections.map(({ day, dateStr, dayBookings, dayTodos, dayNote, dayRems }) => {
           const isToday = isSameDay(day, today)
           return (
             <section key={dateStr}>
@@ -87,6 +89,20 @@ export default function TripAgenda({ tripStart, tripEnd, bookings, todos = [], d
                   />
                 ))}
               </div>
+
+              {onAddReminder && (
+                <div className="mt-2">
+                  <DayReminders
+                    reminders={dayRems}
+                    date={dateStr}
+                    tripId={selectedTrip ?? null}
+                    onAdd={onAddReminder}
+                    onEdit={onEditReminder}
+                    onRemove={onRemoveReminder}
+                    variant="agenda"
+                  />
+                </div>
+              )}
             </section>
           )
         })

@@ -46,6 +46,20 @@ export const dayNoteUpsertSchema = z.object({
   trip_id: z.string().uuid().nullish(),
 });
 
+// Per-day free-form reminders (a list per day, distinct from the day title).
+const timeField = z.string().regex(/^\d{2}:\d{2}$/, "Expected HH:MM").nullish();
+export const dayReminderInsertSchema = z.object({
+  id: z.string().optional(),
+  date: z.string().min(1),
+  trip_id: z.string().uuid().nullish(),
+  text: z.string().min(1),
+  time: timeField,
+});
+export const dayReminderUpdateSchema = z.object({
+  text: z.string().min(1).optional(),
+  time: timeField,
+});
+
 export const tripInsertSchema = z.object({
   name: z.string().min(1),
   start_date: z.string().min(1),

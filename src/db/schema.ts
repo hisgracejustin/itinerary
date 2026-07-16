@@ -205,6 +205,25 @@ export const dayNotes = pgTable(
   ],
 );
 
+// Free-form per-day notes/reminders — a list of items per (date, trip), distinct
+// from the single day_notes.title label. Each carries text and an optional time
+// (e.g. "be in Oakhurst by 5pm"). Many per day, unlike day_notes.
+export const dayReminders = pgTable(
+  "day_reminders",
+  {
+    id: text("id").primaryKey(),
+    date: text("date").notNull(),
+    trip_id: uuid("trip_id").references(() => trips.id, { onDelete: "set null" }),
+    text: text("text").notNull(),
+    time: text("time"), // optional "HH:MM" (24h); null = untimed
+    created_at: createdAt(),
+  },
+  (t) => [
+    index("idx_day_reminders_date").on(t.date),
+    index("idx_day_reminders_trip_id").on(t.trip_id),
+  ],
+);
+
 /* -------------------------------- relations -------------------------------- */
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -216,6 +235,7 @@ export const tripsRelations = relations(trips, ({ many }) => ({
   bookings: many(bookings),
   todos: many(todos),
   dayNotes: many(dayNotes),
+  dayReminders: many(dayReminders),
 }));
 
 export const tripMembersRelations = relations(tripMembers, ({ one }) => ({
@@ -247,6 +267,10 @@ export const dayNotesRelations = relations(dayNotes, ({ one }) => ({
   trip: one(trips, { fields: [dayNotes.trip_id], references: [trips.id] }),
 }));
 
+export const dayRemindersRelations = relations(dayReminders, ({ one }) => ({
+  trip: one(trips, { fields: [dayReminders.trip_id], references: [trips.id] }),
+}));
+
 /* ---------------------------------- types ---------------------------------- */
 
 export type TripRole = (typeof tripRole.enumValues)[number];
@@ -259,3 +283,5 @@ export type NewBookingAttachment = typeof bookingAttachments.$inferInsert;
 export type Todo = typeof todos.$inferSelect;
 export type NewTodo = typeof todos.$inferInsert;
 export type DayNote = typeof dayNotes.$inferSelect;
+export type DayReminder = typeof dayReminders.$inferSelect;
+export type NewDayReminder = typeof dayReminders.$inferInsert;

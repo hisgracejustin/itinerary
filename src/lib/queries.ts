@@ -1,4 +1,4 @@
-import { and, asc, eq, getTableColumns, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db, tables } from "@/db";
 
 /**
@@ -127,4 +127,41 @@ export function getDayNotesForUser(userId: string, tripId?: string | null) {
     )
     .where(or(isNull(tables.dayNotes.trip_id), isNotNull(tables.tripMembers.user_id)))
     .orderBy(asc(tables.dayNotes.date));
+}
+
+const dayReminderCols = getTableColumns(tables.dayReminders);
+
+/** Per-day reminders, ordered by date then time (untimed last), then insertion. */
+export function getDayRemindersForUser(userId: string, tripId?: string | null) {
+  const order = [
+    asc(tables.dayReminders.date),
+    sql`${tables.dayReminders.time} asc nulls last`,
+    asc(tables.dayReminders.created_at),
+  ];
+  if (tripId) {
+    return db
+      .select(dayReminderCols)
+      .from(tables.dayReminders)
+      .innerJoin(
+        tables.tripMembers,
+        and(
+          eq(tables.tripMembers.trip_id, tables.dayReminders.trip_id),
+          eq(tables.tripMembers.user_id, userId),
+        ),
+      )
+      .where(eq(tables.dayReminders.trip_id, tripId))
+      .orderBy(...order);
+  }
+  return db
+    .select(dayReminderCols)
+    .from(tables.dayReminders)
+    .leftJoin(
+      tables.tripMembers,
+      and(
+        eq(tables.tripMembers.trip_id, tables.dayReminders.trip_id),
+        eq(tables.tripMembers.user_id, userId),
+      ),
+    )
+    .where(or(isNull(tables.dayReminders.trip_id), isNotNull(tables.tripMembers.user_id)))
+    .orderBy(...order);
 }

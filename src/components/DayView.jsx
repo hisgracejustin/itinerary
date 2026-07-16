@@ -1,9 +1,10 @@
 import { getBookingsForDate, getHour, TYPE_COLORS, TYPE_ICONS, isSameDay } from '../lib/calendar'
 import BookingCard from './BookingCard'
+import DayReminders from './DayReminders'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 
-export default function DayView({ currentDate, bookings, todos = [], onBookingClick }) {
+export default function DayView({ currentDate, bookings, todos = [], dayReminders = [], selectedTrip, onBookingClick, onAddReminder, onEditReminder, onRemoveReminder }) {
   const dayBookings = getBookingsForDate(bookings, currentDate)
 
   // Get todos for this day (due_date matches or no due_date)
@@ -11,6 +12,9 @@ export default function DayView({ currentDate, bookings, todos = [], onBookingCl
     if (!t.due_date) return false
     return isSameDay(new Date(t.due_date + 'T00:00:00'), currentDate)
   })
+
+  const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`
+  const dayRems = dayReminders.filter((r) => r.date === dateStr)
 
   // All-day events (multi-day bookings on intermediate days, plus hotels on check-in day)
   const allDay = dayBookings.filter((b) => {
@@ -65,7 +69,7 @@ export default function DayView({ currentDate, bookings, todos = [], onBookingCl
   })
 
   // Empty state
-  if (dayBookings.length === 0 && dayTodos.length === 0) {
+  if (dayBookings.length === 0 && dayTodos.length === 0 && dayRems.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-on-surface-variant">
         <div className="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center mb-4">
@@ -80,6 +84,21 @@ export default function DayView({ currentDate, bookings, todos = [], onBookingCl
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
+      {/* Reminders / notes for this day */}
+      {onAddReminder && (
+        <div className="border-b border-outline/30 p-3 sm:p-4 shrink-0">
+          <DayReminders
+            reminders={dayRems}
+            date={dateStr}
+            tripId={selectedTrip ?? null}
+            onAdd={onAddReminder}
+            onEdit={onEditReminder}
+            onRemove={onRemoveReminder}
+            variant="panel"
+          />
+        </div>
+      )}
+
       {/* Todos for this day */}
       {dayTodos.length > 0 && (
         <div className="border-b border-outline/30 p-3 sm:p-4 shrink-0">

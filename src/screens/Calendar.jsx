@@ -2,7 +2,7 @@
 
 import { useState, useOptimistic, useTransition } from 'react'
 import { useTripContext } from '../lib/trip-context'
-import { createBooking, updateBooking, deleteBooking, upsertDayNote } from '@/lib/client-actions'
+import { createBooking, updateBooking, deleteBooking, upsertDayNote, createDayReminder, updateDayReminder, deleteDayReminder } from '@/lib/client-actions'
 import MonthView from '../components/MonthView'
 import MobileMonthView from '../components/MobileMonthView'
 import WeekView from '../components/WeekView'
@@ -36,12 +36,29 @@ function dayNoteReducer(state, action) {
   }
 }
 
-export default function Calendar({ initialBookings, initialTodos, initialDayNotes }) {
+// Optimistic overlay for the per-day reminders list (add/edit/delete), mirroring
+// the todo list. Reminders are keyed by id, so reconciliation is by id.
+function dayReminderReducer(state, action) {
+  switch (action.type) {
+    case 'add':
+      return [...state, action.reminder]
+    case 'update':
+      return state.map((r) => (r.id === action.id ? { ...r, ...action.patch } : r))
+    case 'remove':
+      return state.filter((r) => r.id !== action.id)
+    default:
+      return state
+  }
+}
+
+export default function Calendar({ initialBookings, initialTodos, initialDayNotes, initialDayReminders }) {
   const { selectedTrip, tripMeta, onOpenAdd } = useTripContext()
   const bookings = initialBookings
   const todos = initialTodos
   const [dayNotes, applyOptimisticDayNote] = useOptimistic(initialDayNotes, dayNoteReducer)
   const [, startDayNoteTransition] = useTransition()
+  const [dayReminders, applyOptimisticReminder] = useOptimistic(initialDayReminders ?? [], dayReminderReducer)
+  const [, startReminderTransition] = useTransition()
 
   // Trip span (only when a dated trip is selected). The "Trip" view uses this to
   // show the whole trip on one page instead of paging month by month.
@@ -105,6 +122,50 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
     })
   }
 
+  // Reminder CRUD — optimistic, returning a promise so the inline editor knows
+  // when to close (and can surface an error toast on failure).
+  const handleAddReminder = ({ date, text, time, trip_id }) => {
+    const resolvedTripId = trip_id ?? selectedTrip ?? null
+    const id = crypto.randomUUID()
+    return new Promise((resolve, reject) => {
+      startReminderTransition(async () => {
+        applyOptimisticReminder({ type: 'add', reminder: { id, date, text, time: time ?? null, trip_id: resolvedTripId, _pending: true } })
+        try {
+          await createDayReminder({ id, date, text, time: time ?? null, trip_id: resolvedTripId })
+          resolve()
+        } catch (err) {
+          reject(err)
+        }
+      })
+    })
+  }
+
+  const handleEditReminder = (id, { text, time }) =>
+    new Promise((resolve, reject) => {
+      startReminderTransition(async () => {
+        applyOptimisticReminder({ type: 'update', id, patch: { text, time: time ?? null } })
+        try {
+          await updateDayReminder(id, { text, time: time ?? null })
+          resolve()
+        } catch (err) {
+          reject(err)
+        }
+      })
+    })
+
+  const handleRemoveReminder = (id) =>
+    new Promise((resolve, reject) => {
+      startReminderTransition(async () => {
+        applyOptimisticReminder({ type: 'remove', id })
+        try {
+          await deleteDayReminder(id)
+          resolve()
+        } catch (err) {
+          reject(err)
+        }
+      })
+    })
+
   const navigate = (direction) => {
     const d = new Date(currentDate)
     if (view === 'month') d.setMonth(d.getMonth() + direction)
@@ -114,6 +175,14 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   }
 
   const goToToday = () => setCurrentDate(new Date())
+
+  // Reminder data + handlers, threaded into every view that renders days.
+  const reminderProps = {
+    dayReminders,
+    onAddReminder: handleAddReminder,
+    onEditReminder: handleEditReminder,
+    onRemoveReminder: handleRemoveReminder,
+  }
 
   const handleSelectDate = (date) => {
     setCurrentDate(date)
@@ -215,6 +284,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
                 onSelectDate={handleSelectDate}
                 onBookingClick={openEditModal}
                 onUpsertDayNote={handleUpsertDayNote}
+                {...reminderProps}
               />
             </div>
             {/* Mobile: whole-trip agenda */}
@@ -225,7 +295,9 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
                 bookings={bookings}
                 todos={todos}
                 dayNotes={dayNotes}
+                selectedTrip={selectedTrip}
                 onBookingClick={openEditModal}
+                {...reminderProps}
               />
             </div>
           </>
@@ -244,6 +316,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
                 onSelectDate={handleSelectDate}
                 onBookingClick={openEditModal}
                 onUpsertDayNote={handleUpsertDayNote}
+                {...reminderProps}
               />
             </div>
             {/* Mobile: compact calendar + agenda */}
@@ -261,6 +334,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
                 onUpsertDayNote={handleUpsertDayNote}
                 collapsed={calendarCollapsed}
                 onCollapsedChange={setCalendarCollapsed}
+                {...reminderProps}
               />
             </div>
           </>
@@ -278,7 +352,9 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
             currentDate={currentDate}
             bookings={bookings}
             todos={todos}
+            selectedTrip={selectedTrip}
             onBookingClick={openEditModal}
+            {...reminderProps}
           />
         )}
       </div>
