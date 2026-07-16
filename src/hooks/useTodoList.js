@@ -52,6 +52,23 @@ export function useTodoList(initial, { onError } = {}) {
     });
   };
 
+  const edit = (id, { title, trip_id, due_date }, { onSuccess } = {}) => {
+    const current = todos.find((t) => t.id === id);
+    // Don't edit a row that is still being created — its DB row may not exist
+    // yet, so the update would target nothing and the edit would be lost.
+    if (!current || current._pending) return;
+    const patch = { title, trip_id: trip_id ?? null, due_date: due_date ?? null };
+    startTransition(async () => {
+      applyOptimistic({ type: "update", id, patch });
+      try {
+        await unwrap(await updateTodoAction(id, patch));
+        onSuccess?.();
+      } catch (err) {
+        onError?.(err);
+      }
+    });
+  };
+
   const toggle = (id) => {
     const current = todos.find((t) => t.id === id);
     if (!current || current._pending) return;

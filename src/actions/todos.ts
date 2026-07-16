@@ -38,6 +38,12 @@ export async function updateTodoAction(id: string, input: unknown) {
       .limit(1);
     if (!existing) throw new Error("To-do not found");
     if (existing.trip_id) await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
+    // Moving a todo onto a different trip requires write access to the target
+    // trip too — otherwise the existing-trip check alone would let a member of
+    // trip A reassign a todo into trip B they can't write.
+    if (updates.trip_id && updates.trip_id !== existing.trip_id) {
+      await requireTripAccess(user.id, updates.trip_id, WRITE_ROLES);
+    }
     const [row] = await db
       .update(tables.todos)
       .set(updates)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useTripContext } from '../lib/trip-context'
 import { useTodoList } from '../hooks/useTodoList'
 import { friendlyError } from '../lib/friendlyError'
@@ -9,12 +9,13 @@ import { useToast } from '../components/Toast'
 export default function Todos({ initialTodos }) {
   const { selectedTrip, tripMeta, trips } = useTripContext()
   const { toast } = useToast()
-  const { todos, add, toggle, remove } = useTodoList(initialTodos, {
+  const { todos, add, edit, toggle, remove } = useTodoList(initialTodos, {
     onError: (err) => toast.error(friendlyError(err)),
   })
   const [newTodo, setNewTodo] = useState('')
   const [newTodoDate, setNewTodoDate] = useState('')
   const [newTodoTrip, setNewTodoTrip] = useState(selectedTrip || '')
+  const [editingId, setEditingId] = useState(null)
 
   // Match the server ordering (due_date asc, nulls last) so an optimistically
   // added todo lands in place instead of appearing at the bottom then jumping.
@@ -35,6 +36,15 @@ export default function Todos({ initialTodos }) {
     add(
       { title: newTodo.trim(), trip_id: newTodoTrip || null, due_date: newTodoDate || null },
       { onSuccess: () => { setNewTodo(''); setNewTodoDate(''); toast.success('To-do added') } },
+    )
+  }
+
+  const handleSaveEdit = (id, fields) => {
+    if (!fields.title.trim()) return
+    edit(
+      id,
+      { title: fields.title.trim(), trip_id: fields.trip_id || null, due_date: fields.due_date || null },
+      { onSuccess: () => { setEditingId(null); toast.success('To-do updated') } },
     )
   }
 
@@ -97,7 +107,17 @@ export default function Todos({ initialTodos }) {
         ) : (
           <div className="space-y-1.5">
             {incompleteTodos.map((todo) => (
-              <TodoItem key={todo.id} todo={todo} onToggle={toggle} onRemove={remove} />
+              <TodoItem
+                key={todo.id}
+                todo={todo}
+                trips={trips}
+                editing={editingId === todo.id}
+                onStartEdit={() => setEditingId(todo.id)}
+                onCancelEdit={() => setEditingId(null)}
+                onSaveEdit={handleSaveEdit}
+                onToggle={toggle}
+                onRemove={remove}
+              />
             ))}
 
             {completedTodos.length > 0 && (
@@ -106,7 +126,17 @@ export default function Todos({ initialTodos }) {
                   Completed ({completedTodos.length})
                 </div>
                 {completedTodos.map((todo) => (
-                  <TodoItem key={todo.id} todo={todo} onToggle={toggle} onRemove={remove} />
+                  <TodoItem
+                    key={todo.id}
+                    todo={todo}
+                    trips={trips}
+                    editing={editingId === todo.id}
+                    onStartEdit={() => setEditingId(todo.id)}
+                    onCancelEdit={() => setEditingId(null)}
+                    onSaveEdit={handleSaveEdit}
+                    onToggle={toggle}
+                    onRemove={remove}
+                  />
                 ))}
               </>
             )}
@@ -117,7 +147,20 @@ export default function Todos({ initialTodos }) {
   )
 }
 
-function TodoItem({ todo, onToggle, onRemove }) {
+function TodoItem({ todo, trips, editing, onStartEdit, onCancelEdit, onSaveEdit, onToggle, onRemove }) {
+  const tripName = todo.trip || trips.find((t) => t.id === todo.trip_id)?.name
+
+  if (editing) {
+    return (
+      <TodoEditForm
+        todo={todo}
+        trips={trips}
+        onSave={onSaveEdit}
+        onCancel={onCancelEdit}
+      />
+    )
+  }
+
   return (
     <div className={`flex items-start gap-3 p-3.5 rounded-xl bg-white border border-outline/20 hover:shadow-elevation-1 transition-all duration-150 group ${
       todo.completed ? 'opacity-50' : todo._pending ? 'opacity-60' : ''
@@ -138,21 +181,91 @@ function TodoItem({ todo, onToggle, onRemove }) {
               📅 {new Date(todo.due_date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
             </span>
           )}
-          {todo.trip && (
+          {tripName && (
             <span className="text-[11px] text-primary bg-primary-light px-2 py-0.5 rounded-full font-medium">
-              {todo.trip}
+              {tripName}
             </span>
           )}
         </div>
       </div>
-      <button
-        onClick={() => onRemove(todo.id)}
-        className="text-on-surface-variant hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all duration-150 p-1 rounded-full hover:bg-red-50"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          onClick={onStartEdit}
+          disabled={todo._pending}
+          aria-label="Edit to-do"
+          className="text-on-surface-variant hover:text-primary opacity-0 group-hover:opacity-100 transition-all duration-150 p-1 rounded-full hover:bg-primary-light disabled:opacity-0"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        </button>
+        <button
+          onClick={() => onRemove(todo.id)}
+          aria-label="Delete to-do"
+          className="text-on-surface-variant hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all duration-150 p-1 rounded-full hover:bg-red-50"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
     </div>
+  )
+}
+
+function TodoEditForm({ todo, trips, onSave, onCancel }) {
+  const [title, setTitle] = useState(todo.title)
+  const [dueDate, setDueDate] = useState(todo.due_date || '')
+  const [tripId, setTripId] = useState(todo.trip_id || '')
+  const inputRef = useRef(null)
+
+  // Focus the content field on open, matching the add form's primary field.
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  const submit = (e) => {
+    e.preventDefault()
+    onSave(todo.id, { title, trip_id: tripId, due_date: dueDate })
+  }
+
+  return (
+    <form onSubmit={submit} className="mat-surface p-4 border border-primary/40">
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input
+          ref={inputRef}
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Escape') onCancel() }}
+          placeholder="What needs to be done?"
+          className="mat-input sm:flex-1"
+        />
+        <div className="flex gap-2">
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="mat-input text-sm sm:w-40"
+          />
+          <select
+            value={tripId}
+            onChange={(e) => setTripId(e.target.value)}
+            className="mat-select flex-1 sm:flex-none"
+          >
+            <option value="">No trip</option>
+            {trips.map((trip) => (
+              <option key={trip.id} value={trip.id}>{trip.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 mt-3">
+        <button type="button" onClick={onCancel} className="mat-btn-outlined shrink-0">
+          Cancel
+        </button>
+        <button type="submit" className="mat-btn-filled shrink-0">
+          Save
+        </button>
+      </div>
+    </form>
   )
 }
