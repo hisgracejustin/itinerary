@@ -179,18 +179,18 @@ function ReminderItem({ reminder, compact, onEdit, onRemove, dragEnabled = false
       } ${compact ? 'px-1 py-0.5 hover:bg-primary-light/40' : 'px-1.5 py-1 hover:bg-surface-container'}`}
     >
       {dragEnabled ? (
+        // The pin doubles as the drag handle.
         <button
           type="button"
           ref={handleRef}
           {...handleProps}
           aria-label="Drag to reorder"
-          className={`shrink-0 text-on-surface-variant/40 hover:text-on-surface-variant cursor-grab active:cursor-grabbing touch-none ${
-            compact ? 'mt-0.5' : 'mt-1'
+          title="Drag to reorder"
+          className={`shrink-0 cursor-grab active:cursor-grabbing touch-none ${
+            compact ? 'text-[10px] leading-4' : 'text-xs leading-5'
           }`}
         >
-          <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="currentColor" viewBox="0 0 20 20">
-            <path d="M7 4a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM7 10a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM7 16a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM16 4a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM16 10a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM16 16a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
-          </svg>
+          📌
         </button>
       ) : (
         <span className={compact ? 'text-[10px] leading-4' : 'text-xs leading-5'} aria-hidden>📌</span>
