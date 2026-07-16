@@ -16,7 +16,12 @@ export default function Todos({ initialTodos }) {
   const [newTodoDate, setNewTodoDate] = useState('')
   const [newTodoTrip, setNewTodoTrip] = useState(selectedTrip || '')
   const [editingId, setEditingId] = useState(null)
-  const [dragId, setDragId] = useState(null)
+  // Drag state. `drag.order` is the live working order of incomplete ids while a
+  // drag is in progress; null when idle. A ref mirrors it so the pointer-move
+  // handler (a stable closure) always sees the latest without stale reads.
+  const [drag, setDrag] = useState(null)
+  const dragRef = useRef(null)
+  const listRef = useRef(null)
 
   // Manual order: sort by the persisted `position` (matches the server) so
   // dragged rows stay where the user dropped them. created_at breaks ties.
@@ -25,6 +30,11 @@ export default function Todos({ initialTodos }) {
     String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
   const incompleteTodos = todos.filter((t) => !t.completed).sort(byPosition)
   const completedTodos = todos.filter((t) => t.completed).sort(byPosition)
+
+  // While dragging, render the live working order; otherwise the sorted list.
+  const displayIncomplete = drag
+    ? drag.order.map((id) => incompleteTodos.find((t) => t.id === id)).filter(Boolean)
+    : incompleteTodos
 
   const handleAdd = (e) => {
     e.preventDefault()
@@ -46,18 +56,50 @@ export default function Todos({ initialTodos }) {
     )
   }
 
-  // Drag-to-reorder within the incomplete list. On drop, move the dragged row to
-  // the target's slot and persist the whole visible order (incomplete first,
-  // then completed) so positions stay a clean 0..n.
-  const handleDropOn = (targetId) => {
-    if (!dragId || dragId === targetId) { setDragId(null); return }
-    const ids = incompleteTodos.map((t) => t.id)
-    const from = ids.indexOf(dragId)
-    const to = ids.indexOf(targetId)
-    setDragId(null)
-    if (from === -1 || to === -1) return
-    ids.splice(to, 0, ids.splice(from, 1)[0])
-    reorder([...ids, ...completedTodos.map((t) => t.id)])
+  // Pointer-based drag-to-reorder — one code path for mouse and touch (HTML5
+  // drag events don't fire on touchscreens). Grabbing a row's grip captures the
+  // pointer; as it moves we recompute the insertion slot from row midpoints and
+  // update the live order; on release we persist the whole visible order
+  // (incomplete first, then completed) so positions stay a clean 0..n.
+  const startDrag = (id, e) => {
+    // Ignore secondary buttons; only start on primary/touch.
+    if (e.button != null && e.button !== 0) return
+    e.preventDefault()
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    const order = incompleteTodos.map((t) => t.id)
+    dragRef.current = { id, order }
+    setDrag({ id, order })
+  }
+
+  const moveDrag = (e) => {
+    const d = dragRef.current
+    if (!d || !listRef.current) return
+    const rows = [...listRef.current.querySelectorAll('[data-todo-id]')]
+    // Insert before the first row whose vertical midpoint is below the pointer;
+    // past the last midpoint means append to the end.
+    let beforeId = null
+    for (const row of rows) {
+      const r = row.getBoundingClientRect()
+      if (e.clientY < r.top + r.height / 2) { beforeId = row.getAttribute('data-todo-id'); break }
+    }
+    // Hovering the dragged row's own slot means "stay put" — leave the order be.
+    if (beforeId === d.id) return
+    const order = d.order.filter((id) => id !== d.id)
+    const at = beforeId ? order.indexOf(beforeId) : order.length
+    order.splice(at < 0 ? order.length : at, 0, d.id)
+    if (order.join() === d.order.join()) return
+    dragRef.current = { ...d, order }
+    setDrag({ id: d.id, order })
+  }
+
+  const endDrag = () => {
+    const d = dragRef.current
+    dragRef.current = null
+    setDrag(null)
+    if (!d) return
+    const original = incompleteTodos.map((t) => t.id).join()
+    if (d.order.join() === original) return
+    reorder([...d.order, ...completedTodos.map((t) => t.id)])
   }
 
   return (
@@ -117,8 +159,8 @@ export default function Todos({ initialTodos }) {
             <p className="text-sm font-medium">No to-dos yet</p>
           </div>
         ) : (
-          <div className="space-y-1.5">
-            {incompleteTodos.map((todo) => (
+          <div ref={listRef} className={`space-y-1.5 ${drag ? 'select-none' : ''}`}>
+            {displayIncomplete.map((todo) => (
               <TodoItem
                 key={todo.id}
                 todo={todo}
@@ -129,16 +171,11 @@ export default function Todos({ initialTodos }) {
                 onSaveEdit={handleSaveEdit}
                 onToggle={toggle}
                 onRemove={remove}
-                draggable={!editingId}
-                isDragging={dragId === todo.id}
-                onDragStart={(e) => {
-                  e.dataTransfer.effectAllowed = 'move'
-                  e.dataTransfer.setData('text/plain', todo.id)
-                  setDragId(todo.id)
-                }}
-                onDragOverItem={(e) => { if (dragId && dragId !== todo.id) e.preventDefault() }}
-                onDropItem={() => handleDropOn(todo.id)}
-                onDragEnd={() => setDragId(null)}
+                dragEnabled={!editingId}
+                isDragging={drag?.id === todo.id}
+                onDragPointerDown={(e) => startDrag(todo.id, e)}
+                onDragPointerMove={moveDrag}
+                onDragPointerUp={endDrag}
               />
             ))}
 
@@ -171,7 +208,7 @@ export default function Todos({ initialTodos }) {
 
 function TodoItem({
   todo, trips, editing, onStartEdit, onCancelEdit, onSaveEdit, onToggle, onRemove,
-  draggable = false, isDragging = false, onDragStart, onDragOverItem, onDropItem, onDragEnd,
+  dragEnabled = false, isDragging = false, onDragPointerDown, onDragPointerMove, onDragPointerUp,
 }) {
   const tripName = todo.trip || trips.find((t) => t.id === todo.trip_id)?.name
 
@@ -188,18 +225,18 @@ function TodoItem({
 
   return (
     <div
-      onDragOver={onDragOverItem}
-      onDrop={onDropItem}
+      data-todo-id={dragEnabled ? todo.id : undefined}
       className={`flex items-start gap-3 p-3.5 rounded-xl bg-white border transition-all duration-150 group ${
-        isDragging ? 'opacity-40 border-primary' : 'border-outline/20 hover:shadow-elevation-1'
+        isDragging ? 'opacity-40 border-primary shadow-elevation-2' : 'border-outline/20 hover:shadow-elevation-1'
       } ${todo.completed ? 'opacity-50' : todo._pending ? 'opacity-60' : ''}`}
     >
-      {draggable && (
+      {dragEnabled && (
         <button
           type="button"
-          draggable
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
+          onPointerDown={onDragPointerDown}
+          onPointerMove={onDragPointerMove}
+          onPointerUp={onDragPointerUp}
+          onPointerCancel={onDragPointerUp}
           aria-label="Drag to reorder"
           className="mt-0.5 -ml-1 text-on-surface-variant/50 hover:text-on-surface-variant cursor-grab active:cursor-grabbing touch-none shrink-0"
         >
