@@ -7,9 +7,9 @@ import MonthView from '../components/MonthView'
 import MobileMonthView from '../components/MobileMonthView'
 import WeekView from '../components/WeekView'
 import DayView from '../components/DayView'
+import TripAgenda from '../components/TripAgenda'
 import BookingModal from '../components/BookingModal'
-
-const VIEWS = ['month', 'week', 'day']
+import { getRangeGrid } from '../lib/calendar'
 
 // Day notes are props-only (server-rendered), so a plain `await onUpsertDayNote()`
 // then close-the-editor can flash blank for a frame or two: the save resolves
@@ -43,7 +43,17 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   const [dayNotes, applyOptimisticDayNote] = useOptimistic(initialDayNotes, dayNoteReducer)
   const [, startDayNoteTransition] = useTransition()
 
-  const [view, setView] = useState('month')
+  // Trip span (only when a dated trip is selected). The "Trip" view uses this to
+  // show the whole trip on one page instead of paging month by month.
+  const tripStart = tripMeta?.start_date ? new Date(tripMeta.start_date + 'T00:00:00') : null
+  const tripEnd = tripMeta?.end_date ? new Date(tripMeta.end_date + 'T00:00:00') : null
+  const hasTripRange = !!(tripStart && tripEnd)
+  const tripDays = hasTripRange ? getRangeGrid(tripStart, tripEnd) : null
+  const VIEWS = hasTripRange ? ['trip', 'month', 'week', 'day'] : ['month', 'week', 'day']
+
+  // Default to the whole-trip view when a dated trip is selected (the screen is
+  // remounted per trip, so this initializes correctly each time).
+  const [view, setView] = useState(hasTripRange ? 'trip' : 'month')
   // The component is remounted (keyed by trip) on trip change, so the initial
   // month is derived once here — jumping to the trip's start, or today otherwise.
   const [currentDate, setCurrentDate] = useState(() =>
@@ -112,6 +122,12 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
 
   const formatHeader = () => {
     const opts = { month: 'long', year: 'numeric' }
+    if (view === 'trip' && hasTripRange) {
+      const sameYear = tripStart.getFullYear() === tripEnd.getFullYear()
+      const fmt = (d, withYear) =>
+        d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(withYear ? { year: 'numeric' } : {}) })
+      return `${fmt(tripStart, !sameYear)} – ${fmt(tripEnd, true)}`
+    }
     if (view === 'day') return currentDate.toLocaleDateString(undefined, { ...opts, day: 'numeric', weekday: 'long' })
     return currentDate.toLocaleDateString(undefined, opts)
   }
@@ -128,28 +144,33 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={goToToday}
-            className="mat-btn-outlined text-xs px-3 py-1.5"
-          >
-            Today
-          </button>
-          <button
-            onClick={() => navigate(-1)}
-            className="mat-icon-btn"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <button
-            onClick={() => navigate(1)}
-            className="mat-icon-btn"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
+          {/* Trip view spans the whole trip, so month paging doesn't apply. */}
+          {view !== 'trip' && (
+            <>
+              <button
+                onClick={goToToday}
+                className="mat-btn-outlined text-xs px-3 py-1.5"
+              >
+                Today
+              </button>
+              <button
+                onClick={() => navigate(-1)}
+                className="mat-icon-btn"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <button
+                onClick={() => navigate(1)}
+                className="mat-icon-btn"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </>
+          )}
           <div className="ml-3 flex bg-surface-container rounded-full p-1">
             {VIEWS.map((v) => (
               <button
@@ -179,6 +200,36 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
       </div>
 
       <div className="flex-1 mat-surface overflow-hidden">
+        {view === 'trip' && hasTripRange && (
+          <>
+            {/* Desktop: the whole trip as one continuous week grid */}
+            <div className="hidden sm:block h-full">
+              <MonthView
+                currentDate={currentDate}
+                days={tripDays}
+                bookings={bookings}
+                todos={todos}
+                dayNotes={dayNotes}
+                tripMeta={tripMeta}
+                selectedTrip={selectedTrip}
+                onSelectDate={handleSelectDate}
+                onBookingClick={openEditModal}
+                onUpsertDayNote={handleUpsertDayNote}
+              />
+            </div>
+            {/* Mobile: whole-trip agenda */}
+            <div className="sm:hidden h-full">
+              <TripAgenda
+                tripStart={tripStart}
+                tripEnd={tripEnd}
+                bookings={bookings}
+                todos={todos}
+                dayNotes={dayNotes}
+                onBookingClick={openEditModal}
+              />
+            </div>
+          </>
+        )}
         {view === 'month' && (
           <>
             {/* Desktop: full month grid */}

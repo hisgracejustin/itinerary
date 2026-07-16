@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { getMonthGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, TYPE_ICONS } from '../lib/calendar'
 import BookingChip from './BookingChip'
 import BookingCard from './BookingCard'
@@ -39,7 +39,7 @@ function sortBookingsForDay(dayBookings, day) {
   })
 }
 
-export default function MonthView({ currentDate, bookings, todos = [], dayNotes = [], tripMeta, selectedTrip, onSelectDate, onBookingClick, onUpsertDayNote }) {
+export default function MonthView({ currentDate, days: propDays, bookings, todos = [], dayNotes = [], tripMeta, selectedTrip, onSelectDate, onBookingClick, onUpsertDayNote }) {
   // Wide desktop → show the agenda side panel and select-a-day inline; below that
   // width the panel is hidden and clicking a day navigates to the Day view.
   const isWide = useMediaQuery('(min-width: 1024px)')
@@ -47,9 +47,47 @@ export default function MonthView({ currentDate, bookings, todos = [], dayNotes 
   const [editingNoteDate, setEditingNoteDate] = useState(null)
   const [noteText, setNoteText] = useState('')
 
+  // Day panel: user-resizable width + collapse, persisted so it sticks across
+  // day/trip switches and reloads. Clamped to a sensible range.
+  const PANEL_MIN = 280
+  const PANEL_MAX = 640
+  const [panelWidth, setPanelWidth] = useState(360)
+  const [panelCollapsed, setPanelCollapsed] = useState(false)
+  const asideRef = useRef(null)
+  useEffect(() => {
+    try {
+      const w = Number(localStorage.getItem('calendar.agendaWidth'))
+      if (w >= PANEL_MIN && w <= PANEL_MAX) setPanelWidth(w)
+      setPanelCollapsed(localStorage.getItem('calendar.agendaCollapsed') === '1')
+    } catch { /* localStorage unavailable — use defaults */ }
+  }, [])
+  useEffect(() => {
+    try { localStorage.setItem('calendar.agendaWidth', String(panelWidth)) } catch { /* ignore */ }
+  }, [panelWidth])
+  useEffect(() => {
+    try { localStorage.setItem('calendar.agendaCollapsed', panelCollapsed ? '1' : '0') } catch { /* ignore */ }
+  }, [panelCollapsed])
+
+  const startResize = (e) => {
+    e.preventDefault()
+    // The panel is right-anchored, so width = (its fixed right edge) − pointer X.
+    const right = asideRef.current?.getBoundingClientRect().right ?? window.innerWidth
+    const onMove = (ev) => setPanelWidth(Math.min(PANEL_MAX, Math.max(PANEL_MIN, right - ev.clientX)))
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      document.body.style.userSelect = ''
+    }
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
-  const days = getMonthGrid(year, month)
+  // Trip view passes an explicit multi-week span; month view derives its grid.
+  const rangeMode = !!propDays
+  const days = propDays ?? getMonthGrid(year, month)
   const today = new Date()
 
   // Keep the agenda's selected day sensible: default to the trip start (if a trip
@@ -102,11 +140,13 @@ export default function MonthView({ currentDate, bookings, todos = [], dayNotes 
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="grid grid-cols-7 auto-rows-[minmax(116px,auto)]">
             {days.map((day, i) => {
-              const isCurrentMonth = day.getMonth() === month
               const isToday = isSameDay(day, today)
               const outsideTrip = isOutsideTrip(day)
+              // "In view" = belongs to the displayed month, or (in trip view) falls
+              // within the trip. Week-padding days outside that render as blanks.
+              const inView = rangeMode ? !outsideTrip : day.getMonth() === month
 
-              if (!isCurrentMonth && (!tripMeta || outsideTrip)) {
+              if (!inView && (!tripMeta || outsideTrip)) {
                 return <div key={i} className="border-b border-r border-outline/20" />
               }
 
@@ -344,9 +384,43 @@ export default function MonthView({ currentDate, bookings, todos = [], dayNotes 
         </div>
       </div>
 
-      {/* Agenda side panel (wide desktop only) */}
-      {isWide && (
-        <aside className="w-[360px] shrink-0 border-l border-outline/40 bg-surface-dim/40 flex flex-col">
+      {/* Agenda side panel (wide desktop only) — resizable + collapsible */}
+      {isWide && (panelCollapsed ? (
+        <div className="w-10 shrink-0 border-l border-outline/40 bg-surface-dim/40 flex flex-col items-center justify-center">
+          <button
+            onClick={() => setPanelCollapsed(false)}
+            title="Show day panel"
+            aria-label="Show day panel"
+            className="h-10 w-5 flex items-center justify-center rounded-full bg-white border border-outline/40 shadow-elevation-1 text-on-surface-variant hover:text-on-surface transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+        </div>
+      ) : (
+        <aside
+          ref={asideRef}
+          style={{ width: panelWidth }}
+          className="relative shrink-0 border-l border-outline/40 bg-surface-dim/40 flex flex-col"
+        >
+          {/* Drag-to-resize handle along the left edge */}
+          <div
+            onPointerDown={startResize}
+            title="Drag to resize"
+            className="absolute left-0 top-0 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-primary/25 active:bg-primary/40 transition-colors z-20"
+          />
+          {/* Collapse tab, centered on the border so it clears the header text */}
+          <button
+            onClick={() => setPanelCollapsed(true)}
+            title="Collapse day panel"
+            aria-label="Collapse day panel"
+            className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 z-30 h-10 w-5 flex items-center justify-center rounded-full bg-white border border-outline/40 shadow-elevation-1 text-on-surface-variant hover:text-on-surface transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
           <AgendaPanel
             key={toLocalDateStr(selectedDay)}
             day={selectedDay}
@@ -358,7 +432,7 @@ export default function MonthView({ currentDate, bookings, todos = [], dayNotes 
             onOpenDay={() => onSelectDate(selectedDay)}
           />
         </aside>
-      )}
+      ))}
     </div>
   )
 }

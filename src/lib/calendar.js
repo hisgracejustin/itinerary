@@ -19,6 +19,22 @@ export function getMonthGrid(year, month) {
 }
 
 /**
+ * Get a week-aligned grid (Sun–Sat rows) spanning an inclusive date range — from
+ * the Sunday of the start's week through the Saturday of the end's week. Used by
+ * the "Trip" view to show a whole trip on one page regardless of month bounds.
+ * Returns an array of Date objects, always a multiple of 7.
+ */
+export function getRangeGrid(start, end) {
+  const s = new Date(start.getFullYear(), start.getMonth(), start.getDate() - start.getDay())
+  const e = new Date(end.getFullYear(), end.getMonth(), end.getDate() + (6 - end.getDay()))
+  const days = []
+  for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+    days.push(new Date(d.getFullYear(), d.getMonth(), d.getDate()))
+  }
+  return days
+}
+
+/**
  * Get the 7 days of the week containing the given date (Sun–Sat).
  */
 export function getWeekDays(date) {
