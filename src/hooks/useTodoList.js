@@ -97,5 +97,5 @@ export function useTodoList(initial, { onError } = {}) {
     });
   };
 
-  return { todos, add, toggle, remove, isPending };
+  return { todos, add, edit, toggle, remove, isPending };
 }
