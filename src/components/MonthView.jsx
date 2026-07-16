@@ -40,7 +40,7 @@ function sortBookingsForDay(dayBookings, day) {
   })
 }
 
-export default function MonthView({ currentDate, days: propDays, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, selectedTrip, onSelectDate, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder }) {
+export default function MonthView({ currentDate, days: propDays, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, selectedTrip, onSelectDate, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder }) {
   // Wide desktop → show the agenda side panel and select-a-day inline; below that
   // width the panel is hidden and clicking a day navigates to the Day view.
   const isWide = useMediaQuery('(min-width: 1024px)')
@@ -232,6 +232,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
                         onAdd={onAddReminder}
                         onEdit={onEditReminder}
                         onRemove={onRemoveReminder}
+                        onReorder={onReorderReminder}
                         variant="cell"
                       />
                     </div>
@@ -449,6 +450,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
             onAddReminder={onAddReminder}
             onEditReminder={onEditReminder}
             onRemoveReminder={onRemoveReminder}
+            onReorderReminder={onReorderReminder}
             onOpenDay={() => onSelectDate(selectedDay)}
           />
         </aside>
@@ -458,7 +460,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
 }
 
 /** Rich schedule for the selected day — the desktop equivalent of the mobile agenda. */
-function AgendaPanel({ day, bookings, todos, dayNotes, dayReminders = [], selectedTrip, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onOpenDay }) {
+function AgendaPanel({ day, bookings, todos, dayNotes, dayReminders = [], selectedTrip, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, onOpenDay }) {
   const [editingNote, setEditingNote] = useState(false)
   const [noteText, setNoteText] = useState('')
 
@@ -541,6 +543,7 @@ function AgendaPanel({ day, bookings, todos, dayNotes, dayReminders = [], select
             onAdd={onAddReminder}
             onEdit={onEditReminder}
             onRemove={onRemoveReminder}
+            onReorder={onReorderReminder}
             variant="panel"
           />
         )}

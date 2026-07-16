@@ -1,8 +1,18 @@
 "use client";
 
 import { useState } from 'react'
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors,
+} from '@dnd-kit/core'
+import {
+  SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useToast } from './Toast'
 import { friendlyError } from '../lib/friendlyError'
+
+// Lock drag to the vertical axis (one-line modifier — no extra package).
+const restrictToVerticalAxis = ({ transform }) => ({ ...transform, x: 0 })
 
 // "HH:MM" (24h) → locale 12h label, e.g. "17:00" → "5:00 PM".
 export function formatReminderTime(hhmm) {
@@ -15,16 +25,29 @@ export function formatReminderTime(hhmm) {
 }
 
 /**
- * Per-day reminders list with inline add / edit / delete. Rendered per day in the
- * day panel, calendar cells, the day view, and the mobile agenda — the `variant`
- * only tunes sizing. CRUD flows through the optimistic handlers in Calendar; this
- * component owns just the local add/edit UI state.
+ * Per-day reminders list with inline add / edit / delete and drag-to-reorder
+ * (dnd-kit). Rendered per day in the day panel, calendar cells, day view, and
+ * mobile agenda — `variant` only tunes sizing. CRUD + reorder flow through the
+ * optimistic handlers in Calendar; this owns just the local add/edit UI state.
  */
-export default function DayReminders({ reminders = [], date, tripId, onAdd, onEdit, onRemove, variant = 'panel' }) {
+export default function DayReminders({ reminders = [], date, tripId, onAdd, onEdit, onRemove, onReorder, variant = 'panel' }) {
   const { toast } = useToast()
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const compact = variant === 'cell'
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  // Manual order (matches the server); optimistic reorder updates positions.
+  const ordered = [...reminders].sort(
+    (a, b) => (a.position ?? 0) - (b.position ?? 0) ||
+      String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')),
+  )
+  const ids = ordered.map((r) => r.id)
+  const sortable = !!onReorder && ordered.length > 1
 
   const submitAdd = async ({ text, time }) => {
     if (!text.trim()) { setAdding(false); return }
@@ -55,32 +78,58 @@ export default function DayReminders({ reminders = [], date, tripId, onAdd, onEd
     }
   }
 
-  const hasAny = reminders.length > 0
+  const handleDragEnd = ({ active, over }) => {
+    if (!over || active.id === over.id) return
+    const from = ids.indexOf(active.id)
+    const to = ids.indexOf(over.id)
+    if (from === -1 || to === -1) return
+    Promise.resolve(onReorder(arrayMove(ids, from, to))).catch((err) => toast.error(friendlyError(err)))
+  }
+
+  const renderItem = (r) => {
+    if (editingId === r.id) {
+      return (
+        <ReminderForm
+          key={r.id}
+          compact={compact}
+          initial={r}
+          onSubmit={(vals) => submitEdit(r.id, vals)}
+          onCancel={() => setEditingId(null)}
+        />
+      )
+    }
+    const itemProps = {
+      reminder: r,
+      compact,
+      onEdit: () => !r._pending && setEditingId(r.id),
+      onRemove: () => !r._pending && submitRemove(r.id),
+    }
+    return sortable
+      ? <SortableReminderItem key={r.id} {...itemProps} />
+      : <ReminderItem key={r.id} {...itemProps} />
+  }
+
+  const list = ordered.map(renderItem)
 
   return (
     <div className={compact ? 'space-y-0.5' : 'space-y-1'} onClick={(e) => e.stopPropagation()}>
-      {!compact && (hasAny || adding) && (
+      {!compact && (ordered.length > 0 || adding) && (
         <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Notes</div>
       )}
 
-      {reminders.map((r) =>
-        editingId === r.id ? (
-          <ReminderForm
-            key={r.id}
-            compact={compact}
-            initial={r}
-            onSubmit={(vals) => submitEdit(r.id, vals)}
-            onCancel={() => setEditingId(null)}
-          />
-        ) : (
-          <ReminderItem
-            key={r.id}
-            reminder={r}
-            compact={compact}
-            onEdit={() => !r._pending && setEditingId(r.id)}
-            onRemove={() => !r._pending && submitRemove(r.id)}
-          />
-        ),
+      {sortable ? (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis]}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+            {list}
+          </SortableContext>
+        </DndContext>
+      ) : (
+        list
       )}
 
       {adding ? (
@@ -102,15 +151,50 @@ export default function DayReminders({ reminders = [], date, tripId, onAdd, onEd
   )
 }
 
-function ReminderItem({ reminder, compact, onEdit, onRemove }) {
+function SortableReminderItem(props) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: props.reminder.id, disabled: !!props.reminder._pending })
+  const style = { transform: CSS.Transform.toString(transform), transition }
+  return (
+    <ReminderItem
+      {...props}
+      dragEnabled
+      sortableRef={setNodeRef}
+      style={style}
+      isDragging={isDragging}
+      handleRef={setActivatorNodeRef}
+      handleProps={{ ...attributes, ...listeners }}
+    />
+  )
+}
+
+function ReminderItem({ reminder, compact, onEdit, onRemove, dragEnabled = false, sortableRef, style, isDragging = false, handleRef, handleProps }) {
   const time = formatReminderTime(reminder.time)
   return (
     <div
+      ref={sortableRef}
+      style={style}
       className={`group/rem flex items-start gap-1.5 rounded-md ${reminder._pending ? 'opacity-60' : ''} ${
-        compact ? 'px-1 py-0.5 hover:bg-primary-light/40' : 'px-1.5 py-1 hover:bg-surface-container'
-      }`}
+        isDragging ? 'opacity-50 bg-surface-container' : ''
+      } ${compact ? 'px-1 py-0.5 hover:bg-primary-light/40' : 'px-1.5 py-1 hover:bg-surface-container'}`}
     >
-      <span className={compact ? 'text-[10px] leading-4' : 'text-xs leading-5'} aria-hidden>📌</span>
+      {dragEnabled ? (
+        <button
+          type="button"
+          ref={handleRef}
+          {...handleProps}
+          aria-label="Drag to reorder"
+          className={`shrink-0 text-on-surface-variant/40 hover:text-on-surface-variant cursor-grab active:cursor-grabbing touch-none ${
+            compact ? 'mt-0.5' : 'mt-1'
+          }`}
+        >
+          <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="currentColor" viewBox="0 0 20 20">
+            <path d="M7 4a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM7 10a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM7 16a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM16 4a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM16 10a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM16 16a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
+          </svg>
+        </button>
+      ) : (
+        <span className={compact ? 'text-[10px] leading-4' : 'text-xs leading-5'} aria-hidden>📌</span>
+      )}
       <button
         onClick={onEdit}
         className={`flex-1 min-w-0 text-left ${compact ? 'text-[10px] leading-4' : 'text-sm leading-5'}`}

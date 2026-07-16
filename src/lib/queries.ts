@@ -1,4 +1,4 @@
-import { and, asc, eq, getTableColumns, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, isNotNull, isNull, or } from "drizzle-orm";
 import { db, tables } from "@/db";
 
 /**
@@ -131,11 +131,11 @@ export function getDayNotesForUser(userId: string, tripId?: string | null) {
 
 const dayReminderCols = getTableColumns(tables.dayReminders);
 
-/** Per-day reminders, ordered by date then time (untimed last), then insertion. */
+/** Per-day reminders, ordered by date then manual position, then insertion. */
 export function getDayRemindersForUser(userId: string, tripId?: string | null) {
   const order = [
     asc(tables.dayReminders.date),
-    sql`${tables.dayReminders.time} asc nulls last`,
+    asc(tables.dayReminders.position),
     asc(tables.dayReminders.created_at),
   ];
   if (tripId) {

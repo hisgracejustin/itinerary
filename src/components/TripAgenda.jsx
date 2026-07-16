@@ -16,7 +16,7 @@ function toLocalDateStr(date) {
  * a due to-do, or a day note), reusing BookingCard so it matches the calendar's
  * day detail. Empty days are skipped to keep the list tight.
  */
-export default function TripAgenda({ tripStart, tripEnd, bookings, todos = [], dayNotes = [], dayReminders = [], selectedTrip, onBookingClick, onAddReminder, onEditReminder, onRemoveReminder }) {
+export default function TripAgenda({ tripStart, tripEnd, bookings, todos = [], dayNotes = [], dayReminders = [], selectedTrip, onBookingClick, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder }) {
   const today = new Date()
   const days = []
   for (let d = new Date(tripStart); d <= tripEnd; d.setDate(d.getDate() + 1)) {
@@ -99,6 +99,7 @@ export default function TripAgenda({ tripStart, tripEnd, bookings, todos = [], d
                     onAdd={onAddReminder}
                     onEdit={onEditReminder}
                     onRemove={onRemoveReminder}
+                    onReorder={onReorderReminder}
                     variant="agenda"
                   />
                 </div>

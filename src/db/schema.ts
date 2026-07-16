@@ -216,6 +216,9 @@ export const dayReminders = pgTable(
     trip_id: uuid("trip_id").references(() => trips.id, { onDelete: "set null" }),
     text: text("text").notNull(),
     time: text("time"), // optional "HH:MM" (24h); null = untimed
+    // Manual sort order within a (date, trip). Lower sorts first; new items
+    // append to the end. Overrides time-based ordering once the user drags.
+    position: integer("position").notNull().default(0),
     created_at: createdAt(),
   },
   (t) => [

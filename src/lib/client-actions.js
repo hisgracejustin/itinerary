@@ -15,6 +15,7 @@ import {
   createDayReminderAction,
   updateDayReminderAction,
   deleteDayReminderAction,
+  reorderDayRemindersAction,
 } from "@/actions/dayReminders";
 import { unwrap } from "@/lib/friendlyError";
 
@@ -28,3 +29,4 @@ export const deleteDayNote = async (id) => unwrap(await deleteDayNoteAction(id))
 export const createDayReminder = async (input) => unwrap(await createDayReminderAction(input));
 export const updateDayReminder = async (id, updates) => unwrap(await updateDayReminderAction(id, updates));
 export const deleteDayReminder = async (id) => unwrap(await deleteDayReminderAction(id));
+export const reorderDayReminders = async (ids) => unwrap(await reorderDayRemindersAction(ids));

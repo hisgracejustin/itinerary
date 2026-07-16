@@ -54,6 +54,7 @@ export const dayReminderInsertSchema = z.object({
   trip_id: z.string().uuid().nullish(),
   text: z.string().min(1),
   time: timeField,
+  position: z.number().int().optional(),
 });
 export const dayReminderUpdateSchema = z.object({
   text: z.string().min(1).optional(),

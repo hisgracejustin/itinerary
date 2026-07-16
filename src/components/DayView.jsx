@@ -4,7 +4,7 @@ import DayReminders from './DayReminders'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 
-export default function DayView({ currentDate, bookings, todos = [], dayReminders = [], selectedTrip, onBookingClick, onAddReminder, onEditReminder, onRemoveReminder }) {
+export default function DayView({ currentDate, bookings, todos = [], dayReminders = [], selectedTrip, onBookingClick, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder }) {
   const dayBookings = getBookingsForDate(bookings, currentDate)
 
   // Get todos for this day (due_date matches or no due_date)
@@ -94,6 +94,7 @@ export default function DayView({ currentDate, bookings, todos = [], dayReminder
             onAdd={onAddReminder}
             onEdit={onEditReminder}
             onRemove={onRemoveReminder}
+            onReorder={onReorderReminder}
             variant="panel"
           />
         </div>

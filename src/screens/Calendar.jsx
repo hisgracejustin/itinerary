@@ -2,7 +2,7 @@
 
 import { useState, useOptimistic, useTransition } from 'react'
 import { useTripContext } from '../lib/trip-context'
-import { createBooking, updateBooking, deleteBooking, upsertDayNote, createDayReminder, updateDayReminder, deleteDayReminder } from '@/lib/client-actions'
+import { createBooking, updateBooking, deleteBooking, upsertDayNote, createDayReminder, updateDayReminder, deleteDayReminder, reorderDayReminders } from '@/lib/client-actions'
 import MonthView from '../components/MonthView'
 import MobileMonthView from '../components/MobileMonthView'
 import WeekView from '../components/WeekView'
@@ -46,6 +46,11 @@ function dayReminderReducer(state, action) {
       return state.map((r) => (r.id === action.id ? { ...r, ...action.patch } : r))
     case 'remove':
       return state.filter((r) => r.id !== action.id)
+    case 'reorder': {
+      // Assign each listed id its index as the new position; others unchanged.
+      const pos = new Map(action.order.map((id, i) => [id, i]))
+      return state.map((r) => (pos.has(r.id) ? { ...r, position: pos.get(r.id) } : r))
+    }
     default:
       return state
   }
@@ -127,11 +132,15 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   const handleAddReminder = ({ date, text, time, trip_id }) => {
     const resolvedTripId = trip_id ?? selectedTrip ?? null
     const id = crypto.randomUUID()
+    // Append to the end of this day's list (send the position the server will use
+    // so the optimistic row lands where the persisted one will).
+    const sameDay = dayReminders.filter((r) => r.date === date && (r.trip_id ?? null) === resolvedTripId)
+    const position = sameDay.reduce((max, r) => Math.max(max, r.position ?? 0), -1) + 1
     return new Promise((resolve, reject) => {
       startReminderTransition(async () => {
-        applyOptimisticReminder({ type: 'add', reminder: { id, date, text, time: time ?? null, trip_id: resolvedTripId, _pending: true } })
+        applyOptimisticReminder({ type: 'add', reminder: { id, date, text, time: time ?? null, trip_id: resolvedTripId, position, _pending: true } })
         try {
-          await createDayReminder({ id, date, text, time: time ?? null, trip_id: resolvedTripId })
+          await createDayReminder({ id, date, text, time: time ?? null, trip_id: resolvedTripId, position })
           resolve()
         } catch (err) {
           reject(err)
@@ -139,6 +148,19 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
       })
     })
   }
+
+  const handleReorderReminders = (orderedIds) =>
+    new Promise((resolve, reject) => {
+      startReminderTransition(async () => {
+        applyOptimisticReminder({ type: 'reorder', order: orderedIds })
+        try {
+          await reorderDayReminders(orderedIds)
+          resolve()
+        } catch (err) {
+          reject(err)
+        }
+      })
+    })
 
   const handleEditReminder = (id, { text, time }) =>
     new Promise((resolve, reject) => {
@@ -182,6 +204,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
     onAddReminder: handleAddReminder,
     onEditReminder: handleEditReminder,
     onRemoveReminder: handleRemoveReminder,
+    onReorderReminder: handleReorderReminders,
   }
 
   const handleSelectDate = (date) => {

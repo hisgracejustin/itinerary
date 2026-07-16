@@ -13,7 +13,7 @@ function toLocalDateStr(date) {
   return `${y}-${m}-${d}`
 }
 
-export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, selectedTrip, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, collapsed = false, onCollapsedChange }) {
+export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, selectedTrip, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, collapsed = false, onCollapsedChange }) {
   // Default: if trip selected → first day of trip, else today
   const getDefaultDay = useCallback(() => {
     if (selectedTrip && tripMeta?.start_date) {
@@ -678,6 +678,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       onAdd={onAddReminder}
                       onEdit={onEditReminder}
                       onRemove={onRemoveReminder}
+                      onReorder={onReorderReminder}
                       variant="agenda"
                     />
                   </div>
