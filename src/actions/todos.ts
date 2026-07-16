@@ -1,6 +1,7 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db, tables } from "@/db";
 import { runAction } from "@/lib/action-utils";
@@ -13,6 +14,15 @@ export async function createTodoAction(input: unknown) {
   return runAction(async (user) => {
     const data = todoInsertSchema.parse(input);
     if (data.trip_id) await requireTripAccess(user.id, data.trip_id, WRITE_ROLES);
+    // Append to the end of the list unless the client sent an explicit position
+    // (it does, so the optimistic row lands where the persisted one will).
+    let position = data.position;
+    if (position == null) {
+      const [{ next } = { next: 0 }] = await db
+        .select({ next: sql<number>`coalesce(max(${tables.todos.position}), -1) + 1` })
+        .from(tables.todos);
+      position = next;
+    }
     const [row] = await db
       .insert(tables.todos)
       .values({
@@ -21,6 +31,7 @@ export async function createTodoAction(input: unknown) {
         title: data.title,
         due_date: data.due_date ?? null,
         completed: data.completed ?? false,
+        position,
       })
       .returning();
     revalidateApp();
@@ -66,5 +77,37 @@ export async function deleteTodoAction(id: string) {
     await db.delete(tables.todos).where(eq(tables.todos.id, id));
     revalidateApp();
     return { id };
+  });
+}
+
+const reorderSchema = z.array(z.string()).min(1);
+
+export async function reorderTodosAction(orderedIds: unknown) {
+  return runAction(async (user) => {
+    const ids = reorderSchema.parse(orderedIds);
+    // Only touch rows that actually exist, and require write access to every
+    // distinct trip involved so a member of one trip can't reshuffle another's.
+    const rows = await db
+      .select({ id: tables.todos.id, trip_id: tables.todos.trip_id })
+      .from(tables.todos)
+      .where(inArray(tables.todos.id, ids));
+    const tripIds = [...new Set(rows.map((r) => r.trip_id).filter(Boolean) as string[])];
+    for (const tripId of tripIds) await requireTripAccess(user.id, tripId, WRITE_ROLES);
+
+    // Reassign positions in one statement: position = the id's index in `ids`.
+    // Rows not present in `ids` keep their current position.
+    const known = new Set(rows.map((r) => r.id));
+    const present = ids.filter((id) => known.has(id));
+    if (present.length === 0) return { ok: true };
+    const cases = sql.join(
+      present.map((id, i) => sql`when ${id} then ${i}`),
+      sql` `,
+    );
+    await db
+      .update(tables.todos)
+      .set({ position: sql`case ${tables.todos.id} ${cases} else ${tables.todos.position} end` })
+      .where(inArray(tables.todos.id, present));
+    revalidateApp();
+    return { ok: true };
   });
 }

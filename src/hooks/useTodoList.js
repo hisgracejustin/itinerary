@@ -1,7 +1,7 @@
 "use client";
 
 import { useOptimistic, useTransition } from "react";
-import { createTodoAction, updateTodoAction, deleteTodoAction } from "@/actions/todos";
+import { createTodoAction, updateTodoAction, deleteTodoAction, reorderTodosAction } from "@/actions/todos";
 import { unwrap } from "@/lib/friendlyError";
 
 // Optimistic to-do list layered over the server-provided list (`initial`). The
@@ -17,6 +17,12 @@ function reducer(state, action) {
       return state.map((t) => (t.id === action.id ? { ...t, ...action.patch } : t));
     case "remove":
       return state.filter((t) => t.id !== action.id);
+    case "reorder": {
+      // Assign each listed id its index as the new position; unlisted rows keep
+      // theirs. The screen sorts by position, so this reflects the new order.
+      const pos = new Map(action.order.map((id, i) => [id, i]));
+      return state.map((t) => (pos.has(t.id) ? { ...t, position: pos.get(t.id) } : t));
+    }
     default:
       return state;
   }
@@ -32,6 +38,9 @@ export function useTodoList(initial, { onError } = {}) {
       // and the persisted row share an id: reconciliation is seamless and a
       // later delete/toggle targets the right row.
       const id = crypto.randomUUID();
+      // Append to the end of the list. Sending the position the server will use
+      // keeps the optimistic row from jumping when the real row comes back.
+      const position = todos.reduce((max, t) => Math.max(max, t.position ?? 0), -1) + 1;
       applyOptimistic({
         type: "add",
         todo: {
@@ -40,11 +49,12 @@ export function useTodoList(initial, { onError } = {}) {
           trip_id: trip_id ?? null,
           due_date: due_date ?? null,
           completed: false,
+          position,
           _pending: true,
         },
       });
       try {
-        await unwrap(await createTodoAction({ id, title, trip_id: trip_id ?? null, due_date: due_date ?? null }));
+        await unwrap(await createTodoAction({ id, title, trip_id: trip_id ?? null, due_date: due_date ?? null, position }));
         onSuccess?.();
       } catch (err) {
         onError?.(err);
@@ -63,6 +73,20 @@ export function useTodoList(initial, { onError } = {}) {
       try {
         await unwrap(await updateTodoAction(id, patch));
         onSuccess?.();
+      } catch (err) {
+        onError?.(err);
+      }
+    });
+  };
+
+  const reorder = (order) => {
+    // `order` is the full list of visible ids in their new order. Skip if any
+    // are still being created — their DB rows may not exist yet.
+    if (order.some((id) => todos.find((t) => t.id === id)?._pending)) return;
+    startTransition(async () => {
+      applyOptimistic({ type: "reorder", order });
+      try {
+        await unwrap(await reorderTodosAction(order));
       } catch (err) {
         onError?.(err);
       }
@@ -97,5 +121,5 @@ export function useTodoList(initial, { onError } = {}) {
     });
   };
 
-  return { todos, add, edit, toggle, remove, isPending };
+  return { todos, add, edit, reorder, toggle, remove, isPending };
 }

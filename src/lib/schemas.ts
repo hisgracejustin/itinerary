@@ -35,6 +35,7 @@ export const todoInsertSchema = z.object({
   title: z.string().min(1),
   due_date: z.string().nullish(),
   completed: z.boolean().optional(),
+  position: z.number().int().optional(),
 });
 
 export const todoUpdateSchema = todoInsertSchema.partial();

@@ -9,24 +9,22 @@ import { useToast } from '../components/Toast'
 export default function Todos({ initialTodos }) {
   const { selectedTrip, tripMeta, trips } = useTripContext()
   const { toast } = useToast()
-  const { todos, add, edit, toggle, remove } = useTodoList(initialTodos, {
+  const { todos, add, edit, reorder, toggle, remove } = useTodoList(initialTodos, {
     onError: (err) => toast.error(friendlyError(err)),
   })
   const [newTodo, setNewTodo] = useState('')
   const [newTodoDate, setNewTodoDate] = useState('')
   const [newTodoTrip, setNewTodoTrip] = useState(selectedTrip || '')
   const [editingId, setEditingId] = useState(null)
+  const [dragId, setDragId] = useState(null)
 
-  // Match the server ordering (due_date asc, nulls last) so an optimistically
-  // added todo lands in place instead of appearing at the bottom then jumping.
-  const byDue = (a, b) => {
-    if (!a.due_date && !b.due_date) return 0
-    if (!a.due_date) return 1
-    if (!b.due_date) return -1
-    return a.due_date.localeCompare(b.due_date)
-  }
-  const incompleteTodos = todos.filter((t) => !t.completed).sort(byDue)
-  const completedTodos = todos.filter((t) => t.completed).sort(byDue)
+  // Manual order: sort by the persisted `position` (matches the server) so
+  // dragged rows stay where the user dropped them. created_at breaks ties.
+  const byPosition = (a, b) =>
+    (a.position ?? 0) - (b.position ?? 0) ||
+    String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
+  const incompleteTodos = todos.filter((t) => !t.completed).sort(byPosition)
+  const completedTodos = todos.filter((t) => t.completed).sort(byPosition)
 
   const handleAdd = (e) => {
     e.preventDefault()
@@ -46,6 +44,20 @@ export default function Todos({ initialTodos }) {
       { title: fields.title.trim(), trip_id: fields.trip_id || null, due_date: fields.due_date || null },
       { onSuccess: () => { setEditingId(null); toast.success('To-do updated') } },
     )
+  }
+
+  // Drag-to-reorder within the incomplete list. On drop, move the dragged row to
+  // the target's slot and persist the whole visible order (incomplete first,
+  // then completed) so positions stay a clean 0..n.
+  const handleDropOn = (targetId) => {
+    if (!dragId || dragId === targetId) { setDragId(null); return }
+    const ids = incompleteTodos.map((t) => t.id)
+    const from = ids.indexOf(dragId)
+    const to = ids.indexOf(targetId)
+    setDragId(null)
+    if (from === -1 || to === -1) return
+    ids.splice(to, 0, ids.splice(from, 1)[0])
+    reorder([...ids, ...completedTodos.map((t) => t.id)])
   }
 
   return (
@@ -117,6 +129,16 @@ export default function Todos({ initialTodos }) {
                 onSaveEdit={handleSaveEdit}
                 onToggle={toggle}
                 onRemove={remove}
+                draggable={!editingId}
+                isDragging={dragId === todo.id}
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('text/plain', todo.id)
+                  setDragId(todo.id)
+                }}
+                onDragOverItem={(e) => { if (dragId && dragId !== todo.id) e.preventDefault() }}
+                onDropItem={() => handleDropOn(todo.id)}
+                onDragEnd={() => setDragId(null)}
               />
             ))}
 
@@ -147,7 +169,10 @@ export default function Todos({ initialTodos }) {
   )
 }
 
-function TodoItem({ todo, trips, editing, onStartEdit, onCancelEdit, onSaveEdit, onToggle, onRemove }) {
+function TodoItem({
+  todo, trips, editing, onStartEdit, onCancelEdit, onSaveEdit, onToggle, onRemove,
+  draggable = false, isDragging = false, onDragStart, onDragOverItem, onDropItem, onDragEnd,
+}) {
   const tripName = todo.trip || trips.find((t) => t.id === todo.trip_id)?.name
 
   if (editing) {
@@ -162,9 +187,27 @@ function TodoItem({ todo, trips, editing, onStartEdit, onCancelEdit, onSaveEdit,
   }
 
   return (
-    <div className={`flex items-start gap-3 p-3.5 rounded-xl bg-white border border-outline/20 hover:shadow-elevation-1 transition-all duration-150 group ${
-      todo.completed ? 'opacity-50' : todo._pending ? 'opacity-60' : ''
-    }`}>
+    <div
+      onDragOver={onDragOverItem}
+      onDrop={onDropItem}
+      className={`flex items-start gap-3 p-3.5 rounded-xl bg-white border transition-all duration-150 group ${
+        isDragging ? 'opacity-40 border-primary' : 'border-outline/20 hover:shadow-elevation-1'
+      } ${todo.completed ? 'opacity-50' : todo._pending ? 'opacity-60' : ''}`}
+    >
+      {draggable && (
+        <button
+          type="button"
+          draggable
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          aria-label="Drag to reorder"
+          className="mt-0.5 -ml-1 text-on-surface-variant/50 hover:text-on-surface-variant cursor-grab active:cursor-grabbing touch-none shrink-0"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M7 4a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM7 10a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM7 16a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM16 4a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM16 10a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM16 16a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
+          </svg>
+        </button>
+      )}
       <input
         type="checkbox"
         checked={todo.completed}

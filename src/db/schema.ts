@@ -177,11 +177,16 @@ export const todos = pgTable(
     title: text("title").notNull(),
     due_date: text("due_date"),
     completed: boolean("completed").notNull().default(false),
+    // Manual sort order. Lower sorts first; new todos append to the end. The
+    // list is ordered by this rather than due_date so users can drag rows into
+    // whatever order they want.
+    position: integer("position").notNull().default(0),
     created_at: createdAt(),
   },
   (t) => [
     index("idx_todos_trip_id").on(t.trip_id),
     index("idx_todos_due_date").on(t.due_date),
+    index("idx_todos_position").on(t.position),
   ],
 );
 

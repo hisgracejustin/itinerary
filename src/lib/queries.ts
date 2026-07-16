@@ -81,7 +81,7 @@ export function getTodosForUser(userId: string, tripId?: string | null) {
         ),
       )
       .where(eq(tables.todos.trip_id, tripId))
-      .orderBy(asc(tables.todos.due_date), asc(tables.todos.created_at));
+      .orderBy(asc(tables.todos.position), asc(tables.todos.created_at));
   }
   // Tripless todos plus todos of any trip the user belongs to. LEFT JOIN so
   // tripless rows survive; the WHERE keeps tripless OR matched-membership rows.
@@ -96,7 +96,7 @@ export function getTodosForUser(userId: string, tripId?: string | null) {
       ),
     )
     .where(or(isNull(tables.todos.trip_id), isNotNull(tables.tripMembers.user_id)))
-    .orderBy(asc(tables.todos.due_date), asc(tables.todos.created_at));
+    .orderBy(asc(tables.todos.position), asc(tables.todos.created_at));
 }
 
 /** Day notes for one trip, or (tripless + every accessible trip) when `tripId` is null. */
