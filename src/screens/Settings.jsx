@@ -232,8 +232,8 @@ function TripCard({ trip, currentUserId, busy, run }) {
       {confirmDelete && (
         <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200">
           <p className="text-xs text-red-700 mb-2">
-            Delete <strong>{trip.name}</strong>? Its bookings are deleted too. To-dos, day
-            notes and reminders are kept but lose their trip.
+            Delete <strong>{trip.name}</strong>? Everything on it is deleted too — bookings,
+            to-dos, day notes and reminders. This can&apos;t be undone.
           </p>
           <div className="flex justify-end gap-2">
             <button onClick={() => setConfirmDelete(false)} className="mat-btn-outlined text-xs">

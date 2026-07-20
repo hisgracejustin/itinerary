@@ -8,6 +8,14 @@ export function memberLabel(member) {
   return member.name || member.email?.split('@')[0] || 'Someone'
 }
 
+/**
+ * First name only — for the compact chip on a to-do row, where the full name
+ * eats the width the title needs. Menus and Settings still show the full name.
+ */
+export function memberFirstName(member) {
+  return memberLabel(member).trim().split(/\s+/)[0]
+}
+
 /** Initials for the avatar bubble. */
 function initials(member) {
   const label = memberLabel(member)
@@ -132,7 +140,7 @@ export default function AssigneePicker({
           <>
             <Avatar member={selected ?? { id: value }} size={size} />
             <span className="font-medium truncate max-w-[8rem]">
-              {selected ? memberLabel(selected) : 'Former member'}
+              {selected ? memberFirstName(selected) : 'Former member'}
             </span>
           </>
         )}
