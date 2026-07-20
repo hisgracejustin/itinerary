@@ -1,4 +1,4 @@
-import { getWeekDays, getBookingsForDate, isSameDay, getHour, formatTime } from '../lib/calendar'
+import { getWeekDays, getBookingsForDate, isSameDay, getHour, getStayEdge, formatTime } from '../lib/calendar'
 import BookingChip from './BookingChip'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
@@ -59,6 +59,7 @@ export default function WeekView({ currentDate, bookings, onSelectDate, onBookin
                         key={booking.id}
                         booking={booking}
                         compact
+                        stayEdge={getStayEdge(booking, day)}
                         onClick={(b) => { onBookingClick?.(b) }}
                       />
                     ))}

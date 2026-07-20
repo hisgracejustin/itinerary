@@ -1,18 +1,30 @@
 import { TYPE_COLORS, TYPE_ICONS, formatTime } from '../lib/calendar'
 
-export default function BookingChip({ booking, compact = false, onClick }) {
+export default function BookingChip({ booking, compact = false, onClick, stayEdge = null }) {
   const colors = TYPE_COLORS[booking.type] || TYPE_COLORS.activity
   const icon = TYPE_ICONS[booking.type] || '📌'
+  // The check-out day isn't a night stayed — render it hollow (unfilled, dashed
+  // edge) with an explicit "out" badge so it doesn't read as another night.
+  const isCheckout = stayEdge === 'out'
 
   if (compact) {
     return (
       <button
         onClick={(e) => { e.stopPropagation(); onClick?.(booking) }}
-        className={`w-full text-left px-1.5 py-0.5 rounded text-[11px] truncate border-l-2 ${colors.border} ${colors.bg} ${colors.text} hover:shadow-elevation-1 transition-all duration-150`}
-        title={booking.title}
+        className={`w-full text-left inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border-l-2 ${colors.border} hover:shadow-elevation-1 transition-all duration-150 ${
+          isCheckout
+            ? 'border-dashed bg-transparent text-on-surface-variant'
+            : `${colors.bg} ${colors.text}`
+        }`}
+        title={isCheckout ? `${booking.title} — check-out` : booking.title}
       >
-        <span className="mr-0.5 text-[10px]">{icon}</span>
-        {booking.title}
+        <span className={`text-[10px] shrink-0 ${isCheckout ? 'opacity-50' : ''}`}>{icon}</span>
+        <span className="truncate">{booking.title}</span>
+        {isCheckout && (
+          <span className="ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-wide opacity-70">
+            out
+          </span>
+        )}
       </button>
     )
   }

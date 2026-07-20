@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { getMonthGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, TYPE_ICONS } from '../lib/calendar'
+import { getMonthGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, getStayEdge, TYPE_ICONS } from '../lib/calendar'
 import BookingChip from './BookingChip'
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
@@ -381,6 +381,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
                               key={booking.id}
                               booking={booking}
                               compact
+                              stayEdge={getStayEdge(booking, day)}
                               onClick={(b) => { onBookingClick?.(b) }}
                             />
                           ))}

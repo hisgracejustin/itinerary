@@ -83,6 +83,27 @@ export function getBookingsForDate(bookings, date) {
 }
 
 /**
+ * For a multi-night stay (hotel/cruise), which edge of the stay a given date is:
+ * 'in' on the check-in day, 'out' on the check-out day, null otherwise.
+ *
+ * The check-out day is not a night stayed (see hasOvernightCoverage), so callers
+ * render it differently to avoid implying another night at that property.
+ */
+export function getStayEdge(booking, date) {
+  if (booking.type !== 'hotel' && booking.type !== 'cruise') return null
+  if (!booking.end_date) return null
+  const start = new Date(booking.start_date)
+  const end = new Date(booking.end_date)
+  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+  if (endDay <= startDay) return null
+  const viewDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  if (viewDay.getTime() === endDay.getTime()) return 'out'
+  if (viewDay.getTime() === startDay.getTime()) return 'in'
+  return null
+}
+
+/**
  * Format a time string from an ISO date string (e.g. "10:30 AM").
  */
 export function formatTime(isoString) {
