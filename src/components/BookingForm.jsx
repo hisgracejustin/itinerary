@@ -129,9 +129,24 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
     return Object.keys(errs).length === 0
   }
 
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    if (!validate()) return
+  // Nothing stops a booking from sitting outside its trip's dates, and that's
+  // sometimes legitimate (a pre-trip flight, a late checkout). But it's usually
+  // a mis-filed trip — and the Trip view only renders days inside the range, so
+  // the booking would appear to vanish. Warn, don't block.
+  const outOfRange = (() => {
+    const trip = (trips || []).find((t) => t.id === form.trip_id)
+    if (!trip?.start_date || !trip?.end_date || !form.start_date) return null
+    // Both "YYYY-MM-DD" and "YYYY-MM-DDTHH:mm" slice to a comparable date.
+    const day = (s) => String(s).slice(0, 10)
+    const from = day(form.start_date)
+    const to = form.end_date ? day(form.end_date) : from
+    if (from >= trip.start_date && to <= trip.end_date) return null
+    return { trip, from, to }
+  })()
+
+  const [rangeWarning, setRangeWarning] = useState(false)
+
+  const submitSave = () => {
     const isInformal = form.type === 'hotel' && form.details.informal
     onSave({
       ...form,
@@ -142,6 +157,16 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
       cost_share: form.cost_amount ? parseFloat(form.cost_share) || 1 : null,
       details: Object.keys(form.details).length > 0 ? form.details : null,
     })
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!validate()) return
+    if (outOfRange) {
+      setRangeWarning(true)
+      return
+    }
+    submitSave()
   }
 
   const fields = TYPE_FIELDS[form.type] || []
@@ -341,6 +366,59 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
 
       {/* Hidden submit button so form submit works from footer */}
       <button type="submit" className="hidden" />
+
+      {rangeWarning && outOfRange && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="range-warning-title"
+        >
+          <div className="bg-white rounded-2xl shadow-elevation-3 w-full max-w-sm p-5">
+            <div className="flex items-start gap-3 mb-3">
+              <span className="shrink-0 w-9 h-9 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" />
+                </svg>
+              </span>
+              <div className="min-w-0">
+                <h4 id="range-warning-title" className="text-sm font-medium text-on-surface">
+                  Outside the trip&apos;s dates
+                </h4>
+                <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
+                  This booking is{' '}
+                  <strong className="text-on-surface">
+                    {outOfRange.from}
+                    {outOfRange.to !== outOfRange.from && ` → ${outOfRange.to}`}
+                  </strong>
+                  , but <strong className="text-on-surface">{outOfRange.trip.name}</strong> runs{' '}
+                  {outOfRange.trip.start_date} → {outOfRange.trip.end_date}.
+                </p>
+                <p className="text-xs text-on-surface-variant mt-2 leading-relaxed">
+                  It will save fine, but won&apos;t appear in the Trip view — only in
+                  Month view for its own dates.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRangeWarning(false)}
+                className="mat-btn-outlined"
+              >
+                Go back
+              </button>
+              <button
+                type="button"
+                onClick={() => { setRangeWarning(false); submitSave() }}
+                className="mat-btn-filled"
+              >
+                Save anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   )
 }
