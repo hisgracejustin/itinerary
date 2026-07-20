@@ -56,7 +56,7 @@ export default function Sidebar({ user, trips, selectedTrip, onNavigate }) {
     }`;
 
   return (
-    <aside className="w-72 bg-white h-full overflow-y-auto shrink-0 border-r border-outline/40 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+    <aside className="w-full h-full overflow-y-auto shrink-0 bg-white border-r border-outline/40 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       {/* Navigation */}
       <nav className="p-3 pt-4">
         <NavItem

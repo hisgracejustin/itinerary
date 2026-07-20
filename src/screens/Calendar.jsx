@@ -57,7 +57,7 @@ function dayReminderReducer(state, action) {
 }
 
 export default function Calendar({ initialBookings, initialTodos, initialDayNotes, initialDayReminders }) {
-  const { selectedTrip, tripMeta, onOpenAdd } = useTripContext()
+  const { selectedTrip, tripMeta } = useTripContext()
   const bookings = initialBookings
   const todos = initialTodos
   const [dayNotes, applyOptimisticDayNote] = useOptimistic(initialDayNotes, dayNoteReducer)
@@ -94,18 +94,10 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
     }
   }
 
-  const openAddModal = () => {
-    setEditingBooking(null)
-    setModalOpen(true)
-  }
-
   const openEditModal = (booking) => {
     setEditingBooking(booking)
     setModalOpen(true)
   }
-
-  // Register the openAdd handler so the Header's "+" button can call it.
-  if (onOpenAdd) onOpenAdd.current = openAddModal
 
   const handleUpsertDayNote = ({ date, title, trip_id }) => {
     const resolvedTripId = trip_id ?? selectedTrip ?? null
