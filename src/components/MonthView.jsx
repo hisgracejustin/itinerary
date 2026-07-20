@@ -111,8 +111,11 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
     return d < tripStart || d > tripEnd
   }
 
+  // Completed to-dos are hidden from the month grid to save space — they still
+  // show in the day-detail panel and the to-do list.
   const getTodosForDate = (date) => {
     return todos.filter((t) => {
+      if (t.completed) return false
       if (!t.due_date) return false
       return isSameDay(new Date(t.due_date + 'T00:00:00'), date)
     })
