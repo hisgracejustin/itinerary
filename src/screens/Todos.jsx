@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from 'react'
+import Link from 'next/link'
 import {
   DndContext, DragOverlay, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors,
 } from '@dnd-kit/core'
@@ -82,10 +83,11 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
     if (!newTodo.trim()) return
     // Clear only on success so a failed add (offline / no permission) keeps the
     // typed text for a retry.
+    if (!newTodoTrip) return
     add(
       {
         title: newTodo.trim(),
-        trip_id: newTodoTrip || null,
+        trip_id: newTodoTrip,
         due_date: newTodoDate || null,
         assignee_id: newTodoAssignee?.id ?? null,
       },
@@ -94,12 +96,12 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
   }
 
   const handleSaveEdit = (id, fields) => {
-    if (!fields.title.trim()) return
+    if (!fields.title.trim() || !fields.trip_id) return
     edit(
       id,
       {
         title: fields.title.trim(),
-        trip_id: fields.trip_id || null,
+        trip_id: fields.trip_id,
         due_date: fields.due_date || null,
         assignee: fields.assignee ?? null,
       },
@@ -127,7 +129,18 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
         </div>
       </div>
 
-      {/* Add form */}
+      {/* Add form — needs at least one trip to attach a to-do to. */}
+      {trips.length === 0 ? (
+        <div className="mat-surface p-5 mb-4 shrink-0 text-center">
+          <p className="text-sm text-on-surface mb-1">No trips yet</p>
+          <p className="text-xs text-on-surface-variant mb-3">
+            Every to-do belongs to a trip, so create one first.
+          </p>
+          <Link href="/settings" className="mat-btn-filled inline-flex">
+            Go to Settings
+          </Link>
+        </div>
+      ) : (
       <form onSubmit={handleAdd} className="mat-surface p-4 mb-4 shrink-0">
         <div className="flex flex-col sm:flex-row gap-2">
           <input
@@ -144,17 +157,20 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
               onChange={(e) => setNewTodoDate(e.target.value)}
               className="mat-input text-sm sm:w-40"
             />
+            {/* Every to-do belongs to a trip — that's what scopes it to its
+                members. There is no "no trip" option any more. */}
             <select
               value={newTodoTrip}
               onChange={(e) => setNewTodoTrip(e.target.value)}
+              required
               className="mat-select flex-1 sm:flex-none"
             >
-              <option value="">No trip</option>
+              <option value="" disabled>Pick a trip…</option>
               {trips.map((trip) => (
                 <option key={trip.id} value={trip.id}>{trip.name}</option>
               ))}
             </select>
-            <button type="submit" className="mat-btn-filled shrink-0">
+            <button type="submit" disabled={!newTodoTrip} className="mat-btn-filled shrink-0 disabled:opacity-40">
               Add
             </button>
           </div>
@@ -169,6 +185,7 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
           />
         </div>
       </form>
+      )}
 
       {/* Assignee filter */}
       {(members.length > 0 || unassignedCount > 0) && (
@@ -499,9 +516,10 @@ function TodoEditForm({ todo, trips, members = [], currentUserId = null, onSave,
           <select
             value={tripId}
             onChange={(e) => setTripId(e.target.value)}
+            required
             className="mat-select flex-1 sm:flex-none"
           >
-            <option value="">No trip</option>
+            <option value="" disabled>Pick a trip…</option>
             {trips.map((trip) => (
               <option key={trip.id} value={trip.id}>{trip.name}</option>
             ))}

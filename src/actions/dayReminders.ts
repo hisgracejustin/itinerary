@@ -13,7 +13,7 @@ const revalidateApp = () => revalidatePath("/", "layout");
 export async function createDayReminderAction(input: unknown) {
   return runAction(async (user) => {
     const data = dayReminderInsertSchema.parse(input);
-    if (data.trip_id) await requireTripAccess(user.id, data.trip_id, WRITE_ROLES);
+    await requireTripAccess(user.id, data.trip_id, WRITE_ROLES);
     // Append to the end of this day's list unless the client sent a position.
     let position = data.position;
     if (position == null) {
@@ -31,7 +31,7 @@ export async function createDayReminderAction(input: unknown) {
       .values({
         id: data.id || crypto.randomUUID(),
         date: data.date,
-        trip_id: data.trip_id ?? null,
+        trip_id: data.trip_id,
         text: data.text,
         time: data.time ?? null,
         position,
@@ -51,7 +51,7 @@ export async function updateDayReminderAction(id: string, input: unknown) {
       .where(eq(tables.dayReminders.id, id))
       .limit(1);
     if (!existing) throw new Error("Reminder not found");
-    if (existing.trip_id) await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
+    await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     const [row] = await db
       .update(tables.dayReminders)
       .set(updates)
@@ -70,7 +70,7 @@ export async function deleteDayReminderAction(id: string) {
       .where(eq(tables.dayReminders.id, id))
       .limit(1);
     if (!existing) return { id };
-    if (existing.trip_id) await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
+    await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     await db.delete(tables.dayReminders).where(eq(tables.dayReminders.id, id));
     revalidateApp();
     return { id };

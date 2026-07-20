@@ -1,4 +1,4 @@
-import { and, asc, eq, getTableColumns, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, inArray } from "drizzle-orm";
 import { db, tables } from "@/db";
 
 /**
@@ -76,38 +76,30 @@ const assigneeCols = {
   assignee_image: tables.users.image,
 };
 
-/** Todos for one trip, or (tripless + every accessible trip) when `tripId` is null. */
+/**
+ * Todos for one trip, or every accessible trip when `tripId` is null.
+ *
+ * trip_id is NOT NULL, so the membership INNER JOIN is the whole authorization
+ * story — there is no unowned row for a query to accidentally expose.
+ */
 export function getTodosForUser(userId: string, tripId?: string | null) {
-  if (tripId) {
-    return db
-      .select({ ...todoCols, ...assigneeCols })
-      .from(tables.todos)
-      .innerJoin(
-        tables.tripMembers,
-        and(
-          eq(tables.tripMembers.trip_id, tables.todos.trip_id),
-          eq(tables.tripMembers.user_id, userId),
-        ),
-      )
-      .leftJoin(tables.users, eq(tables.users.id, tables.todos.assignee_id))
-      .where(eq(tables.todos.trip_id, tripId))
-      .orderBy(asc(tables.todos.position), asc(tables.todos.created_at));
-  }
-  // Tripless todos plus todos of any trip the user belongs to. LEFT JOIN so
-  // tripless rows survive; the WHERE keeps tripless OR matched-membership rows.
-  return db
+  const base = db
     .select({ ...todoCols, ...assigneeCols })
     .from(tables.todos)
-    .leftJoin(
+    .innerJoin(
       tables.tripMembers,
       and(
         eq(tables.tripMembers.trip_id, tables.todos.trip_id),
         eq(tables.tripMembers.user_id, userId),
       ),
     )
-    .leftJoin(tables.users, eq(tables.users.id, tables.todos.assignee_id))
-    .where(or(isNull(tables.todos.trip_id), isNotNull(tables.tripMembers.user_id)))
-    .orderBy(asc(tables.todos.position), asc(tables.todos.created_at));
+    .leftJoin(tables.users, eq(tables.users.id, tables.todos.assignee_id));
+  if (tripId) {
+    return base
+      .where(eq(tables.todos.trip_id, tripId))
+      .orderBy(asc(tables.todos.position), asc(tables.todos.created_at));
+  }
+  return base.orderBy(asc(tables.todos.position), asc(tables.todos.created_at));
 }
 
 /**
@@ -209,34 +201,22 @@ export async function getAssignableUsers(userId: string, tripId?: string | null)
   return self ? [self, ...rows] : rows;
 }
 
-/** Day notes for one trip, or (tripless + every accessible trip) when `tripId` is null. */
+/** Day notes for one trip, or every accessible trip when `tripId` is null. */
 export function getDayNotesForUser(userId: string, tripId?: string | null) {
-  if (tripId) {
-    return db
-      .select(dayNoteCols)
-      .from(tables.dayNotes)
-      .innerJoin(
-        tables.tripMembers,
-        and(
-          eq(tables.tripMembers.trip_id, tables.dayNotes.trip_id),
-          eq(tables.tripMembers.user_id, userId),
-        ),
-      )
-      .where(eq(tables.dayNotes.trip_id, tripId))
-      .orderBy(asc(tables.dayNotes.date));
-  }
-  return db
+  const base = db
     .select(dayNoteCols)
     .from(tables.dayNotes)
-    .leftJoin(
+    .innerJoin(
       tables.tripMembers,
       and(
         eq(tables.tripMembers.trip_id, tables.dayNotes.trip_id),
         eq(tables.tripMembers.user_id, userId),
       ),
-    )
-    .where(or(isNull(tables.dayNotes.trip_id), isNotNull(tables.tripMembers.user_id)))
-    .orderBy(asc(tables.dayNotes.date));
+    );
+  if (tripId) {
+    return base.where(eq(tables.dayNotes.trip_id, tripId)).orderBy(asc(tables.dayNotes.date));
+  }
+  return base.orderBy(asc(tables.dayNotes.date));
 }
 
 const dayReminderCols = getTableColumns(tables.dayReminders);
@@ -248,30 +228,18 @@ export function getDayRemindersForUser(userId: string, tripId?: string | null) {
     asc(tables.dayReminders.position),
     asc(tables.dayReminders.created_at),
   ];
-  if (tripId) {
-    return db
-      .select(dayReminderCols)
-      .from(tables.dayReminders)
-      .innerJoin(
-        tables.tripMembers,
-        and(
-          eq(tables.tripMembers.trip_id, tables.dayReminders.trip_id),
-          eq(tables.tripMembers.user_id, userId),
-        ),
-      )
-      .where(eq(tables.dayReminders.trip_id, tripId))
-      .orderBy(...order);
-  }
-  return db
+  const base = db
     .select(dayReminderCols)
     .from(tables.dayReminders)
-    .leftJoin(
+    .innerJoin(
       tables.tripMembers,
       and(
         eq(tables.tripMembers.trip_id, tables.dayReminders.trip_id),
         eq(tables.tripMembers.user_id, userId),
       ),
-    )
-    .where(or(isNull(tables.dayReminders.trip_id), isNotNull(tables.tripMembers.user_id)))
-    .orderBy(...order);
+    );
+  if (tripId) {
+    return base.where(eq(tables.dayReminders.trip_id, tripId)).orderBy(...order);
+  }
+  return base.orderBy(...order);
 }

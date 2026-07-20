@@ -101,6 +101,9 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
 
   const handleUpsertDayNote = ({ date, title, trip_id }) => {
     const resolvedTripId = trip_id ?? selectedTrip ?? null
+    // Notes and reminders are trip-scoped (trip_id is NOT NULL) — with "All Trips"
+    // selected there is no trip to attach them to.
+    if (!resolvedTripId) return Promise.reject(new Error("Select a trip first to add notes"))
     const trimmed = title.trim()
     return new Promise((resolve, reject) => {
       startDayNoteTransition(async () => {
@@ -123,6 +126,9 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   // when to close (and can surface an error toast on failure).
   const handleAddReminder = ({ date, text, time, trip_id }) => {
     const resolvedTripId = trip_id ?? selectedTrip ?? null
+    // Notes and reminders are trip-scoped (trip_id is NOT NULL) — with "All Trips"
+    // selected there is no trip to attach them to.
+    if (!resolvedTripId) return Promise.reject(new Error("Select a trip first to add notes"))
     const id = crypto.randomUUID()
     // Append to the end of this day's list (send the position the server will use
     // so the optimistic row lands where the persisted one will).

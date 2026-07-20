@@ -43,6 +43,13 @@
       "when": 1784530578946,
       "tag": "0005_sloppy_zuras",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784537329977,
+      "tag": "0006_solid_lorna_dane",
+      "breakpoints": true
     }
   ]
 }

@@ -31,7 +31,7 @@ export const bookingUpdateSchema = bookingInsertSchema.partial();
 
 export const todoInsertSchema = z.object({
   id: z.string().optional(),
-  trip_id: z.string().uuid().nullish(),
+  trip_id: z.string().uuid(),
   title: z.string().min(1),
   due_date: z.string().nullish(),
   completed: z.boolean().optional(),
@@ -46,7 +46,7 @@ export const todoUpdateSchema = todoInsertSchema.partial();
 export const dayNoteUpsertSchema = z.object({
   date: z.string().min(1),
   title: z.string(),
-  trip_id: z.string().uuid().nullish(),
+  trip_id: z.string().uuid(),
 });
 
 // Per-day free-form reminders (a list per day, distinct from the day title).
@@ -54,7 +54,7 @@ const timeField = z.string().regex(/^\d{2}:\d{2}$/, "Expected HH:MM").nullish();
 export const dayReminderInsertSchema = z.object({
   id: z.string().optional(),
   date: z.string().min(1),
-  trip_id: z.string().uuid().nullish(),
+  trip_id: z.string().uuid(),
   text: z.string().min(1),
   time: timeField,
   position: z.number().int().optional(),

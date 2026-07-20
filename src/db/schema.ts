@@ -173,7 +173,9 @@ export const todos = pgTable(
   "todos",
   {
     id: text("id").primaryKey(),
-    trip_id: uuid("trip_id").references(() => trips.id, { onDelete: "set null" }),
+    trip_id: uuid("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     due_date: text("due_date"),
     completed: boolean("completed").notNull().default(false),
@@ -201,7 +203,9 @@ export const dayNotes = pgTable(
   {
     id: text("id").primaryKey(),
     date: text("date").notNull(),
-    trip_id: uuid("trip_id").references(() => trips.id, { onDelete: "set null" }),
+    trip_id: uuid("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     created_at: createdAt(),
   },
@@ -219,7 +223,9 @@ export const dayReminders = pgTable(
   {
     id: text("id").primaryKey(),
     date: text("date").notNull(),
-    trip_id: uuid("trip_id").references(() => trips.id, { onDelete: "set null" }),
+    trip_id: uuid("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
     text: text("text").notNull(),
     time: text("time"), // optional "HH:MM" (24h); null = untimed
     // Manual sort order within a (date, trip). Lower sorts first; new items

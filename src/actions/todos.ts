@@ -13,7 +13,7 @@ const revalidateApp = () => revalidatePath("/", "layout");
 export async function createTodoAction(input: unknown) {
   return runAction(async (user) => {
     const data = todoInsertSchema.parse(input);
-    if (data.trip_id) await requireTripAccess(user.id, data.trip_id, WRITE_ROLES);
+    await requireTripAccess(user.id, data.trip_id, WRITE_ROLES);
     await requireAssignable(user.id, data.assignee_id, data.trip_id);
     // Append to the end of the list unless the client sent an explicit position
     // (it does, so the optimistic row lands where the persisted one will).
@@ -28,7 +28,7 @@ export async function createTodoAction(input: unknown) {
       .insert(tables.todos)
       .values({
         id: data.id || crypto.randomUUID(),
-        trip_id: data.trip_id ?? null,
+        trip_id: data.trip_id,
         title: data.title,
         due_date: data.due_date ?? null,
         completed: data.completed ?? false,
@@ -50,7 +50,7 @@ export async function updateTodoAction(id: string, input: unknown) {
       .where(eq(tables.todos.id, id))
       .limit(1);
     if (!existing) throw new Error("To-do not found");
-    if (existing.trip_id) await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
+    await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     // Moving a todo onto a different trip requires write access to the target
     // trip too — otherwise the existing-trip check alone would let a member of
     // trip A reassign a todo into trip B they can't write.
@@ -95,7 +95,7 @@ export async function deleteTodoAction(id: string) {
       .where(eq(tables.todos.id, id))
       .limit(1);
     if (!existing) return { id };
-    if (existing.trip_id) await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
+    await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     await db.delete(tables.todos).where(eq(tables.todos.id, id));
     revalidateApp();
     return { id };

@@ -12,7 +12,7 @@ const revalidateApp = () => revalidatePath("/", "layout");
 export async function upsertDayNoteAction(input: unknown) {
   return runAction(async (user) => {
     const { date, title, trip_id } = dayNoteUpsertSchema.parse(input);
-    if (trip_id) await requireTripAccess(user.id, trip_id, WRITE_ROLES);
+    await requireTripAccess(user.id, trip_id, WRITE_ROLES);
 
     const match = trip_id
       ? and(eq(tables.dayNotes.date, date), eq(tables.dayNotes.trip_id, trip_id))
@@ -41,7 +41,7 @@ export async function upsertDayNoteAction(input: unknown) {
         id: crypto.randomUUID(),
         date,
         title: title.trim(),
-        trip_id: trip_id ?? null,
+        trip_id,
       })
       .returning();
     revalidateApp();
@@ -57,7 +57,7 @@ export async function deleteDayNoteAction(id: string) {
       .where(eq(tables.dayNotes.id, id))
       .limit(1);
     if (!existing) return { id };
-    if (existing.trip_id) await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
+    await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     await db.delete(tables.dayNotes).where(eq(tables.dayNotes.id, id));
     revalidateApp();
     return { id };
