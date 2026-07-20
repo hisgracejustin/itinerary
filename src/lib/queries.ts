@@ -1,4 +1,4 @@
-import { and, asc, eq, getTableColumns, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { db, tables } from "@/db";
 
 /**
@@ -67,11 +67,20 @@ export function getBookingsForUser(userId: string, tripId?: string | null) {
   return base.orderBy(asc(tables.bookings.start_date));
 }
 
+// Each todo carries its assignee's display fields (flattened, snake_case to
+// match the rest of the row shape) so the list renders avatars/names without a
+// second query or a client-side user lookup. Null across the board = unassigned.
+const assigneeCols = {
+  assignee_name: tables.users.name,
+  assignee_email: tables.users.email,
+  assignee_image: tables.users.image,
+};
+
 /** Todos for one trip, or (tripless + every accessible trip) when `tripId` is null. */
 export function getTodosForUser(userId: string, tripId?: string | null) {
   if (tripId) {
     return db
-      .select(todoCols)
+      .select({ ...todoCols, ...assigneeCols })
       .from(tables.todos)
       .innerJoin(
         tables.tripMembers,
@@ -80,13 +89,14 @@ export function getTodosForUser(userId: string, tripId?: string | null) {
           eq(tables.tripMembers.user_id, userId),
         ),
       )
+      .leftJoin(tables.users, eq(tables.users.id, tables.todos.assignee_id))
       .where(eq(tables.todos.trip_id, tripId))
       .orderBy(asc(tables.todos.position), asc(tables.todos.created_at));
   }
   // Tripless todos plus todos of any trip the user belongs to. LEFT JOIN so
   // tripless rows survive; the WHERE keeps tripless OR matched-membership rows.
   return db
-    .select(todoCols)
+    .select({ ...todoCols, ...assigneeCols })
     .from(tables.todos)
     .leftJoin(
       tables.tripMembers,
@@ -95,8 +105,63 @@ export function getTodosForUser(userId: string, tripId?: string | null) {
         eq(tables.tripMembers.user_id, userId),
       ),
     )
+    .leftJoin(tables.users, eq(tables.users.id, tables.todos.assignee_id))
     .where(or(isNull(tables.todos.trip_id), isNotNull(tables.tripMembers.user_id)))
     .orderBy(asc(tables.todos.position), asc(tables.todos.created_at));
+}
+
+/**
+ * People a to-do can be assigned to, mirroring `requireAssignable`:
+ *  - a specific trip → its members.
+ *  - no trip selected → everyone the user shares any trip with (themselves
+ *    included), deduped, since tripless to-dos aren't scoped to one trip.
+ */
+export async function getAssignableUsers(userId: string, tripId?: string | null) {
+  if (tripId) {
+    return db
+      .select({
+        id: tables.users.id,
+        name: tables.users.name,
+        email: tables.users.email,
+        image: tables.users.image,
+        role: tables.tripMembers.role,
+      })
+      .from(tables.tripMembers)
+      .innerJoin(tables.users, eq(tables.users.id, tables.tripMembers.user_id))
+      .where(eq(tables.tripMembers.trip_id, tripId))
+      .orderBy(asc(tables.users.name), asc(tables.users.email));
+  }
+
+  const mine = db
+    .select({ trip_id: tables.tripMembers.trip_id })
+    .from(tables.tripMembers)
+    .where(eq(tables.tripMembers.user_id, userId));
+
+  const rows = await db
+    .selectDistinct({
+      id: tables.users.id,
+      name: tables.users.name,
+      email: tables.users.email,
+      image: tables.users.image,
+    })
+    .from(tables.tripMembers)
+    .innerJoin(tables.users, eq(tables.users.id, tables.tripMembers.user_id))
+    .where(inArray(tables.tripMembers.trip_id, mine))
+    .orderBy(asc(tables.users.name), asc(tables.users.email));
+
+  // The user always belongs in the list even with no trips yet.
+  if (rows.some((r) => r.id === userId)) return rows;
+  const [self] = await db
+    .select({
+      id: tables.users.id,
+      name: tables.users.name,
+      email: tables.users.email,
+      image: tables.users.image,
+    })
+    .from(tables.users)
+    .where(eq(tables.users.id, userId))
+    .limit(1);
+  return self ? [self, ...rows] : rows;
 }
 
 /** Day notes for one trip, or (tripless + every accessible trip) when `tripId` is null. */

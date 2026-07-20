@@ -5,7 +5,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db, tables } from "@/db";
 import { runAction } from "@/lib/action-utils";
-import { requireTripAccess, WRITE_ROLES } from "@/lib/authz";
+import { requireAssignable, requireTripAccess, WRITE_ROLES } from "@/lib/authz";
 import { todoInsertSchema, todoUpdateSchema } from "@/lib/schemas";
 
 const revalidateApp = () => revalidatePath("/", "layout");
@@ -14,6 +14,7 @@ export async function createTodoAction(input: unknown) {
   return runAction(async (user) => {
     const data = todoInsertSchema.parse(input);
     if (data.trip_id) await requireTripAccess(user.id, data.trip_id, WRITE_ROLES);
+    await requireAssignable(user.id, data.assignee_id, data.trip_id);
     // Append to the end of the list unless the client sent an explicit position
     // (it does, so the optimistic row lands where the persisted one will).
     let position = data.position;
@@ -31,6 +32,7 @@ export async function createTodoAction(input: unknown) {
         title: data.title,
         due_date: data.due_date ?? null,
         completed: data.completed ?? false,
+        assignee_id: data.assignee_id ?? null,
         position,
       })
       .returning();
@@ -43,7 +45,7 @@ export async function updateTodoAction(id: string, input: unknown) {
   return runAction(async (user) => {
     const updates = todoUpdateSchema.parse(input);
     const [existing] = await db
-      .select({ trip_id: tables.todos.trip_id })
+      .select({ trip_id: tables.todos.trip_id, assignee_id: tables.todos.assignee_id })
       .from(tables.todos)
       .where(eq(tables.todos.id, id))
       .limit(1);
@@ -55,9 +57,29 @@ export async function updateTodoAction(id: string, input: unknown) {
     if (updates.trip_id && updates.trip_id !== existing.trip_id) {
       await requireTripAccess(user.id, updates.trip_id, WRITE_ROLES);
     }
+
+    const patch = { ...updates };
+    const tripChanged =
+      updates.trip_id !== undefined && (updates.trip_id ?? null) !== existing.trip_id;
+    const targetTrip = updates.trip_id !== undefined ? updates.trip_id : existing.trip_id;
+    // Validate the assignee against the trip the to-do will end up on, not the
+    // one it's currently on — a single update can change both at once.
+    if (updates.assignee_id !== undefined) {
+      await requireAssignable(user.id, updates.assignee_id, targetTrip);
+    } else if (tripChanged && existing.assignee_id) {
+      // Trip moved without touching the assignee: the current assignee may not
+      // be a member of the destination. Drop the assignment rather than leave a
+      // to-do owned by someone who can't see it.
+      try {
+        await requireAssignable(user.id, existing.assignee_id, targetTrip);
+      } catch {
+        patch.assignee_id = null;
+      }
+    }
+
     const [row] = await db
       .update(tables.todos)
-      .set(updates)
+      .set(patch)
       .where(eq(tables.todos.id, id))
       .returning();
     revalidateApp();

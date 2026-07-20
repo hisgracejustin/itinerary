@@ -32,7 +32,7 @@ export function useTodoList(initial, { onError } = {}) {
   const [isPending, startTransition] = useTransition();
   const [todos, applyOptimistic] = useOptimistic(initial, reducer);
 
-  const add = ({ title, trip_id, due_date }, { onSuccess } = {}) => {
+  const add = ({ title, trip_id, due_date, assignee_id }, { onSuccess } = {}) => {
     startTransition(async () => {
       // Client-generated id, passed through to the action, so the optimistic row
       // and the persisted row share an id: reconciliation is seamless and a
@@ -49,12 +49,13 @@ export function useTodoList(initial, { onError } = {}) {
           trip_id: trip_id ?? null,
           due_date: due_date ?? null,
           completed: false,
+          assignee_id: assignee_id ?? null,
           position,
           _pending: true,
         },
       });
       try {
-        await unwrap(await createTodoAction({ id, title, trip_id: trip_id ?? null, due_date: due_date ?? null, position }));
+        await unwrap(await createTodoAction({ id, title, trip_id: trip_id ?? null, due_date: due_date ?? null, assignee_id: assignee_id ?? null, position }));
         onSuccess?.();
       } catch (err) {
         onError?.(err);
@@ -62,16 +63,49 @@ export function useTodoList(initial, { onError } = {}) {
     });
   };
 
-  const edit = (id, { title, trip_id, due_date }, { onSuccess } = {}) => {
+  // The assignee's display fields are denormalized onto each row by the query,
+  // so an optimistic assignment has to patch them too or the chip would show
+  // stale text until the server round trip lands.
+  const assigneePatch = (member) => ({
+    assignee_id: member?.id ?? null,
+    assignee_name: member?.name ?? null,
+    assignee_email: member?.email ?? null,
+    assignee_image: member?.image ?? null,
+  });
+
+  const edit = (id, { title, trip_id, due_date, assignee }, { onSuccess } = {}) => {
     const current = todos.find((t) => t.id === id);
     // Don't edit a row that is still being created — its DB row may not exist
     // yet, so the update would target nothing and the edit would be lost.
     if (!current || current._pending) return;
-    const patch = { title, trip_id: trip_id ?? null, due_date: due_date ?? null };
+    const serverPatch = { title, trip_id: trip_id ?? null, due_date: due_date ?? null };
+    let optimisticPatch = serverPatch;
+    // `assignee === undefined` means "leave the assignment alone"; an explicit
+    // null means "unassign".
+    if (assignee !== undefined) {
+      serverPatch.assignee_id = assignee?.id ?? null;
+      optimisticPatch = { ...serverPatch, ...assigneePatch(assignee) };
+    }
     startTransition(async () => {
-      applyOptimistic({ type: "update", id, patch });
+      applyOptimistic({ type: "update", id, patch: optimisticPatch });
       try {
-        await unwrap(await updateTodoAction(id, patch));
+        await unwrap(await updateTodoAction(id, serverPatch));
+        onSuccess?.();
+      } catch (err) {
+        onError?.(err);
+      }
+    });
+  };
+
+  /** Reassign in place (row dropdown) without opening the full edit form. */
+  const assign = (id, member, { onSuccess } = {}) => {
+    const current = todos.find((t) => t.id === id);
+    if (!current || current._pending) return;
+    if ((current.assignee_id ?? null) === (member?.id ?? null)) return;
+    startTransition(async () => {
+      applyOptimistic({ type: "update", id, patch: assigneePatch(member) });
+      try {
+        await unwrap(await updateTodoAction(id, { assignee_id: member?.id ?? null }));
         onSuccess?.();
       } catch (err) {
         onError?.(err);
@@ -121,5 +155,5 @@ export function useTodoList(initial, { onError } = {}) {
     });
   };
 
-  return { todos, add, edit, reorder, toggle, remove, isPending };
+  return { todos, add, edit, assign, reorder, toggle, remove, isPending };
 }

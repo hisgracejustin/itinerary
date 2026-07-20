@@ -35,6 +35,9 @@ export const todoInsertSchema = z.object({
   title: z.string().min(1),
   due_date: z.string().nullish(),
   completed: z.boolean().optional(),
+  // users.id is a text column (cuid2, or a preserved Supabase UUID) — not
+  // necessarily a UUID, so no .uuid() here. null = unassigned.
+  assignee_id: z.string().min(1).nullish(),
   position: z.number().int().optional(),
 });
 

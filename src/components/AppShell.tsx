@@ -36,13 +36,16 @@ export function AppShell({ user, trips, children }: Props) {
   const resizingRef = useRef(false);
   // Keep the latest width available to the (stable) mouseup handler.
   const sidebarWidthRef = useRef(sidebarWidth);
-  sidebarWidthRef.current = sidebarWidth;
 
   // "Add Booking" is a shell-level action so it works on every page (Calendar,
   // Todos, Costs, per-type lists) — not just wherever a screen happened to
   // register a handler. createBookingAction revalidates the layout, so the
   // active RSC page refreshes with the new booking on its own.
   const [addOpen, setAddOpen] = useState(false);
+
+  useEffect(() => {
+    sidebarWidthRef.current = sidebarWidth;
+  }, [sidebarWidth]);
 
   // Restore persisted sidebar width (client-only; guards SSR).
   useEffect(() => {

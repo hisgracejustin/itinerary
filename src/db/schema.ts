@@ -177,6 +177,11 @@ export const todos = pgTable(
     title: text("title").notNull(),
     due_date: text("due_date"),
     completed: boolean("completed").notNull().default(false),
+    // Who owns this to-do. Null = unassigned (surfaced explicitly in the UI so
+    // nothing silently falls through the cracks). `set null` on user delete so
+    // removing a member leaves their to-dos behind as unassigned rather than
+    // deleting work items.
+    assignee_id: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
     // Manual sort order. Lower sorts first; new todos append to the end. The
     // list is ordered by this rather than due_date so users can drag rows into
     // whatever order they want.
@@ -187,6 +192,7 @@ export const todos = pgTable(
     index("idx_todos_trip_id").on(t.trip_id),
     index("idx_todos_due_date").on(t.due_date),
     index("idx_todos_position").on(t.position),
+    index("idx_todos_assignee_id").on(t.assignee_id),
   ],
 );
 
@@ -264,6 +270,7 @@ export const bookingAttachmentsRelations = relations(bookingAttachments, ({ one 
 
 export const todosRelations = relations(todos, ({ one }) => ({
   trip: one(trips, { fields: [todos.trip_id], references: [trips.id] }),
+  assignee: one(users, { fields: [todos.assignee_id], references: [users.id] }),
 }));
 
 export const dayNotesRelations = relations(dayNotes, ({ one }) => ({
