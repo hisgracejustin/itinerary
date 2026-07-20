@@ -101,31 +101,39 @@ export default function TripPeopleModal({ tripId, tripName, members, currentUser
             ))}
           </ul>
 
-          <form onSubmit={handleAdd} className="space-y-2">
-            <label className="block text-xs font-medium text-on-surface-variant">
+          <form onSubmit={handleAdd} className="space-y-2 border-t border-outline/20 pt-4">
+            <label htmlFor="add-member-email" className="block text-xs font-medium text-on-surface-variant">
               Add someone by email
             </label>
+            <input
+              id="add-member-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@example.com"
+              className="mat-input"
+            />
             <div className="flex gap-2">
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@example.com"
-                className="mat-input flex-1"
-              />
+              {/* mat-select (not mat-input) — mat-input is w-full and would
+                  starve the button on this row. */}
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="mat-input shrink-0"
+                aria-label="Role"
+                className="mat-select shrink-0"
               >
                 <option value="editor">Editor</option>
                 <option value="viewer">Viewer</option>
                 <option value="owner">Owner</option>
               </select>
+              <button
+                type="submit"
+                disabled={busy || !email.trim()}
+                className="mat-btn-filled flex-1 justify-center disabled:opacity-40"
+              >
+                {busy ? 'Working…' : 'Add to trip'}
+              </button>
             </div>
-            <button type="submit" disabled={busy || !email.trim()} className="mat-btn-filled w-full justify-center">
-              {busy ? 'Working…' : 'Add to trip'}
-            </button>
             <p className="text-[11px] text-on-surface-variant leading-relaxed">
               They can be assigned to-dos right away. To actually sign in, their
               email must also be on the app&apos;s allowlist.
