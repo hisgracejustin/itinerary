@@ -9,6 +9,9 @@ import {
   createBookingAction,
   updateBookingAction,
   deleteBookingAction,
+  createTripAction,
+  updateTripAction,
+  deleteTripAction,
 } from "@/actions/bookings";
 import { upsertDayNoteAction, deleteDayNoteAction } from "@/actions/dayNotes";
 import {
@@ -17,7 +20,11 @@ import {
   deleteDayReminderAction,
   reorderDayRemindersAction,
 } from "@/actions/dayReminders";
-import { addTripMemberAction, removeTripMemberAction } from "@/actions/members";
+import {
+  addTripMemberAction,
+  removeTripMemberAction,
+  setTripMemberRoleAction,
+} from "@/actions/members";
 import { unwrap } from "@/lib/friendlyError";
 
 export const createBooking = async (booking) => unwrap(await createBookingAction(booking));
@@ -32,5 +39,10 @@ export const updateDayReminder = async (id, updates) => unwrap(await updateDayRe
 export const deleteDayReminder = async (id) => unwrap(await deleteDayReminderAction(id));
 export const reorderDayReminders = async (ids) => unwrap(await reorderDayRemindersAction(ids));
 
+export const createTrip = async (input) => unwrap(await createTripAction(input));
+export const updateTrip = async (id, updates) => unwrap(await updateTripAction(id, updates));
+export const deleteTrip = async (id) => unwrap(await deleteTripAction(id));
+
 export const addTripMember = async (input) => unwrap(await addTripMemberAction(input));
 export const removeTripMember = async (input) => unwrap(await removeTripMemberAction(input));
+export const setTripMemberRole = async (input) => unwrap(await setTripMemberRoleAction(input));

@@ -1,11 +1,17 @@
 "use server";
 
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db, tables } from "@/db";
 import { runAction } from "@/lib/action-utils";
 import { requireTripAccess, WRITE_ROLES } from "@/lib/authz";
-import { bookingInsertSchema, bookingUpdateSchema, tripInsertSchema } from "@/lib/schemas";
+import {
+  bookingInsertSchema,
+  bookingUpdateSchema,
+  tripInsertSchema,
+  tripUpdateSchema,
+} from "@/lib/schemas";
 
 // Reads are done server-side in RSC pages via @/lib/queries; these actions are
 // the write path. Each revalidates the app layout so every screen re-renders
@@ -95,5 +101,34 @@ export async function createTripAction(input: unknown) {
     });
     revalidateApp();
     return trip;
+  });
+}
+
+export async function updateTripAction(id: unknown, input: unknown) {
+  return runAction(async (user) => {
+    const tripId = z.string().uuid().parse(id);
+    const data = tripUpdateSchema.parse(input);
+    await requireTripAccess(user.id, tripId, WRITE_ROLES);
+    const [trip] = await db
+      .update(tables.trips)
+      .set(data)
+      .where(eq(tables.trips.id, tripId))
+      .returning();
+    revalidateApp();
+    return trip;
+  });
+}
+
+/**
+ * Deleting a trip cascades to its bookings/attachments and nulls the trip_id on
+ * todos/day notes/reminders (see the schema's FK actions), so it's owner-only.
+ */
+export async function deleteTripAction(id: unknown) {
+  return runAction(async (user) => {
+    const tripId = z.string().uuid().parse(id);
+    await requireTripAccess(user.id, tripId, ["owner"]);
+    await db.delete(tables.trips).where(eq(tables.trips.id, tripId));
+    revalidateApp();
+    return { id: tripId };
   });
 }

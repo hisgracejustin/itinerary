@@ -111,6 +111,51 @@ export function getTodosForUser(userId: string, tripId?: string | null) {
 }
 
 /**
+ * Every trip the user belongs to, each with its full member list and the user's
+ * own role on it — the Settings screen's data. One membership query plus one
+ * member/user join, stitched in memory rather than N queries per trip.
+ */
+export async function getTripsWithMembers(userId: string) {
+  const trips = await getTripsForUser(userId);
+  if (trips.length === 0) return [];
+
+  const rows = await db
+    .select({
+      trip_id: tables.tripMembers.trip_id,
+      role: tables.tripMembers.role,
+      id: tables.users.id,
+      name: tables.users.name,
+      email: tables.users.email,
+      image: tables.users.image,
+    })
+    .from(tables.tripMembers)
+    .innerJoin(tables.users, eq(tables.users.id, tables.tripMembers.user_id))
+    .where(
+      inArray(
+        tables.tripMembers.trip_id,
+        trips.map((t) => t.id),
+      ),
+    )
+    .orderBy(asc(tables.users.name), asc(tables.users.email));
+
+  const byTrip = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const list = byTrip.get(r.trip_id) ?? [];
+    list.push(r);
+    byTrip.set(r.trip_id, list);
+  }
+
+  return trips.map((trip) => {
+    const members = (byTrip.get(trip.id) ?? []).map(({ trip_id: _t, ...m }) => m);
+    return {
+      ...trip,
+      members,
+      myRole: members.find((m) => m.id === userId)?.role ?? null,
+    };
+  });
+}
+
+/**
  * People a to-do can be assigned to, mirroring `requireAssignable`:
  *  - a specific trip → its members.
  *  - no trip selected → everyone the user shares any trip with (themselves

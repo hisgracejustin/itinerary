@@ -1,13 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { createTripAction } from "@/actions/bookings";
-import { unwrap } from "@/lib/friendlyError";
 import { signOutAction } from "../actions/auth";
-
-const createTrip = async (input) => unwrap(await createTripAction(input));
 
 const BOOKING_TYPES = [
   { id: "flight", label: "Flights", color: "bg-flight", icon: "✈️" },
@@ -27,26 +22,6 @@ function hrefWithTrip(path, trip) {
 
 export default function Sidebar({ user, trips, selectedTrip, onNavigate }) {
   const pathname = usePathname();
-  const [showAddTrip, setShowAddTrip] = useState(false);
-  const [newTrip, setNewTrip] = useState({ name: "", start_date: "", end_date: "" });
-  const [saving, setSaving] = useState(false);
-
-  const handleAddTrip = async (e) => {
-    e.preventDefault();
-    if (!newTrip.name.trim() || !newTrip.start_date || !newTrip.end_date) return;
-    setSaving(true);
-    try {
-      // createTripAction revalidates the app layout, so the trips list (a server
-      // prop) refreshes on its own — no client refetch needed.
-      await createTrip(newTrip);
-      setNewTrip({ name: "", start_date: "", end_date: "" });
-      setShowAddTrip(false);
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const tripLinkClass = (active) =>
     `block w-full text-left px-3 py-2 rounded-full text-sm transition-all duration-150 ${
@@ -92,6 +67,18 @@ export default function Sidebar({ user, trips, selectedTrip, onNavigate }) {
           }
           label="Costs"
         />
+        <NavItem
+          to={hrefWithTrip("/settings", selectedTrip)}
+          active={pathname === "/settings"}
+          onClick={onNavigate}
+          icon={
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          }
+          label="Settings"
+        />
       </nav>
 
       <div className="mx-4 border-t border-outline/40" />
@@ -100,51 +87,15 @@ export default function Sidebar({ user, trips, selectedTrip, onNavigate }) {
       <div className="p-3">
         <div className="flex items-center justify-between px-3 py-2">
           <h2 className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Trips</h2>
-          <button
-            onClick={() => setShowAddTrip(!showAddTrip)}
+          {/* Creating/editing trips lives in Settings — the sidebar just selects. */}
+          <Link
+            href="/settings"
+            onClick={onNavigate}
             className="text-xs text-primary hover:text-primary/80 font-medium"
           >
-            {showAddTrip ? "Cancel" : "+ Add"}
-          </button>
+            Manage
+          </Link>
         </div>
-        {showAddTrip && (
-          <form onSubmit={handleAddTrip} className="px-3 pb-3 space-y-2">
-            <input
-              type="text"
-              placeholder="Trip name"
-              value={newTrip.name}
-              onChange={(e) => setNewTrip({ ...newTrip, name: e.target.value })}
-              className="mat-input text-sm w-full"
-            />
-            <div className="flex flex-col gap-1.5">
-              <div>
-                <label className="text-[10px] text-on-surface-variant font-medium uppercase tracking-wide block mb-0.5">Start</label>
-                <input
-                  type="date"
-                  value={newTrip.start_date}
-                  onChange={(e) => setNewTrip({ ...newTrip, start_date: e.target.value })}
-                  className="w-full px-3 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary h-9 appearance-none"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-on-surface-variant font-medium uppercase tracking-wide block mb-0.5">End</label>
-                <input
-                  type="date"
-                  value={newTrip.end_date}
-                  onChange={(e) => setNewTrip({ ...newTrip, end_date: e.target.value })}
-                  className="w-full px-3 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary h-9 appearance-none"
-                />
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full py-1.5 text-xs font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-50"
-            >
-              {saving ? "Creating..." : "Create Trip"}
-            </button>
-          </form>
-        )}
         <ul className="space-y-0.5">
           <li>
             <Link

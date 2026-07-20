@@ -67,6 +67,58 @@ export async function addTripMemberAction(input: unknown) {
   });
 }
 
+const setRoleSchema = z.object({
+  trip_id: z.string().uuid(),
+  user_id: z.string().min(1),
+  role: z.enum(["owner", "editor", "viewer"]),
+});
+
+/**
+ * Change a member's role. A trip can have any number of owners — the only rule
+ * is that it can't end up with zero, so demoting the last one is refused.
+ */
+export async function setTripMemberRoleAction(input: unknown) {
+  return runAction(async (user) => {
+    const data = setRoleSchema.parse(input);
+    await requireTripAccess(user.id, data.trip_id, [...OWNER_ONLY]);
+
+    const [target] = await db
+      .select({ role: tables.tripMembers.role })
+      .from(tables.tripMembers)
+      .where(
+        and(
+          eq(tables.tripMembers.trip_id, data.trip_id),
+          eq(tables.tripMembers.user_id, data.user_id),
+        ),
+      )
+      .limit(1);
+    if (!target) throw new Error("They're not on this trip");
+    if (target.role === data.role) return { user_id: data.user_id, role: data.role };
+
+    if (target.role === "owner" && data.role !== "owner") {
+      const owners = await db
+        .select({ user_id: tables.tripMembers.user_id })
+        .from(tables.tripMembers)
+        .where(
+          and(eq(tables.tripMembers.trip_id, data.trip_id), eq(tables.tripMembers.role, "owner")),
+        );
+      if (owners.length <= 1) throw new Error("A trip needs at least one owner");
+    }
+
+    await db
+      .update(tables.tripMembers)
+      .set({ role: data.role })
+      .where(
+        and(
+          eq(tables.tripMembers.trip_id, data.trip_id),
+          eq(tables.tripMembers.user_id, data.user_id),
+        ),
+      );
+    revalidateApp();
+    return { user_id: data.user_id, role: data.role };
+  });
+}
+
 const removeMemberSchema = z.object({
   trip_id: z.string().uuid(),
   user_id: z.string().min(1),

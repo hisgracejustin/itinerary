@@ -13,7 +13,6 @@ import { useTodoList } from '../hooks/useTodoList'
 import { friendlyError } from '../lib/friendlyError'
 import { useToast } from '../components/Toast'
 import AssigneePicker, { Avatar, memberLabel } from '../components/AssigneePicker'
-import TripPeopleModal from '../components/TripPeopleModal'
 
 // Lock drag movement to the vertical axis (a one-line modifier — no need for the
 // @dnd-kit/modifiers package). Keeps rows from drifting sideways.
@@ -37,7 +36,6 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
   const [activeId, setActiveId] = useState(null)
   // 'all' | 'unassigned' | <userId>
   const [assigneeFilter, setAssigneeFilter] = useState('all')
-  const [showPeople, setShowPeople] = useState(false)
 
   const matchesFilter = (t) => {
     if (assigneeFilter === 'all') return true
@@ -122,22 +120,9 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
         <h2 className="text-xl font-medium text-on-surface">To-dos</h2>
         <div className="flex items-center gap-2 shrink-0">
           {tripMeta && (
-            <>
-              <span className="text-xs font-medium bg-primary-light text-primary px-3 py-1 rounded-full">
-                {tripMeta.name}
-              </span>
-              {/* Membership is per-trip, so managing people needs one selected. */}
-              <button
-                onClick={() => setShowPeople(true)}
-                className="mat-btn-outlined text-xs"
-                title="Manage who's on this trip"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-                <span className="hidden sm:inline">People</span>
-              </button>
-            </>
+            <span className="text-xs font-medium bg-primary-light text-primary px-3 py-1 rounded-full">
+              {tripMeta.name}
+            </span>
           )}
         </div>
       </div>
@@ -310,15 +295,6 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
         )}
       </div>
 
-      {showPeople && tripMeta && (
-        <TripPeopleModal
-          tripId={tripMeta.id}
-          tripName={tripMeta.name}
-          members={members}
-          currentUserId={currentUserId}
-          onClose={() => setShowPeople(false)}
-        />
-      )}
     </div>
   )
 }

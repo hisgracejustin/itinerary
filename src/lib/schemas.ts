@@ -69,3 +69,5 @@ export const tripInsertSchema = z.object({
   start_date: z.string().min(1),
   end_date: z.string().min(1),
 });
+
+export const tripUpdateSchema = tripInsertSchema.partial();
