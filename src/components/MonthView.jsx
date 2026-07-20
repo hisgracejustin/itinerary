@@ -180,7 +180,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
                     {!isEditingThis && !dayNote && onUpsertDayNote && (
                       <button
                         onClick={(e) => { e.stopPropagation(); setEditingNoteDate(dateStr); setNoteText('') }}
-                        className="text-outline hover:text-on-surface-variant transition-colors duration-150 opacity-0 group-hover:opacity-100"
+                        className="text-outline hover:text-on-surface-variant transition-colors duration-150 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
                         title="Add day title"
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

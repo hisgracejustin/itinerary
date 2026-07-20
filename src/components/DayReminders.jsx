@@ -138,7 +138,7 @@ export default function DayReminders({ reminders = [], date, tripId, onAdd, onEd
         <button
           onClick={() => setAdding(true)}
           className={`inline-flex items-center gap-1 text-on-surface-variant/70 hover:text-primary transition-colors ${
-            compact ? 'text-[10px] opacity-0 group-hover:opacity-100' : 'text-xs mt-0.5'
+            compact ? 'text-[10px] opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100' : 'text-xs mt-0.5'
           }`}
         >
           <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -208,7 +208,7 @@ function ReminderItem({ reminder, compact, onEdit, onRemove, dragEnabled = false
       <button
         onClick={onRemove}
         aria-label="Delete note"
-        className={`shrink-0 text-on-surface-variant/50 hover:text-red-500 opacity-0 group-hover/rem:opacity-100 transition-opacity ${
+        className={`shrink-0 text-on-surface-variant/50 hover:text-red-500 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/rem:opacity-100 transition-opacity ${
           compact ? 'mt-0.5' : 'mt-0.5 p-0.5'
         }`}
       >
