@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
 import { updateBooking, deleteBooking } from '@/lib/client-actions'
 import BookingCard from '../components/BookingCard'
 import BookingModal from '../components/BookingModal'
+import StatsStrip from '../components/StatsStrip'
+import { getBookingStats } from '../lib/bookingStats'
 import { TYPE_ICONS } from '../lib/calendar'
 
 const TYPE_LABELS = {
@@ -24,6 +26,9 @@ export default function BookingsByType({ type, bookings }) {
   const filtered = bookings.filter((b) => b.type === type)
   const label = TYPE_LABELS[type] || type
   const icon = TYPE_ICONS[type] || '📌'
+  // `bookings` is already trip-scoped by the RSC, so these follow the trip chip
+  // without any extra wiring.
+  const stats = useMemo(() => getBookingStats(type, filtered), [type, filtered])
 
   const openEditModal = (booking) => {
     setEditingBooking(booking)
@@ -43,6 +48,8 @@ export default function BookingsByType({ type, bookings }) {
           </span>
         )}
       </div>
+
+      <StatsStrip stats={stats} />
 
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (

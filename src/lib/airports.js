@@ -101,10 +101,13 @@ export function getAirportTimezone(code) {
 }
 
 /**
- * Calculate actual flight duration given local departure/arrival times and airport codes.
- * Returns formatted string like "12h 45m" or null if it can't be computed.
+ * Flight duration in minutes, or null if it can't be computed.
+ *
+ * `approx` is true when either airport code was unknown and the naive
+ * end-minus-start fallback was used — that result is off by the timezone
+ * difference for any cross-zone flight, so callers can mark it as such.
  */
-export function getFlightDuration(startIso, endIso, departureAirport, arrivalAirport) {
+export function getFlightDurationMinutes(startIso, endIso, departureAirport, arrivalAirport) {
   if (!startIso || !endIso) return null
 
   const depTz = getAirportTimezone(departureAirport)
@@ -114,7 +117,7 @@ export function getFlightDuration(startIso, endIso, departureAirport, arrivalAir
     // Fallback: simple difference (works when same timezone)
     const ms = new Date(endIso) - new Date(startIso)
     if (ms <= 0) return null
-    return formatMs(ms)
+    return { minutes: Math.round(ms / 60000), approx: true }
   }
 
   // The stored ISO strings were created from datetime-local inputs,
@@ -131,7 +134,16 @@ export function getFlightDuration(startIso, endIso, departureAirport, arrivalAir
 
   const ms = arrUTC - depUTC
   if (ms <= 0) return null
-  return formatMs(ms)
+  return { minutes: Math.round(ms / 60000), approx: false }
+}
+
+/**
+ * Calculate actual flight duration given local departure/arrival times and airport codes.
+ * Returns formatted string like "12h 45m" or null if it can't be computed.
+ */
+export function getFlightDuration(startIso, endIso, departureAirport, arrivalAirport) {
+  const d = getFlightDurationMinutes(startIso, endIso, departureAirport, arrivalAirport)
+  return d ? formatMs(d.minutes * 60000) : null
 }
 
 /**
