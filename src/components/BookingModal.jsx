@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import BookingForm from './BookingForm'
 import BookingDetails from './BookingDetails'
 import AttachmentsSection from './AttachmentsSection'
@@ -33,10 +33,18 @@ function mergeAsLayover(legs) {
       flight_number: legs[i].details?.flight_number || '',
     })
   }
+  // One merged booking carries one price, so the legs' fares are totalled.
+  // Parsed legs frequently carry no fare at all (itineraries rarely show it) —
+  // then leave it blank rather than inventing a 0 to fill in by hand.
+  const fares = legs
+    .map((l) => parseFloat(l.cost_amount))
+    .filter((n) => Number.isFinite(n))
   return {
     ...first,
     title: `${first.details?.departure_airport || ''} → ${last.details?.arrival_airport || ''}`,
     end_date: last.end_date,
+    cost_amount: fares.length ? fares.reduce((a, b) => a + b, 0) : null,
+    cost_currency: legs.find((l) => l.cost_currency)?.cost_currency ?? null,
     details: {
       ...first.details,
       arrival_airport: last.details?.arrival_airport || '',
@@ -73,7 +81,10 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
       // Pass the existing id (if any) so the caller updates rather than inserts —
       // e.g. re-editing a booking just created in this same modal session.
       const saved = await onSave(formData, current?.id ?? null)
-      if (mode === 'multi-review') {
+      // Layover mode collapses the parsed legs into ONE booking, so it takes the
+      // single-save path (upload the source document, then show the result)
+      // rather than the multi-review "advance to the next leg" flow.
+      if (mode === 'multi-review' && !treatAsLayover) {
         // Attach the source document to each saved booking, then advance.
         if (saved?.id && stagedFiles.length > 0) {
           try { await uploadStagedFiles(saved.id, stagedFiles) } catch (e) { toast.error(friendlyError(e)) }
@@ -96,40 +107,22 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
           try { await uploadStagedFiles(saved.id, stagedFiles) } catch (e) { toast.error(friendlyError(e)) }
         }
         setStagedFiles([])
-        toast.success(isEdit ? 'Booking updated' : 'Booking added')
-        // Return to the read-only view showing fresh data + attachments.
+        toast.success(
+          treatAsLayover
+            ? 'Saved as 1 flight with layovers'
+            : isEdit ? 'Booking updated' : 'Booking added',
+        )
+        // Return to the read-only view showing fresh data + attachments. Leaving
+        // multi-review is what lets that view render after a layover save.
         if (saved?.id) {
+          setMode('manual')
+          setTreatAsLayover(false)
           setCurrent(saved)
           setEditing(false)
         } else {
           onClose()
         }
       }
-    } catch (err) {
-      toast.error(friendlyError(err))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleSaveLayover = async () => {
-    setSaving(true)
-    try {
-      const merged = mergeAsLayover(parsedBookings)
-      // Convert dates to ISO strings
-      const formData = {
-        ...merged,
-        trip_id: merged.trip_id || selectedTrip || '',
-        start_date: new Date(merged.start_date).toISOString(),
-        end_date: merged.end_date ? new Date(merged.end_date).toISOString() : null,
-        cost_amount: merged.cost_amount ? parseFloat(merged.cost_amount) : null,
-        cost_currency: merged.cost_amount ? merged.cost_currency : null,
-        cost_share: null,
-        details: merged.details || null,
-      }
-      await onSave(formData)
-      toast.success('Saved as single flight with layover!')
-      onClose()
     } catch (err) {
       toast.error(friendlyError(err))
     } finally {
@@ -164,6 +157,17 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
   }
 
   const currentParsedBooking = parsedBookings[currentIndex] || null
+  // The merged single booking the form is pre-filled with in layover mode.
+  // Memoised deliberately: BookingForm re-seeds its fields from a useEffect keyed
+  // on this prop, so a fresh object on every modal re-render would discard
+  // whatever the user had typed.
+  const layoverBooking = useMemo(
+    () =>
+      mode === 'multi-review' && treatAsLayover && parsedBookings.length > 0
+        ? mergeAsLayover(parsedBookings)
+        : null,
+    [mode, treatAsLayover, parsedBookings],
+  )
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[8vh] px-4 animate-fade-in">
@@ -305,13 +309,19 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
             </div>
           ) : mode === 'upload' && !current ? (
             <UploadBooking trip={tripName} onParsed={handleParsed} />
-          ) : mode === 'multi-review' && treatAsLayover ? (
-            <LayoverPreview legs={parsedBookings} />
           ) : (
             <div className="space-y-6">
+              {/* Layover mode summarises the merge, then hands over to the same
+                  editable form as every other path — so price, trip and
+                  confirmation stay reviewable before saving. */}
+              {layoverBooking && <LayoverPreview legs={parsedBookings} />}
               <BookingForm
-                key={mode === 'multi-review' ? `parsed-${currentIndex}` : 'form'}
-                booking={currentParsedBooking || current}
+                key={
+                  mode === 'multi-review'
+                    ? (treatAsLayover ? 'layover' : `parsed-${currentIndex}`)
+                    : 'form'
+                }
+                booking={layoverBooking || currentParsedBooking || current}
                 onSave={handleSave}
                 onDelete={() => setShowDelete(true)}
                 onCancel={onClose}
@@ -319,7 +329,10 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
                 formRef={formRef}
                 selectedTrip={selectedTrip}
               />
-              {mode !== 'multi-review' && (
+              {/* Hidden while stepping through separate legs (the document is
+                  attached to each automatically), but shown for a layover since
+                  that saves once, like a normal booking. */}
+              {(mode !== 'multi-review' || treatAsLayover) && (
                 <AttachmentsSection
                   bookingId={current?.id ?? null}
                   mode="edit"
@@ -367,31 +380,28 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
               >
                 Cancel
               </button>
-              {treatAsLayover ? (
-                <button
-                  type="button"
-                  onClick={handleSaveLayover}
-                  disabled={saving}
-                  className="mat-btn-filled disabled:opacity-50 disabled:shadow-none"
-                >
-                  {saving ? 'Saving...' : 'Save as 1 Flight'}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => formRef.current?.requestSubmit()}
-                  disabled={saving || (mode === 'multi-review' && savedIndices.has(currentIndex))}
-                  className={`mat-btn-filled disabled:opacity-50 disabled:shadow-none ${mode === 'multi-review' && savedIndices.has(currentIndex) ? 'bg-green-600 hover:bg-green-600' : ''}`}
-                >
-                  {saving
-                    ? 'Saving...'
-                    : current
-                    ? 'Update'
-                    : mode === 'multi-review'
-                    ? savedIndices.has(currentIndex) ? `✓ Saved` : `Save Booking ${currentIndex + 1}`
-                    : 'Add Booking'}
-                </button>
-              )}
+              {/* One save path for every mode: submit the form, so validation,
+                  the out-of-trip-dates warning and the attachment upload all
+                  apply to layovers too. */}
+              <button
+                type="button"
+                onClick={() => formRef.current?.requestSubmit()}
+                disabled={
+                  saving ||
+                  (mode === 'multi-review' && !treatAsLayover && savedIndices.has(currentIndex))
+                }
+                className={`mat-btn-filled disabled:opacity-50 disabled:shadow-none ${mode === 'multi-review' && !treatAsLayover && savedIndices.has(currentIndex) ? 'bg-green-600 hover:bg-green-600' : ''}`}
+              >
+                {saving
+                  ? 'Saving...'
+                  : current
+                  ? 'Update'
+                  : treatAsLayover
+                  ? 'Save as 1 Flight'
+                  : mode === 'multi-review'
+                  ? savedIndices.has(currentIndex) ? `✓ Saved` : `Save Booking ${currentIndex + 1}`
+                  : 'Add Booking'}
+              </button>
             </div>
           </div>
         )}
