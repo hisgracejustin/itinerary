@@ -46,6 +46,36 @@ Rules:
 - If the document is NOT a booking/travel document, return: { "error": "This doesn't appear to be a booking confirmation. Please upload a screenshot of a flight, hotel, train, bus, cruise, or activity booking." }
 - Return ONLY the JSON object, no markdown fencing, no explanation.`;
 
+/**
+ * Coerce a model-emitted amount to a clean number or null. Handles the strings
+ * the model produces when it ignores the "number" instruction: "$1,234.50",
+ * "USD 1 234,50" (European decimal comma), "1234". Anything ambiguous → null,
+ * which the UI shows as a blank field — wrong-but-blank beats silently wrong.
+ */
+function normalizeAmount(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  // Strip everything except digits, separators and sign.
+  let s = value.replace(/[^\d.,\-]/g, "");
+  if (!s) return null;
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+  if (lastComma > -1 && lastDot > -1) {
+    // Both present: the rightmost one is the decimal separator.
+    s = lastComma > lastDot
+      ? s.replace(/\./g, "").replace(",", ".")
+      : s.replace(/,/g, "");
+  } else if (lastComma > -1) {
+    // Comma only: decimal if followed by 1-2 digits ("1234,50"), else thousands.
+    const frac = s.length - lastComma - 1;
+    s = frac > 0 && frac <= 2 && s.indexOf(",") === lastComma
+      ? s.replace(",", ".")
+      : s.replace(/,/g, "");
+  }
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+}
+
 function json(body: unknown, status: number) {
   return Response.json(body, { status });
 }
@@ -171,6 +201,11 @@ export async function POST(req: Request) {
       if (!b.start_date) {
         return json({ error: "AI could not determine the date for the booking." }, 422);
       }
+      // The model is told to return cost_amount as a number, but sometimes emits
+      // "$1,234.50" anyway — and parseFloat("1,234.50") is 1, which downstream
+      // would total into silently wrong money. Normalize here so every consumer
+      // (merge, form, per-leg save) sees a clean number or null.
+      b.cost_amount = normalizeAmount(b.cost_amount);
     }
 
     return json(parsed, 200);

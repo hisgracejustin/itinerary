@@ -80,12 +80,35 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
   // Whether all parsed bookings are flights (layover-eligible)
   const allFlights = parsedBookings.length > 1 && parsedBookings.every(b => b.type === 'flight')
 
+  const currentParsedBooking = parsedBookings[currentIndex] || null
+  // The merged single booking the form is pre-filled with in layover mode.
+  // Memoised deliberately: BookingForm re-seeds its fields from a useEffect keyed
+  // on this prop, so a fresh object on every modal re-render would discard
+  // whatever the user had typed.
+  const layoverBooking = useMemo(
+    () =>
+      mode === 'multi-review' && treatAsLayover && parsedBookings.length > 0
+        ? mergeAsLayover(parsedBookings)
+        : null,
+    [mode, treatAsLayover, parsedBookings],
+  )
+
   const handleSave = async (formData) => {
     setSaving(true)
     try {
+      // BookingForm is provenance-agnostic (it only emits its own fields), so
+      // stamp AI-parsed saves here — layover, per-leg and single-parse alike.
+      // Otherwise the DB records them as source: 'manual'.
+      const payload = { ...formData }
+      if (!current && parsedBookings.length > 0) {
+        payload.source = 'parsed'
+        const seed = layoverBooking || currentParsedBooking
+        if (seed?.source_file) payload.source_file = seed.source_file
+        if (seed?.raw_text) payload.raw_text = seed.raw_text
+      }
       // Pass the existing id (if any) so the caller updates rather than inserts —
       // e.g. re-editing a booking just created in this same modal session.
-      const saved = await onSave(formData, current?.id ?? null)
+      const saved = await onSave(payload, current?.id ?? null)
       // Layover mode collapses the parsed legs into ONE booking, so it takes the
       // single-save path (upload the source document, then show the result)
       // rather than the multi-review "advance to the next leg" flow.
@@ -168,19 +191,6 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
     }
   }
 
-  const currentParsedBooking = parsedBookings[currentIndex] || null
-  // The merged single booking the form is pre-filled with in layover mode.
-  // Memoised deliberately: BookingForm re-seeds its fields from a useEffect keyed
-  // on this prop, so a fresh object on every modal re-render would discard
-  // whatever the user had typed.
-  const layoverBooking = useMemo(
-    () =>
-      mode === 'multi-review' && treatAsLayover && parsedBookings.length > 0
-        ? mergeAsLayover(parsedBookings)
-        : null,
-    [mode, treatAsLayover, parsedBookings],
-  )
-
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[8vh] px-4 animate-fade-in">
       {/* Backdrop */}
@@ -260,9 +270,14 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
             )}
             {mode === 'multi-review' && allFlights && (
               <div className="flex items-center gap-2 mt-2">
+                {/* Once a leg is saved individually there's no correct merge —
+                    it would duplicate the saved leg inside the merged booking —
+                    so the strategy switch is off the table, not silently wrong. */}
                 <button
                   onClick={() => setTreatAsLayover(!treatAsLayover)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  disabled={savedIndices.size > 0}
+                  title={savedIndices.size > 0 ? 'Some legs are already saved as separate bookings' : undefined}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     treatAsLayover
                       ? 'bg-orange-100 text-orange-700'
                       : 'text-on-surface-variant hover:bg-gray-100 border border-outline/40'
