@@ -109,6 +109,10 @@ export function AppShell({ user, trips, children }: Props) {
   };
 
   return (
+    // The provider wraps the WHOLE shell, not just <main>: the Add Booking modal
+    // below is rendered by the shell itself, and BookingForm calls
+    // useTripContext() (which throws when there is no provider above it).
+    <TripContext.Provider value={{ selectedTrip, tripMeta, trips }}>
     <div className="fixed inset-0 flex flex-row bg-surface-dim pb-[env(safe-area-inset-bottom)]">
       {/* Mobile overlay */}
       <div
@@ -147,11 +151,7 @@ export function AppShell({ user, trips, children }: Props) {
           onToggleSidebar={() => setSidebarOpen((v) => !v)}
           onAddBooking={() => setAddOpen(true)}
         />
-        <main className="flex-1 overflow-auto bg-surface-dim p-3 sm:p-5">
-          <TripContext.Provider value={{ selectedTrip, tripMeta, trips }}>
-            {children}
-          </TripContext.Provider>
-        </main>
+        <main className="flex-1 overflow-auto bg-surface-dim p-3 sm:p-5">{children}</main>
       </div>
 
       {/* Global "Add Booking" modal — available on every page. */}
@@ -170,5 +170,6 @@ export function AppShell({ user, trips, children }: Props) {
         />
       )}
     </div>
+    </TripContext.Provider>
   );
 }
