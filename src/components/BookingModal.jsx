@@ -36,15 +36,20 @@ function mergeAsLayover(legs) {
   // One merged booking carries one price, so the legs' fares are totalled.
   // Parsed legs frequently carry no fare at all (itineraries rarely show it) —
   // then leave it blank rather than inventing a 0 to fill in by hand.
-  const fares = legs
-    .map((l) => parseFloat(l.cost_amount))
-    .filter((n) => Number.isFinite(n))
+  const priced = legs.filter((l) => Number.isFinite(parseFloat(l.cost_amount)))
+  const currencies = [...new Set(priced.map((l) => l.cost_currency).filter(Boolean))]
+  // Separately-ticketed legs can be priced in different currencies; adding those
+  // together would silently invent a wrong number, so leave it for the user.
+  const sameCurrency = currencies.length <= 1
+  const total = priced.reduce((sum, l) => sum + parseFloat(l.cost_amount), 0)
   return {
     ...first,
     title: `${first.details?.departure_airport || ''} → ${last.details?.arrival_airport || ''}`,
     end_date: last.end_date,
-    cost_amount: fares.length ? fares.reduce((a, b) => a + b, 0) : null,
-    cost_currency: legs.find((l) => l.cost_currency)?.cost_currency ?? null,
+    // Rounded: summing floats yields 29.979999999999997, which would land in the
+    // cost field verbatim.
+    cost_amount: priced.length && sameCurrency ? Math.round(total * 100) / 100 : null,
+    cost_currency: currencies[0] ?? null,
     details: {
       ...first.details,
       arrival_airport: last.details?.arrival_airport || '',
@@ -117,6 +122,13 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
         if (saved?.id) {
           setMode('manual')
           setTreatAsLayover(false)
+          // Discard the parse: the modal now stays open on the saved booking, so
+          // leftover legs would otherwise seed the form when the user clicks Edit
+          // — and saving that would overwrite the merged booking with leg 1.
+          setParsedBookings([])
+          setCurrentIndex(0)
+          setSavedCount(0)
+          setSavedIndices(new Set())
           setCurrent(saved)
           setEditing(false)
         } else {
@@ -321,7 +333,9 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
                     ? (treatAsLayover ? 'layover' : `parsed-${currentIndex}`)
                     : 'form'
                 }
-                booking={layoverBooking || currentParsedBooking || current}
+                // `current` wins once a booking exists: editing a saved booking
+                // must never re-seed from a parsed leg.
+                booking={current || layoverBooking || currentParsedBooking}
                 onSave={handleSave}
                 onDelete={() => setShowDelete(true)}
                 onCancel={onClose}
