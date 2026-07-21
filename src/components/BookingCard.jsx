@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { TYPE_COLORS, TYPE_ICONS, formatTime } from '../lib/calendar'
 import { getFlightDuration } from '../lib/airports'
 
@@ -28,6 +29,16 @@ function FlightDetails({ booking, details }) {
     details.departure_airport,
     details.arrival_airport
   )
+  const stops = details.layovers?.length ? details.layovers : []
+  // "SFO 1h21m" — the only facts a layover adds beyond the endpoints, which the
+  // title and the timeline already state.
+  const stopSummary = stops
+    .map((lo) => {
+      const dur = lo.arrival && lo.departure ? layoverDuration(lo.arrival, lo.departure) : ''
+      return dur ? `${lo.airport} ${dur}` : lo.airport
+    })
+    .filter(Boolean)
+    .join(' · ')
 
   return (
     <div className="space-y-2">
@@ -36,7 +47,13 @@ function FlightDetails({ booking, details }) {
           <span className="text-lg">✈️</span>
           <div>
             <div className="font-semibold text-sm">{booking.title}</div>
-            {booking.provider && <div className="text-xs opacity-70">{booking.provider}</div>}
+            {(booking.provider || stops.length > 0) && (
+              <div className="text-xs opacity-70">
+                {booking.provider}
+                {booking.provider && stops.length > 0 && ' · '}
+                {stops.length > 0 && `${stops.length} stop${stops.length > 1 ? 's' : ''}`}
+              </div>
+            )}
           </div>
         </div>
         {details.flight_number && (
@@ -48,16 +65,35 @@ function FlightDetails({ booking, details }) {
           <div className="font-bold text-base">{details.departure_airport || '—'}</div>
           <div className="opacity-70">{formatTime(booking.start_date)}</div>
         </div>
-        <div className="flex-1 flex flex-col items-center">
+        {/* The stop belongs on the line, not in a footnote: the midpoint already
+            existed, it was just holding a decorative plane instead of the data.
+            Direct flights keep the plane, so a stop reads at a glance. */}
+        <div className="flex-1 flex flex-col items-center min-w-0">
           <div className="flex items-center w-full">
             <div className="h-px flex-1 bg-current opacity-30" />
-            <svg className="w-4 h-4 mx-1 opacity-50" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-            </svg>
-            <div className="h-px flex-1 bg-current opacity-30" />
+            {stops.length === 0 ? (
+              <svg className="w-4 h-4 mx-1 opacity-50" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+              </svg>
+            ) : (
+              stops.map((lo, i) => (
+                <Fragment key={i}>
+                  <span
+                    className="w-[5px] h-[5px] rounded-full bg-orange-500 shrink-0 mx-1 ring-2 ring-white"
+                    aria-hidden
+                  />
+                  <div className="h-px flex-1 bg-current opacity-30" />
+                </Fragment>
+              ))
+            )}
           </div>
+          {stopSummary && (
+            <span className="text-[10px] leading-tight text-orange-600 font-medium mt-0.5 max-w-full truncate">
+              {stopSummary}
+            </span>
+          )}
           {flyingTime && (
-            <span className="text-[10px] opacity-50 mt-0.5">{flyingTime}</span>
+            <span className="text-[10px] leading-tight opacity-50">{flyingTime}</span>
           )}
         </div>
         <div className="text-center">
@@ -71,29 +107,6 @@ function FlightDetails({ booking, details }) {
         {details.seat && <span>Seat {details.seat}</span>}
         {booking.confirmation_number && <span>Conf: {booking.confirmation_number}</span>}
       </div>
-      {/* Layover route */}
-      {details.layovers && details.layovers.length > 0 && (
-        <div className="pt-1.5 border-t border-current/10 mt-1">
-          <div className="flex items-center gap-1.5 text-[10px] flex-wrap">
-            <span className="font-semibold">{details.departure_airport}</span>
-            {details.layovers.map((lo, i) => (
-              <span key={i} className="flex items-center gap-1">
-                <span className="opacity-50">→</span>
-                <span className="text-orange-600 font-medium">
-                  {lo.airport}
-                  {lo.arrival && lo.departure && (
-                    <span className="opacity-60 font-normal ml-0.5">
-                      ({layoverDuration(lo.arrival, lo.departure)})
-                    </span>
-                  )}
-                </span>
-              </span>
-            ))}
-            <span className="opacity-50">→</span>
-            <span className="font-semibold">{details.arrival_airport}</span>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
