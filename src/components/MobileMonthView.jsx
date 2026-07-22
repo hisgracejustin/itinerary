@@ -449,7 +449,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                 <div className="flex items-center gap-2 mb-1.5">
                   <button
                     onClick={(e) => { e.stopPropagation(); onSelectDate?.(date) }}
-                    className={`text-sm font-medium hover:underline ${isSameDay(date, today) ? 'text-primary' : 'text-on-surface'}`}
+                    className={`text-sm font-medium hover:underline shrink-0 whitespace-nowrap ${isSameDay(date, today) ? 'text-primary' : 'text-on-surface'}`}
                   >
                     {date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                   </button>
@@ -495,10 +495,11 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       <button
                         key={b.id}
                         onClick={() => onBookingClick?.(b)}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-medium hover:bg-amber-200 transition-colors"
+                        className="inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-medium hover:bg-amber-200 transition-colors"
                       >
-                        🏡 {b.title}
-                        <span className="text-amber-600 font-normal">{nightNumber}/{totalNights}</span>
+                        <span className="shrink-0">🏡</span>
+                        <span className="truncate">{b.title}</span>
+                        <span className="text-amber-600 font-normal shrink-0">{nightNumber}/{totalNights}</span>
                       </button>
                     )
                   })}
@@ -523,10 +524,11 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       <button
                         key={b.id}
                         onClick={() => onBookingClick?.(b)}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[11px] font-medium hover:bg-purple-200 transition-colors"
+                        className="inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[11px] font-medium hover:bg-purple-200 transition-colors"
                       >
-                        🚢 On board
-                        <span className="text-purple-600 font-normal">{nightNumber}/{totalNights}</span>
+                        <span className="shrink-0">🚢</span>
+                        <span className="truncate">On board</span>
+                        <span className="text-purple-600 font-normal shrink-0">{nightNumber}/{totalNights}</span>
                       </button>
                     )
                   })}
@@ -552,10 +554,11 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       <button
                         key={b.id}
                         onClick={() => onBookingClick?.(b)}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-medium hover:bg-indigo-200 transition-colors"
+                        className="inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-medium hover:bg-indigo-200 transition-colors"
                       >
-                        {getRentalIcon(details)} {b.title}
-                        <span className="text-indigo-600 font-normal">{dayNumber}/{totalDays}</span>
+                        <span className="shrink-0">{getRentalIcon(details)}</span>
+                        <span className="truncate">{b.title}</span>
+                        <span className="text-indigo-600 font-normal shrink-0">{dayNumber}/{totalDays}</span>
                       </button>
                     )
                   })}
@@ -577,7 +580,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                     return (
                       <span
                         key={`overnight-${b.id}`}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${chipColors} transition-colors`}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${chipColors} transition-colors`}
                       >
                         {typeIcon} Overnight
                       </span>
@@ -594,7 +597,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          <span className="font-medium">No stay</span>
+                          <span className="font-medium whitespace-nowrap">No stay</span>
                         </span>
                       )
                     }
