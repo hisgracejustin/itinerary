@@ -30,12 +30,14 @@ export const bookingInsertSchema = z.object({
 
 export const bookingUpdateSchema = bookingInsertSchema.partial();
 
+export const todoStatusSchema = z.enum(["todo", "in_progress", "done"]);
+
 export const todoInsertSchema = z.object({
   id: z.string().optional(),
   trip_id: z.string().uuid(),
   title: z.string().min(1),
   due_date: z.string().nullish(),
-  completed: z.boolean().optional(),
+  status: todoStatusSchema.optional(),
   // users.id is a text column (cuid2, or a preserved Supabase UUID) — not
   // necessarily a UUID, so no .uuid() here. null = unassigned.
   assignee_id: z.string().min(1).nullish(),
@@ -43,6 +45,15 @@ export const todoInsertSchema = z.object({
 });
 
 export const todoUpdateSchema = todoInsertSchema.partial();
+
+// Payload for moving a to-do between board columns (and reordering within one).
+export const todoMoveSchema = z.object({
+  id: z.string().min(1),
+  status: todoStatusSchema,
+  // Full ordered id list of the DESTINATION column after the drop (must
+  // include `id`). Omitted => append to the end of the destination column.
+  orderedIds: z.array(z.string()).min(1).optional(),
+});
 
 export const dayNoteUpsertSchema = z.object({
   date: z.string().min(1),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useOptimistic, useTransition } from "react";
-import { createTodoAction, updateTodoAction, deleteTodoAction, reorderTodosAction } from "@/actions/todos";
+import { createTodoAction, updateTodoAction, deleteTodoAction, moveTodoAction } from "@/actions/todos";
 import { unwrap } from "@/lib/friendlyError";
 
 // Optimistic to-do list layered over the server-provided list (`initial`). The
@@ -17,11 +17,16 @@ function reducer(state, action) {
       return state.map((t) => (t.id === action.id ? { ...t, ...action.patch } : t));
     case "remove":
       return state.filter((t) => t.id !== action.id);
-    case "reorder": {
-      // Assign each listed id its index as the new position; unlisted rows keep
-      // theirs. The screen sorts by position, so this reflects the new order.
+    case "move": {
+      // `order`: destination column ids in their new order (each gets its index
+      // as position). `id`/`status`: the moved card also switches columns. The
+      // screen sorts each column by position, so this reflects the drop.
       const pos = new Map(action.order.map((id, i) => [id, i]));
-      return state.map((t) => (pos.has(t.id) ? { ...t, position: pos.get(t.id) } : t));
+      return state.map((t) => {
+        const patch = pos.has(t.id) ? { position: pos.get(t.id) } : null;
+        if (t.id === action.id) return { ...t, status: action.status, ...(patch ?? {}) };
+        return patch ? { ...t, ...patch } : t;
+      });
     }
     default:
       return state;
@@ -48,7 +53,7 @@ export function useTodoList(initial, { onError } = {}) {
           title,
           trip_id: trip_id ?? null,
           due_date: due_date ?? null,
-          completed: false,
+          status: "todo",
           assignee_id: assignee_id ?? null,
           position,
           _pending: true,
@@ -113,27 +118,36 @@ export function useTodoList(initial, { onError } = {}) {
     });
   };
 
-  const reorder = (order) => {
-    // `order` is the full list of visible ids in their new order. Skip if any
-    // are still being created — their DB rows may not exist yet.
-    if (order.some((id) => todos.find((t) => t.id === id)?._pending)) return;
+  // Drag/drop within or across a column. `orderedIds` is the full destination
+  // column order after the drop (including `id`); the server rewrites those
+  // positions and flips the moved row's status.
+  const move = (id, status, orderedIds) => {
+    // Skip if any target row is still being created — their DB rows may not
+    // exist yet, so the position/status write would target nothing.
+    if (orderedIds.some((x) => todos.find((t) => t.id === x)?._pending)) return;
     startTransition(async () => {
-      applyOptimistic({ type: "reorder", order });
+      applyOptimistic({ type: "move", id, status, order: orderedIds });
       try {
-        await unwrap(await reorderTodosAction(order));
+        await unwrap(await moveTodoAction({ id, status, orderedIds }));
       } catch (err) {
         onError?.(err);
       }
     });
   };
 
-  const toggle = (id) => {
+  // Move a card to a column without a precise slot (checkbox / chevron / while
+  // filtered): the row lands at the end of its new column, matching where the
+  // server appends it. Bump position optimistically so the card doesn't jump
+  // when the persisted row comes back.
+  const setStatus = (id, status) => {
     const current = todos.find((t) => t.id === id);
     if (!current || current._pending) return;
+    if (current.status === status) return;
+    const position = todos.reduce((max, t) => Math.max(max, t.position ?? 0), -1) + 1;
     startTransition(async () => {
-      applyOptimistic({ type: "update", id, patch: { completed: !current.completed } });
+      applyOptimistic({ type: "update", id, patch: { status, position } });
       try {
-        await unwrap(await updateTodoAction(id, { completed: !current.completed }));
+        await unwrap(await moveTodoAction({ id, status }));
       } catch (err) {
         onError?.(err);
       }
@@ -155,5 +169,5 @@ export function useTodoList(initial, { onError } = {}) {
     });
   };
 
-  return { todos, add, edit, assign, reorder, toggle, remove, isPending };
+  return { todos, add, edit, assign, move, setStatus, remove, isPending };
 }

@@ -1,5 +1,4 @@
 import {
-  boolean,
   customType,
   index,
   integer,
@@ -95,6 +94,9 @@ export const bookingType = pgEnum("booking_type", [
   "rental",
 ]);
 export const bookingSource = pgEnum("booking_source", ["manual", "parsed"]);
+// Board column a to-do lives in. `done` replaces the old `completed` boolean
+// (completed=true → done); `todo`/`in_progress` are the two open columns.
+export const todoStatus = pgEnum("todo_status", ["todo", "in_progress", "done"]);
 
 export const trips = pgTable("trips", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -179,7 +181,10 @@ export const todos = pgTable(
       .references(() => trips.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     due_date: text("due_date"),
-    completed: boolean("completed").notNull().default(false),
+    // Which board column this to-do sits in. Replaces the old `completed`
+    // boolean: `done` is the former completed=true. Defaults to the "To do"
+    // column so freshly-created items start at the top of the board.
+    status: todoStatus("status").notNull().default("todo"),
     // Who owns this to-do. Null = unassigned (surfaced explicitly in the UI so
     // nothing silently falls through the cracks). `set null` on user delete so
     // removing a member leaves their to-dos behind as unassigned rather than
@@ -196,6 +201,7 @@ export const todos = pgTable(
     index("idx_todos_due_date").on(t.due_date),
     index("idx_todos_position").on(t.position),
     index("idx_todos_assignee_id").on(t.assignee_id),
+    index("idx_todos_status").on(t.status),
   ],
 );
 
@@ -291,6 +297,7 @@ export const dayRemindersRelations = relations(dayReminders, ({ one }) => ({
 /* ---------------------------------- types ---------------------------------- */
 
 export type TripRole = (typeof tripRole.enumValues)[number];
+export type TodoStatus = (typeof todoStatus.enumValues)[number];
 export type Trip = typeof trips.$inferSelect;
 export type TripMember = typeof tripMembers.$inferSelect;
 export type Booking = typeof bookings.$inferSelect;

@@ -66,11 +66,11 @@ export default function TripAgenda({ tripStart, tripEnd, bookings, todos = [], d
                   {dayTodos.map((todo) => (
                     <li key={todo.id} className="flex items-center gap-2.5">
                       <span className={`w-4 h-4 rounded-md border flex items-center justify-center text-[10px] shrink-0 ${
-                        todo.completed ? 'bg-primary/10 border-primary/30 text-primary' : 'border-gray-300'
+                        todo.status === 'done' ? 'bg-primary/10 border-primary/30 text-primary' : 'border-gray-300'
                       }`}>
-                        {todo.completed && '✓'}
+                        {todo.status === 'done' && '✓'}
                       </span>
-                      <span className={`text-sm ${todo.completed ? 'line-through text-on-surface-variant' : 'text-on-surface'}`}>
+                      <span className={`text-sm ${todo.status === 'done' ? 'line-through text-on-surface-variant' : 'text-on-surface'}`}>
                         {todo.title}
                       </span>
                     </li>

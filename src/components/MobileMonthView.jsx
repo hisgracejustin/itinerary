@@ -648,11 +648,11 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                         {dayTodos.map((todo) => (
                           <div key={todo.id} className="flex items-center gap-2 pl-1">
                             <span className={`w-3.5 h-3.5 rounded-md border flex items-center justify-center text-[9px] ${
-                              todo.completed ? 'bg-primary/10 border-primary/30 text-primary' : 'border-gray-300'
+                              todo.status === 'done' ? 'bg-primary/10 border-primary/30 text-primary' : 'border-gray-300'
                             }`}>
-                              {todo.completed && '✓'}
+                              {todo.status === 'done' && '✓'}
                             </span>
-                            <span className={`text-sm ${todo.completed ? 'line-through text-on-surface-variant' : 'text-on-surface'}`}>
+                            <span className={`text-sm ${todo.status === 'done' ? 'line-through text-on-surface-variant' : 'text-on-surface'}`}>
                               {todo.title}
                             </span>
                           </div>

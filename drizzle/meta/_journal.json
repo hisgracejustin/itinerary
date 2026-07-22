@@ -57,6 +57,13 @@
       "when": 1784703719936,
       "tag": "0007_ancient_brother_voodoo",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784708791211,
+      "tag": "0008_funny_sebastian_shaw",
+      "breakpoints": true
     }
   ]
 }
