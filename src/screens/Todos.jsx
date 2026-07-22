@@ -85,9 +85,9 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
     if (assigneeFilter === 'unassigned') return !t.assignee_id
     return t.assignee_id === assigneeFilter
   }
-  // Reordering writes positions for the whole destination column, so a filtered
-  // view would clobber the positions of rows it can't see — drag is disabled
-  // while a filter is active. Checkbox/chevron moves stay safe (they append).
+  // Used for empty-state copy ("Clear filters"); dragging stays enabled while
+  // filtered — see orderAfterDrop, which anchors drops into the FULL column
+  // order so hidden rows can't be clobbered.
   const filterActive = assigneeFilter !== 'all' || tripFilter !== 'all'
   const clearFilters = () => { setAssigneeFilter('all'); setTripFilter('all') }
   const showTripChips = !tripMeta && trips.length > 1
@@ -121,6 +121,26 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
     return COLUMNS.find((c) => byStatus[c.id].some((t) => t.id === overId))?.id ?? null
   }
 
+  // Full-column order after a drop. A drag moves exactly one card, so the new
+  // order is the full column (hidden-by-filter rows INCLUDED) minus that card,
+  // re-inserted next to its new visible neighbor: after the visible card above
+  // it, else before the visible card below it, else at the column's end. This
+  // is what keeps dragging safe while a filter is active — a visible-only
+  // rewrite would clobber the positions of rows the filter hides. Unfiltered,
+  // visible == full and this degenerates to the plain reorder.
+  const orderAfterDrop = (movedId, destStatus, visibleOrder) => {
+    const idx = visibleOrder.indexOf(movedId)
+    const prev = visibleOrder[idx - 1]
+    const next = visibleOrder[idx + 1]
+    const full = todos
+      .filter((t) => t.status === destStatus && t.id !== movedId)
+      .sort(byPosition)
+      .map((t) => t.id)
+    const at =
+      prev != null ? full.indexOf(prev) + 1 : next != null ? full.indexOf(next) : full.length
+    return [...full.slice(0, at), movedId, ...full.slice(at)]
+  }
+
   // Desktop: 2-D drag, cards cross columns. Resolve the destination order and
   // hand it to the hook — same-slot drops are a no-op.
   const handleDesktopDragEnd = ({ active, over }) => {
@@ -131,20 +151,22 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
     const destStatus = columnOf(over.id)
     if (!activeStatus || !destStatus) return
     const destIds = byStatus[destStatus].map((t) => t.id)
+    let visibleOrder
     if (activeStatus === destStatus) {
       // Reorder within the column.
       const from = destIds.indexOf(active.id)
       const to = over.id === destStatus ? destIds.length - 1 : destIds.indexOf(over.id)
       if (from === -1 || to === -1 || from === to) return
-      move(active.id, destStatus, arrayMove(destIds, from, to))
+      visibleOrder = arrayMove(destIds, from, to)
     } else {
       // Cross-column: insert the card at the target slot (append if dropped on
       // the column body). The source column needs no rewrite — removing a row
       // preserves the relative order of what's left.
       const at = over.id === destStatus ? destIds.length : destIds.indexOf(over.id)
       const insertAt = at === -1 ? destIds.length : at
-      move(active.id, destStatus, [...destIds.slice(0, insertAt), active.id, ...destIds.slice(insertAt)])
+      visibleOrder = [...destIds.slice(0, insertAt), active.id, ...destIds.slice(insertAt)]
     }
+    move(active.id, destStatus, orderAfterDrop(active.id, destStatus, visibleOrder))
   }
 
   // Mobile: single visible column, vertical reorder only.
@@ -155,7 +177,7 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
     const from = columnIds.indexOf(active.id)
     const to = columnIds.indexOf(over.id)
     if (from === -1 || to === -1) return
-    move(active.id, mobileColumn, arrayMove(columnIds, from, to))
+    move(active.id, mobileColumn, orderAfterDrop(active.id, mobileColumn, arrayMove(columnIds, from, to)))
   }
 
   const handleAdd = (e) => {
@@ -340,12 +362,6 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
         </div>
       )}
 
-      {filterActive && (
-        <p className="text-[11px] text-on-surface-variant mb-2 shrink-0">
-          Drag-to-reorder is off while filtered. Use the checkbox or arrows to move cards.
-        </p>
-      )}
-
       {/* Board */}
       {isDesktop ? (
         <DndContext
@@ -375,10 +391,9 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
                       onReset={clearFilters}
                     />
                   ) : (
-                    byStatus[column.id].map((todo) => {
-                      const Row = filterActive ? TodoItem : SortableTodoItem
-                      return <Row key={todo.id} {...cardProps(todo)} />
-                    })
+                    byStatus[column.id].map((todo) => (
+                      <SortableTodoItem key={todo.id} {...cardProps(todo)} stepper />
+                    ))
                   )}
                 </SortableContext>
               </BoardColumn>
@@ -432,10 +447,9 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
                     items={byStatus[mobileColumn].map((t) => t.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    {byStatus[mobileColumn].map((todo) => {
-                      const Row = filterActive ? TodoItem : SortableTodoItem
-                      return <Row key={todo.id} {...cardProps(todo)} stepper />
-                    })}
+                    {byStatus[mobileColumn].map((todo) => (
+                      <SortableTodoItem key={todo.id} {...cardProps(todo)} stepper />
+                    ))}
                   </SortableContext>
                 </div>
 
@@ -640,14 +654,17 @@ function TodoItem({
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
-        {/* Mobile: step the card to the adjacent column without a cross-column
-            drag. Hidden at the ends of the board. */}
+        {/* Step the card to the adjacent column without a drag — the only way
+            to cross columns on mobile (one column visible at a time), a quick
+            alternative to dragging on desktop. Always visible on touch,
+            hover-revealed on pointer devices (same treatment as edit/delete).
+            Hidden at the ends of the board. */}
         {stepper && !overlay && colIndex > 0 && (
           <button
             onClick={() => onSetStatus?.(todo.id, COLUMNS[colIndex - 1].id)}
             disabled={todo._pending}
             aria-label={`Move to ${COLUMNS[colIndex - 1].title}`}
-            className="text-on-surface-variant hover:text-primary p-1.5 rounded-full hover:bg-primary-light disabled:opacity-40"
+            className="text-on-surface-variant hover:text-primary opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-all duration-150 p-1.5 rounded-full hover:bg-primary-light disabled:opacity-40"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -659,7 +676,7 @@ function TodoItem({
             onClick={() => onSetStatus?.(todo.id, COLUMNS[colIndex + 1].id)}
             disabled={todo._pending}
             aria-label={`Move to ${COLUMNS[colIndex + 1].title}`}
-            className="text-on-surface-variant hover:text-primary p-1.5 rounded-full hover:bg-primary-light disabled:opacity-40"
+            className="text-on-surface-variant hover:text-primary opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-all duration-150 p-1.5 rounded-full hover:bg-primary-light disabled:opacity-40"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
