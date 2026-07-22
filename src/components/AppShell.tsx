@@ -151,7 +151,11 @@ export function AppShell({ user, trips, children }: Props) {
           onToggleSidebar={() => setSidebarOpen((v) => !v)}
           onAddBooking={() => setAddOpen(true)}
         />
-        <main className="flex-1 overflow-auto bg-surface-dim p-3 sm:p-5">{children}</main>
+        {/* flex-col so full-height screens (the To-dos board) can size themselves
+            with flex-1 instead of a percentage height — h-full against a flex-item
+            scroll container is exactly the chain Safari resolves inconsistently,
+            which let the board's columns run past the viewport. */}
+        <main className="flex-1 overflow-auto bg-surface-dim p-3 sm:p-5 flex flex-col">{children}</main>
       </div>
 
       {/* Global "Add Booking" modal — available on every page. */}

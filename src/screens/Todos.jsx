@@ -3,8 +3,8 @@
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import {
-  DndContext, DragOverlay, closestCenter, closestCorners, KeyboardSensor, PointerSensor,
-  useDroppable, useSensor, useSensors,
+  DndContext, DragOverlay, closestCenter, KeyboardSensor, PointerSensor, pointerWithin,
+  rectIntersection, useDroppable, useSensor, useSensors,
 } from '@dnd-kit/core'
 import {
   SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy,
@@ -35,6 +35,17 @@ const EMPTY_COPY = {
 // Desktop drags are 2-D (cards cross columns), so it's dropped there.
 const restrictToVerticalAxis = ({ transform }) => ({ ...transform, x: 0 })
 
+// Desktop collision: follow the POINTER, not the dragged rect. The overlay keeps
+// the grab offset, and cards are grabbed by their left-edge handle — so the
+// card's body extends ~a full column to the right of the pointer. Corner math
+// against that rect (closestCorners) then favors the column to the RIGHT of the
+// one the pointer is in, which made "To do → In progress" drops land in Done.
+// Keyboard drags have no pointer, so fall back to rect intersection for them.
+const pointerFirstCollision = (args) => {
+  const hits = pointerWithin(args)
+  return hits.length > 0 ? hits : rectIntersection(args)
+}
+
 // Defaults are applied in the body rather than the signature: TS infers this
 // JSX component's prop types from the signature, and `members = []` would
 // narrow the prop to never[] at the .tsx call site.
@@ -57,6 +68,9 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
   const [overColumn, setOverColumn] = useState(null)
   // 'all' | 'unassigned' | <userId>
   const [assigneeFilter, setAssigneeFilter] = useState('all')
+  // 'all' | <tripId>. Only offered on the All Trips view — with a trip selected
+  // in the sidebar the server already scoped the list, so chips would be dead.
+  const [tripFilter, setTripFilter] = useState('all')
   // Mobile shows one column at a time behind segmented tabs.
   const [mobileColumn, setMobileColumn] = useState('todo')
 
@@ -66,6 +80,7 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
   const isDesktop = useMediaQuery('(min-width: 640px)')
 
   const matchesFilter = (t) => {
+    if (tripFilter !== 'all' && t.trip_id !== tripFilter) return false
     if (assigneeFilter === 'all') return true
     if (assigneeFilter === 'unassigned') return !t.assignee_id
     return t.assignee_id === assigneeFilter
@@ -73,7 +88,9 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
   // Reordering writes positions for the whole destination column, so a filtered
   // view would clobber the positions of rows it can't see — drag is disabled
   // while a filter is active. Checkbox/chevron moves stay safe (they append).
-  const filterActive = assigneeFilter !== 'all'
+  const filterActive = assigneeFilter !== 'all' || tripFilter !== 'all'
+  const clearFilters = () => { setAssigneeFilter('all'); setTripFilter('all') }
+  const showTripChips = !tripMeta && trips.length > 1
   const unassignedCount = todos.filter((t) => t.status !== 'done' && !t.assignee_id).length
 
   // Manual order: sort by the persisted `position` (matches the server) so
@@ -195,7 +212,10 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
   })
 
   return (
-    <div className="h-full flex flex-col w-full max-w-6xl mx-auto">
+    // flex-1 (not h-full): <main> is a flex column, so the board takes the
+    // remaining viewport height via flex-basis — the percentage chain broke in
+    // Safari and let columns grow past the bottom of the window.
+    <div className="flex-1 min-h-0 flex flex-col w-full max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-5 gap-3">
         <h2 className="text-xl font-medium text-on-surface">To-dos</h2>
         <div className="flex items-center gap-2 shrink-0">
@@ -265,8 +285,8 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
       </form>
       )}
 
-      {/* Assignee filter */}
-      {(members.length > 0 || unassignedCount > 0) && (
+      {/* Assignee + trip filters — one scrollable chip row. */}
+      {(members.length > 0 || unassignedCount > 0 || showTripChips) && (
         <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 shrink-0">
           <FilterChip
             active={assigneeFilter === 'all'}
@@ -293,6 +313,30 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
               />
             )
           })}
+          {showTripChips && (
+            <>
+              <span aria-hidden className="w-px h-4 bg-outline/30 shrink-0 mx-0.5" />
+              <FilterChip
+                active={tripFilter === 'all'}
+                onClick={() => setTripFilter('all')}
+                label="All trips"
+              />
+              {trips.map((trip) => {
+                const count = todos.filter(
+                  (t) => t.status !== 'done' && t.trip_id === trip.id,
+                ).length
+                return (
+                  <FilterChip
+                    key={trip.id}
+                    active={tripFilter === trip.id}
+                    onClick={() => setTripFilter(tripFilter === trip.id ? 'all' : trip.id)}
+                    label={trip.name}
+                    count={count}
+                  />
+                )
+              })}
+            </>
+          )}
         </div>
       )}
 
@@ -306,7 +350,7 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
       {isDesktop ? (
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCorners}
+          collisionDetection={pointerFirstCollision}
           onDragStart={({ active }) => setActiveId(active.id)}
           onDragOver={({ over }) => setOverColumn(over ? columnOf(over.id) : null)}
           onDragEnd={handleDesktopDragEnd}
@@ -328,7 +372,7 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
                     <ColumnEmpty
                       status={column.id}
                       filterActive={filterActive}
-                      onReset={() => setAssigneeFilter('all')}
+                      onReset={clearFilters}
                     />
                   ) : (
                     byStatus[column.id].map((todo) => {
@@ -372,7 +416,7 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
               <ColumnEmpty
                 status={mobileColumn}
                 filterActive={filterActive}
-                onReset={() => setAssigneeFilter('all')}
+                onReset={clearFilters}
               />
             ) : (
               <DndContext
@@ -459,7 +503,7 @@ function BoardColumn({ column, count, highlighted, children }) {
 }
 
 // Empty-column placeholder. Offers a filter reset when a filter is what hid the
-// cards, matching the old flat-list empty state's "Show everyone".
+// cards, matching the old flat-list empty state's "Clear filters".
 function ColumnEmpty({ status, filterActive, onReset }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-on-surface-variant text-center">
@@ -474,7 +518,7 @@ function ColumnEmpty({ status, filterActive, onReset }) {
           onClick={onReset}
           className="text-[11px] text-primary font-medium mt-1.5 hover:underline"
         >
-          Show everyone
+          Clear filters
         </button>
       )}
     </div>
@@ -668,8 +712,11 @@ function TodoEditForm({ todo, trips, members = [], currentUserId = null, onSave,
   }
 
   return (
+    // Fields stack vertically: this form renders inside a board column
+    // (~300px), where the add-form's row layout would crush the title input
+    // to a sliver.
     <form onSubmit={submit} className="mat-surface p-4 border border-primary/40">
-      <div className="flex flex-col sm:flex-row gap-2">
+      <div className="flex flex-col gap-2">
         <input
           ref={inputRef}
           type="text"
@@ -677,27 +724,25 @@ function TodoEditForm({ todo, trips, members = [], currentUserId = null, onSave,
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Escape') onCancel() }}
           placeholder="What needs to be done?"
-          className="mat-input sm:flex-1"
+          className="mat-input w-full"
         />
-        <div className="flex gap-2">
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="mat-input text-sm sm:w-40"
-          />
-          <select
-            value={tripId}
-            onChange={(e) => setTripId(e.target.value)}
-            required
-            className="mat-select flex-1 sm:flex-none"
-          >
-            <option value="" disabled>Pick a trip…</option>
-            {trips.map((trip) => (
-              <option key={trip.id} value={trip.id}>{trip.name}</option>
-            ))}
-          </select>
-        </div>
+        <input
+          type="date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
+          className="mat-input text-sm w-full"
+        />
+        <select
+          value={tripId}
+          onChange={(e) => setTripId(e.target.value)}
+          required
+          className="mat-select w-full"
+        >
+          <option value="" disabled>Pick a trip…</option>
+          {trips.map((trip) => (
+            <option key={trip.id} value={trip.id}>{trip.name}</option>
+          ))}
+        </select>
       </div>
       <div className="flex items-center gap-2 mt-2">
         <span className="text-[11px] text-on-surface-variant">Assign to</span>
