@@ -83,14 +83,14 @@ export function getBookingsForDate(bookings, date) {
 }
 
 /**
- * For a multi-night stay (hotel/cruise), which edge of the stay a given date is:
- * 'in' on the check-in day, 'out' on the check-out day, null otherwise.
+ * For a multi-night stay (hotel/cruise/rental), which edge of the stay a given
+ * date is: 'in' on the check-in day, 'out' on the check-out day, null otherwise.
  *
  * The check-out day is not a night stayed (see hasOvernightCoverage), so callers
  * render it differently to avoid implying another night at that property.
  */
 export function getStayEdge(booking, date) {
-  if (booking.type !== 'hotel' && booking.type !== 'cruise') return null
+  if (booking.type !== 'hotel' && booking.type !== 'cruise' && booking.type !== 'rental') return null
   if (!booking.end_date) return null
   const start = new Date(booking.start_date)
   const end = new Date(booking.end_date)
@@ -130,6 +130,7 @@ export const TYPE_COLORS = {
   cruise: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-400', dot: 'bg-cruise' },
   hotel: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-400', dot: 'bg-hotel' },
   activity: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-400', dot: 'bg-activity' },
+  rental: { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-400', dot: 'bg-rental' },
 }
 
 /**
@@ -142,6 +143,21 @@ export const TYPE_ICONS = {
   cruise: '🚢',
   hotel: '🏡',
   activity: '🎯',
+  rental: '🚗',
+}
+
+/**
+ * Kind-specific emoji for a rental, from details.vehicle_type ("Motorcycle",
+ * "RV / Camper", …). Used where details are already parsed (card bodies,
+ * mid-stay pills); plain chips keep the generic 🚗 from TYPE_ICONS.
+ */
+export function getRentalIcon(details) {
+  const kind = String(details?.vehicle_type || '').toLowerCase()
+  if (kind.includes('motorcycle') || kind.includes('motorbike')) return '🏍️'
+  if (kind.includes('rv') || kind.includes('camper')) return '🚐'
+  if (kind.includes('scooter')) return '🛵'
+  if (kind.includes('bicycle') || kind.includes('bike')) return '🚲'
+  return '🚗'
 }
 
 /**
@@ -159,6 +175,14 @@ export function hasOvernightCoverage(bookings, date) {
     if (endDay <= startDay) return false
     if (b.type === 'hotel' || b.type === 'cruise') {
       // Covers nights from check-in day up to (but not including) check-out day
+      return viewDay >= startDay && viewDay < endDay
+    }
+    if (b.type === 'rental') {
+      // Only a camper is a bed: an RV rental covers its nights like a hotel,
+      // any other vehicle still leaves the night unaccommodated.
+      const d = typeof b.details === 'string' ? (() => { try { return JSON.parse(b.details) } catch { return {} } })() : (b.details || {})
+      const kind = String(d?.vehicle_type || '').toLowerCase()
+      if (!kind.includes('rv') && !kind.includes('camper')) return false
       return viewDay >= startDay && viewDay < endDay
     }
     if (b.type === 'flight' || b.type === 'train' || b.type === 'bus') {

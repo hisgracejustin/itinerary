@@ -6,6 +6,7 @@ const TYPE_LABELS = {
   bus: '🚌 Bus',
   cruise: '🚢 Cruise',
   hotel: '🏡 Accommodation',
+  rental: '🚗 Rental',
   activity: '🎯 Activity',
 }
 
@@ -22,6 +23,10 @@ const DETAIL_LABELS = {
   train_number: 'Train Number',
   bus_number: 'Bus/Route Number',
   car: 'Car',
+  vehicle_type: 'Vehicle Type',
+  pickup_location: 'Pick-up Location',
+  dropoff_location: 'Drop-off Location',
+  insurance: 'Insurance',
   ship_name: 'Ship Name',
   cabin: 'Cabin',
   deck: 'Deck',

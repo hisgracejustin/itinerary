@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react'
 import { CURRENCIES, formatCurrency } from '../lib/currencies'
 import { useTripContext } from '../lib/trip-context'
 
-const BOOKING_TYPES = ['flight', 'train', 'bus', 'cruise', 'hotel', 'activity']
+const BOOKING_TYPES = ['flight', 'train', 'bus', 'rental', 'cruise', 'hotel', 'activity']
 
 const TYPE_LABELS = {
   flight: '✈️ Flight',
   train: '🚂 Train',
   bus: '🚌 Bus',
+  rental: '🚗 Rental',
   cruise: '🚢 Cruise',
   hotel: '🏡 Accomm',
   activity: '🎯 Activity',
@@ -35,6 +36,14 @@ const TYPE_FIELDS = {
     { key: 'arrival_station', label: 'Arrival Stop', placeholder: 'Airport Terminal 1' },
     { key: 'bus_number', label: 'Bus/Route Number', placeholder: 'A1' },
     { key: 'seat', label: 'Seat', placeholder: '12' },
+  ],
+  rental: [
+    { key: 'vehicle_type', label: 'Vehicle Type', options: ['Car', 'Motorcycle', 'RV / Camper', 'Scooter', 'Bicycle', 'Other'] },
+    { key: 'pickup_location', label: 'Pick-up Location', placeholder: '51840 Dale Ln, Oakhurst, CA' },
+    { key: 'dropoff_location', label: 'Drop-off Location', placeholder: 'Same as pick-up' },
+    { key: 'insurance', label: 'Insurance', placeholder: 'Minimum coverage' },
+    { key: 'maps_url', label: 'Google Maps URL', placeholder: 'https://maps.google.com/...' },
+    { key: 'notes', label: 'Notes', placeholder: 'Host: Brian · +1 559 580 5820', multiline: true },
   ],
   cruise: [
     { key: 'ship_name', label: 'Ship Name', placeholder: 'Diamond Princess' },
@@ -176,7 +185,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
       {/* Type selector */}
       <div>
         <label className="block text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">Booking Type</label>
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
           {BOOKING_TYPES.map((t) => (
             <button
               key={t}
@@ -338,10 +347,21 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
             {TYPE_LABELS[form.type]} Details
           </h3>
           <div className="grid grid-cols-2 gap-3">
-            {fields.map(({ key, label, placeholder, multiline }) => (
+            {fields.map(({ key, label, placeholder, multiline, options }) => (
               <div key={key} className={multiline ? 'col-span-2' : ''}>
                 <label className="block text-xs text-on-surface-variant mb-1">{label}</label>
-                {multiline ? (
+                {options ? (
+                  <select
+                    value={form.details[key] || ''}
+                    onChange={(e) => setDetail(key, e.target.value)}
+                    className="mat-select w-full"
+                  >
+                    <option value="">Select...</option>
+                    {options.map((o) => (
+                      <option key={o} value={o}>{o}</option>
+                    ))}
+                  </select>
+                ) : multiline ? (
                   <textarea
                     value={form.details[key] || ''}
                     onChange={(e) => setDetail(key, e.target.value)}

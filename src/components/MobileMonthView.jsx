@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react'
-import { getMonthGrid, getBookingsForDate, isSameDay, TYPE_COLORS, TYPE_ICONS, formatTime, hasOvernightCoverage } from '../lib/calendar'
+import { getMonthGrid, getBookingsForDate, isSameDay, TYPE_COLORS, TYPE_ICONS, formatTime, hasOvernightCoverage, getRentalIcon } from '../lib/calendar'
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
 
@@ -530,6 +530,35 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       </button>
                     )
                   })}
+                  {/* Rental mid-stay chips */}
+                  {dayBookings.filter((b) => {
+                    if (b.type !== 'rental' || !b.end_date) return false
+                    const start = new Date(b.start_date)
+                    const end = new Date(b.end_date)
+                    const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                    const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                    const viewDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+                    return endDay > startDay && viewDay.getTime() !== endDay.getTime() && viewDay.getTime() !== startDay.getTime()
+                  }).map((b) => {
+                    const details = typeof b.details === 'string' ? (() => { try { return JSON.parse(b.details) } catch { return {} } })() : (b.details || {})
+                    const start = new Date(b.start_date)
+                    const end = new Date(b.end_date)
+                    const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                    const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                    const viewDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+                    const totalDays = Math.round((endDay - startDay) / (1000 * 60 * 60 * 24))
+                    const dayNumber = Math.round((viewDay - startDay) / (1000 * 60 * 60 * 24)) + 1
+                    return (
+                      <button
+                        key={b.id}
+                        onClick={() => onBookingClick?.(b)}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-medium hover:bg-indigo-200 transition-colors"
+                      >
+                        {getRentalIcon(details)} {b.title}
+                        <span className="text-indigo-600 font-normal">{dayNumber}/{totalDays}</span>
+                      </button>
+                    )
+                  })}
                   {/* Overnight flight/train/bus chip */}
                   {dayBookings.filter((b) => {
                     if (b.type !== 'flight' && b.type !== 'train' && b.type !== 'bus') return false
@@ -628,8 +657,8 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       </div>
                     )}
                     {[...dayBookings].filter((b) => {
-                      // Exclude hotel mid-stay/informal from full cards (shown as chips above)
-                      if (b.type === 'hotel' && b.end_date) {
+                      // Exclude hotel/rental mid-stay/informal from full cards (shown as chips above)
+                      if ((b.type === 'hotel' || b.type === 'rental') && b.end_date) {
                         const details = typeof b.details === 'string' ? (() => { try { return JSON.parse(b.details) } catch { return {} } })() : (b.details || {})
                         const start = new Date(b.start_date)
                         const end = new Date(b.end_date)
@@ -638,7 +667,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                         const viewDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
                         if (endDay <= startDay) return true
                         // Informal: never show as full card (chip on all days except check-out)
-                        if (details.informal) return false
+                        if (b.type === 'hotel' && details.informal) return false
                         // Regular: hide on middle days only
                         if (viewDay.getTime() !== endDay.getTime() && viewDay.getTime() !== startDay.getTime()) return false
                       }
@@ -722,6 +751,9 @@ function AgendaItem({ booking, displayDate, onClick }) {
     } else if (booking.type === 'train' || booking.type === 'bus') {
       if (viewDay.getTime() === startDay.getTime()) return 'Depart'
       if (viewDay.getTime() === endDay.getTime()) return 'Arrive'
+    } else if (booking.type === 'rental') {
+      if (viewDay.getTime() === startDay.getTime()) return '🔑 Pick-up'
+      if (viewDay.getTime() === endDay.getTime()) return '🏁 Drop-off'
     } else {
       if (viewDay.getTime() === startDay.getTime()) return '🔑 Check-in'
       if (viewDay.getTime() === endDay.getTime()) return '🚪 Check-out'
@@ -729,8 +761,8 @@ function AgendaItem({ booking, displayDate, onClick }) {
     return null
   })()
 
-  // Is this a hotel check-in or check-out day?
-  const isHotelCheckInOut = booking.type === 'hotel' && stayNote !== null
+  // Is this a hotel/rental check-in or check-out day?
+  const isStayEdgeCard = (booking.type === 'hotel' || booking.type === 'rental') && stayNote !== null
 
   // Only show +1 indicator when viewing from the departure day
   const nextDayIndicator = (() => {
@@ -750,14 +782,15 @@ function AgendaItem({ booking, displayDate, onClick }) {
   // Layover info
   const layovers = details.layovers || []
 
-  // Thin card for hotel check-in/check-out
-  if (isHotelCheckInOut) {
-    const isCheckIn = stayNote.includes('Check-in')
-    const relevantTime = isCheckIn ? formatTime(booking.start_date) : formatTime(booking.end_date)
+  // Thin card for hotel/rental check-in/check-out
+  if (isStayEdgeCard) {
+    const isStart = stayNote.includes('Check-in') || stayNote.includes('Pick-up')
+    const relevantTime = isStart ? formatTime(booking.start_date) : formatTime(booking.end_date)
+    const edgeBg = booking.type === 'rental' ? 'bg-indigo-50/50 hover:bg-indigo-50' : 'bg-amber-50/50 hover:bg-amber-50'
     return (
       <button
         onClick={() => onClick?.(booking)}
-        className={`w-full text-left px-3 py-2 rounded-lg border-l-4 ${colors.border} bg-amber-50/50 hover:bg-amber-50 transition-all duration-150`}
+        className={`w-full text-left px-3 py-2 rounded-lg border-l-4 ${colors.border} ${edgeBg} transition-all duration-150`}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">

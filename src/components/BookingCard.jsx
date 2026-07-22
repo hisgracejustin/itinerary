@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { TYPE_COLORS, TYPE_ICONS, formatTime } from '../lib/calendar'
+import { TYPE_COLORS, TYPE_ICONS, formatTime, getRentalIcon } from '../lib/calendar'
 import { getFlightDuration } from '../lib/airports'
 
 function layoverDuration(arrivalISO, departureISO) {
@@ -256,6 +256,58 @@ function HotelDetails({ booking, details }) {
   )
 }
 
+function RentalDetails({ booking, details }) {
+  const startDate = booking.start_date ? new Date(booking.start_date) : null
+  const endDate = booking.end_date ? new Date(booking.end_date) : null
+  const days = startDate && endDate
+    ? Math.max(1, Math.round((endDate - startDate) / (1000 * 60 * 60 * 24)))
+    : null
+  const oneWay = details.dropoff_location && details.dropoff_location !== details.pickup_location
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">{getRentalIcon(details)}</span>
+          <div>
+            <div className="font-semibold text-sm">{booking.title}</div>
+            {booking.provider && <div className="text-xs opacity-70">{booking.provider}</div>}
+          </div>
+        </div>
+        {days && (
+          <span className="text-xs bg-white/50 px-2 py-0.5 rounded">{days} day{days !== 1 ? 's' : ''}</span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <span className="opacity-60">Pick-up:</span> <span className="font-medium">{formatTime(booking.start_date)}</span>
+        </div>
+        {booking.end_date && (
+          <div>
+            <span className="opacity-60">Drop-off:</span> <span className="font-medium">{formatTime(booking.end_date)}</span>
+          </div>
+        )}
+        {details.insurance && (
+          <div>
+            <span className="opacity-60">Insurance:</span> <span className="font-medium">{details.insurance}</span>
+          </div>
+        )}
+        {booking.confirmation_number && (
+          <div>
+            <span className="opacity-60">Conf:</span> <span className="font-medium">{booking.confirmation_number}</span>
+          </div>
+        )}
+      </div>
+      {details.pickup_location && (
+        <div className="text-xs opacity-70">📍 {details.pickup_location}</div>
+      )}
+      {oneWay && (
+        <div className="text-xs opacity-70">🏁 Drop-off: {details.dropoff_location}</div>
+      )}
+    </div>
+  )
+}
+
 function ActivityDetails({ booking, details }) {
   return (
     <div className="space-y-2">
@@ -290,6 +342,7 @@ const DETAIL_COMPONENTS = {
   bus: TrainDetails,
   cruise: CruiseDetails,
   hotel: HotelDetails,
+  rental: RentalDetails,
   activity: ActivityDetails,
 }
 
@@ -314,6 +367,9 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate })
     } else if (booking.type === 'train' || booking.type === 'bus') {
       if (viewDay.getTime() === startDay.getTime()) return 'Depart'
       if (viewDay.getTime() === endDay.getTime()) return 'Arrive'
+    } else if (booking.type === 'rental') {
+      if (viewDay.getTime() === startDay.getTime()) return '🔑 Pick-up'
+      if (viewDay.getTime() === endDay.getTime()) return '🏁 Drop-off'
     } else {
       if (viewDay.getTime() === startDay.getTime()) return '🔑 Check-in'
       if (viewDay.getTime() === endDay.getTime()) return '🚪 Check-out'

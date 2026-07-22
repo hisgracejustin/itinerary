@@ -8,6 +8,7 @@ const BOOKING_TYPES = [
   { id: "flight", label: "Flights", color: "bg-flight", icon: "✈️" },
   { id: "train", label: "Trains", color: "bg-train", icon: "🚂" },
   { id: "bus", label: "Buses", color: "bg-bus", icon: "🚌" },
+  { id: "rental", label: "Rentals", color: "bg-rental", icon: "🚗" },
   { id: "cruise", label: "Cruises", color: "bg-cruise", icon: "🚢" },
   { id: "hotel", label: "Accomm", color: "bg-hotel", icon: "🏡" },
   { id: "activity", label: "Activities", color: "bg-activity", icon: "🎯" },

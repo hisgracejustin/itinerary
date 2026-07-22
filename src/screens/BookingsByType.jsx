@@ -13,6 +13,7 @@ const TYPE_LABELS = {
   flight: 'Flights',
   train: 'Trains',
   bus: 'Buses',
+  rental: 'Rentals',
   cruise: 'Cruises',
   hotel: 'Accomm',
   activity: 'Activities',

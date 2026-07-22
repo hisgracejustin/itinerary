@@ -11,7 +11,7 @@ Return ONLY valid JSON with this exact structure:
 {
   "bookings": [
     {
-      "type": "flight" | "train" | "bus" | "cruise" | "hotel" | "activity",
+      "type": "flight" | "train" | "bus" | "rental" | "cruise" | "hotel" | "activity",
       "title": "Short descriptive title, e.g. 'SFO → NRT' or 'Hilton Tokyo'",
       "start_date": "ISO 8601 datetime WITHOUT timezone, e.g. 2026-07-01T10:30:00",
       "end_date": "ISO 8601 datetime WITHOUT timezone, or null if not available",
@@ -28,6 +28,7 @@ Type-specific detail fields to extract:
 - Flight: departure_airport, arrival_airport, flight_number, seat, terminal, gate
 - Train: departure_station, arrival_station, train_number, car, seat
 - Bus: departure_station, arrival_station, bus_number, seat
+- Rental (rental car/motorcycle/RV — agencies like Hertz/Avis or platforms like Turo, Riders Share, Getaround): vehicle_type (one of: Car, Motorcycle, RV / Camper, Scooter, Bicycle, Other), pickup_location, dropoff_location (only if different from pickup), insurance. Title = the vehicle (e.g. "2025 Royal Enfield Himalayan 450"), provider = the rental company or platform, start_date = pick-up time, end_date = drop-off/return time.
 - Cruise: ship_name, cabin, deck, departure_port, arrival_port
 - Hotel: address, check_in_time, check_out_time, room_type
 - Activity: location, address, duration, notes, maps_url
@@ -43,7 +44,7 @@ Rules:
 - IMPORTANT: Do NOT apply any timezone conversions. Use times EXACTLY as they appear in the document. If it says "7:30 AM" then use "07:30:00". If it says "3:30 PM" use "15:30:00". Never convert between timezones.
 - For round-trip flights, return each direction as a separate booking.
 - For maps_url: if an address is available, generate a Google Maps search URL like "https://www.google.com/maps/search/" followed by the URL-encoded address.
-- If the document is NOT a booking/travel document, return: { "error": "This doesn't appear to be a booking confirmation. Please upload a screenshot of a flight, hotel, train, bus, cruise, or activity booking." }
+- If the document is NOT a booking/travel document, return: { "error": "This doesn't appear to be a booking confirmation. Please upload a screenshot of a flight, hotel, train, bus, cruise, rental, or activity booking." }
 - Return ONLY the JSON object, no markdown fencing, no explanation.`;
 
 /**
@@ -190,7 +191,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const validTypes = ["flight", "train", "bus", "cruise", "hotel", "activity"];
+    const validTypes = ["flight", "train", "bus", "rental", "cruise", "hotel", "activity"];
     for (const b of parsed.bookings as Record<string, unknown>[]) {
       if (!b.type || !validTypes.includes(b.type as string)) {
         b.type = "activity"; // fallback

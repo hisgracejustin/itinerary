@@ -7,6 +7,7 @@ export const bookingTypeSchema = z.enum([
   "cruise",
   "hotel",
   "activity",
+  "rental",
 ]);
 
 export const bookingInsertSchema = z.object({

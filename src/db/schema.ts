@@ -92,6 +92,7 @@ export const bookingType = pgEnum("booking_type", [
   "cruise",
   "hotel",
   "activity",
+  "rental",
 ]);
 export const bookingSource = pgEnum("booking_source", ["manual", "parsed"]);
 

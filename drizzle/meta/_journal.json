@@ -50,6 +50,13 @@
       "when": 1784537329977,
       "tag": "0006_solid_lorna_dane",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784703719936,
+      "tag": "0007_ancient_brother_voodoo",
+      "breakpoints": true
     }
   ]
 }

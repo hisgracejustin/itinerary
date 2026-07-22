@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { getMonthGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, getStayEdge, TYPE_ICONS } from '../lib/calendar'
+import { getMonthGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, getStayEdge, TYPE_ICONS, getRentalIcon } from '../lib/calendar'
 import BookingChip from './BookingChip'
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
@@ -303,6 +303,35 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
                         </button>
                       )
                     })}
+                    {/* Rental mid-stay chips */}
+                    {dayBookings.filter((b) => {
+                      if (b.type !== 'rental' || !b.end_date) return false
+                      const start = new Date(b.start_date)
+                      const end = new Date(b.end_date)
+                      const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                      const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                      const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+                      return endDay > startDay && viewDay.getTime() !== endDay.getTime() && viewDay.getTime() !== startDay.getTime()
+                    }).map((b) => {
+                      const details = typeof b.details === 'string' ? (() => { try { return JSON.parse(b.details) } catch { return {} } })() : (b.details || {})
+                      const start = new Date(b.start_date)
+                      const end = new Date(b.end_date)
+                      const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                      const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                      const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+                      const totalDays = Math.round((endDay - startDay) / (1000 * 60 * 60 * 24))
+                      const dayNumber = Math.round((viewDay - startDay) / (1000 * 60 * 60 * 24)) + 1
+                      return (
+                        <button
+                          key={b.id}
+                          onClick={(e) => { e.stopPropagation(); onBookingClick?.(b) }}
+                          className="w-full text-left inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 text-[10px] font-medium hover:bg-indigo-200 transition-colors truncate"
+                        >
+                          {getRentalIcon(details)} {b.title}
+                          <span className="text-indigo-600 font-normal ml-auto shrink-0">{dayNumber}/{totalDays}</span>
+                        </button>
+                      )
+                    })}
                     {/* Overnight flight/train/bus chip */}
                     {dayBookings.filter((b) => {
                       if (b.type !== 'flight' && b.type !== 'train' && b.type !== 'bus') return false
@@ -358,10 +387,10 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
                         </span>
                       </div>
                     ))}
-                    {/* Bookings (excluding hotel mid-stay/informal) */}
+                    {/* Bookings (excluding hotel/rental mid-stay + informal) */}
                     {(() => {
                       const visible = dayBookings.filter((b) => {
-                        if (b.type !== 'hotel' || !b.end_date) return true
+                        if ((b.type !== 'hotel' && b.type !== 'rental') || !b.end_date) return true
                         const details = typeof b.details === 'string' ? (() => { try { return JSON.parse(b.details) } catch { return {} } })() : (b.details || {})
                         const start = new Date(b.start_date)
                         const end = new Date(b.end_date)
@@ -369,9 +398,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
                         const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
                         const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
                         if (endDay <= startDay) return true
-                        // Informal: never show as full card
-                        if (details.informal) return false
-                        // Regular: hide on middle days only
+                        if (b.type === 'hotel' && details.informal) return false
                         return !(viewDay.getTime() !== endDay.getTime() && viewDay.getTime() !== startDay.getTime())
                       })
                       return (

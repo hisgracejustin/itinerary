@@ -225,6 +225,35 @@ function hotelStats(bookings) {
   return stats
 }
 
+/* --------------------------------- rental --------------------------------- */
+
+function rentalStats(bookings) {
+  // Rental days are billed spans, not nights: 6 PM → 6 PM four days later is
+  // exactly 4 days, and any same-day hire still counts as 1.
+  const dayCounts = []
+  let missing = 0
+  for (const b of bookings) {
+    if (!b.end_date) { missing += 1; continue }
+    const ms = new Date(b.end_date) - new Date(b.start_date)
+    if (Number.isFinite(ms) && ms > 0) dayCounts.push(Math.max(1, Math.round(ms / 86400000)))
+  }
+
+  const stats = [{ key: 'rentals', label: 'Rentals', value: String(bookings.length) }]
+  const total = dayCounts.reduce((a, b) => a + b, 0)
+  if (total > 0) {
+    stats.push({
+      key: 'rental_days',
+      label: 'Days on wheels',
+      value: String(total),
+      hint: missing ? `${plural(missing, 'rental')} missing a drop-off date` : undefined,
+    })
+  }
+  if (dayCounts.length > 1) {
+    stats.push({ key: 'longest', label: 'Longest rental', value: plural(Math.max(...dayCounts), 'day') })
+  }
+  return stats
+}
+
 /* -------------------------------- activity -------------------------------- */
 
 function activityStats(bookings) {
@@ -272,6 +301,7 @@ const BY_TYPE = {
   bus: transitStats,
   cruise: cruiseStats,
   hotel: hotelStats,
+  rental: rentalStats,
   activity: activityStats,
 }
 
