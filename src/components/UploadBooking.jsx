@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { parseBookingFromImage } from '../lib/parseBooking'
 
 const ACCEPT = 'image/png,image/jpeg,image/webp,application/pdf'
@@ -38,6 +38,25 @@ export default function UploadBooking({ trip, onParsed }) {
   }
 
   const handleDragLeave = () => setDragOver(false)
+
+  // Paste-to-upload: a screenshot on the clipboard (Cmd/Ctrl+V) is the fastest
+  // path from a confirmation email to a parsed booking. Document-wide listener
+  // because the drop zone isn't focusable — scoping it there would require a
+  // click first. Only fires on image clipboards; anything else passes through.
+  // Pasting over an existing selection replaces it; ignored mid-parse so a
+  // stray paste can't yank the file out from under the running request.
+  useEffect(() => {
+    if (status === 'parsing') return
+    const onPaste = (e) => {
+      const item = [...(e.clipboardData?.items ?? [])].find((i) => i.type.startsWith('image/'))
+      const f = item?.getAsFile()
+      if (!f) return
+      e.preventDefault()
+      handleFile(f)
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+  }, [status])
 
   const handleInputChange = (e) => {
     handleFile(e.target.files[0])
@@ -93,7 +112,7 @@ export default function UploadBooking({ trip, onParsed }) {
           </div>
           <div>
             <p className="text-sm font-medium text-gray-700">
-              Drop a file here, or click to browse
+              Drop a file, paste a screenshot, or click to browse
             </p>
             <p className="text-xs text-gray-400 mt-1">
               PNG, JPG, WebP, or PDF • Max 10MB
