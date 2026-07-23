@@ -192,7 +192,13 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[8vh] px-4 animate-fade-in">
+    // Sizing note: the modal is capped by max-h-full against this wrapper —
+    // never by vh units. On iOS Safari 100vh is the LARGEST viewport (browser
+    // chrome ignored), so a vh-sized modal ran past the visible bottom and put
+    // the Save footer out of reach. The fixed inset-0 wrapper tracks the real
+    // visible viewport; its padding (incl. home-indicator safe area) is what
+    // keeps the modal inside it.
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-4 sm:pt-[8vh] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] animate-fade-in">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
@@ -200,7 +206,7 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-elevation-4 w-full max-w-lg max-h-[88vh] flex flex-col animate-scale-in overflow-hidden">
+      <div className="relative bg-white rounded-2xl shadow-elevation-4 w-full max-w-lg max-h-full flex flex-col animate-scale-in overflow-hidden">
         {/* Header */}
         <div className="bg-white border-b border-outline/30 px-6 py-5 flex items-center justify-between rounded-t-2xl z-10 shrink-0">
           <div>
