@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { getRangeGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, tripColorMap } from '../lib/calendar'
+import { getRangeGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, tripColorMap, TYPE_ICONS } from '../lib/calendar'
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
 
@@ -90,16 +90,32 @@ export default function JourneyView({
     })
   }
 
+  // A booking is "continuing" on a day strictly inside its [start, end) span —
+  // e.g. night 3 of a 6-night hotel. Those days aren't events: rendering a full
+  // card for every night of a stay made the timeline one long wall of identical
+  // hotel cards. Continuing stays render as a slim one-line row instead, and a
+  // day whose only content is continuing stays counts as empty, so a run of
+  // stay-only nights collapses to a single "5 days · Fairmont…" divider.
+  const isContinuingOn = (bk, day) => {
+    if (!bk.end_date) return false
+    const d = midnight(day)
+    const s = midnight(new Date(bk.start_date))
+    const e = midnight(new Date(bk.end_date))
+    return d > s && d < e
+  }
+
   const dayData = days.map((day) => {
     const dateStr = toLocalDateStr(day)
-    const dayBookings = sortBookingsForDay(getBookingsForDate(bookings, day), day)
+    const allDayBookings = sortBookingsForDay(getBookingsForDate(bookings, day), day)
+    const continuing = allDayBookings.filter((bk) => isContinuingOn(bk, day))
+    const dayBookings = allDayBookings.filter((bk) => !isContinuingOn(bk, day))
     const dayTodos = todos.filter((t) => t.due_date && isSameDay(new Date(t.due_date + 'T00:00:00'), day))
     const dayNote = dayNotes.find((n) => n.date === dateStr)
     const dayRems = dayReminders.filter((r) => r.date === dateStr)
     const owners = owningTrips(day)
     const hasContent = dayBookings.length > 0 || dayTodos.length > 0 || !!dayNote || dayRems.length > 0
     const covered = hasOvernightCoverage(bookings, day)
-    return { day, dateStr, dayBookings, dayTodos, dayNote, dayRems, owners, hasContent, covered }
+    return { day, dateStr, dayBookings, continuing, dayTodos, dayNote, dayRems, owners, hasContent, covered }
   })
 
   // Group into segments: maximal runs of empty days vs individual content days.
@@ -175,7 +191,7 @@ function DaySection({
   editingNoteDate, setEditingNoteDate, noteText, setNoteText, saveNote,
   onBookingClick, onUpsertDayNote, onSelectDate, reminderProps,
 }) {
-  const { day, dateStr, dayBookings, dayTodos, dayNote, dayRems, owners, covered } = data
+  const { day, dateStr, dayBookings, continuing, dayTodos, dayNote, dayRems, owners, covered } = data
   const isToday = isSameDay(day, today)
   const isEditingThis = editingNoteDate === dateStr
   // Notes/reminders attach to the day's trip. On an overlap day, default to the
@@ -281,6 +297,28 @@ function DaySection({
         })}
       </div>
 
+      {/* Ongoing stays are background, not events — one slim line, not a card. */}
+      {continuing.length > 0 && (
+        <div className={dayBookings.length > 0 ? 'mt-1.5 space-y-0.5' : 'space-y-0.5'}>
+          {continuing.map((bk) => {
+            const color = colorMap[bk.trip_id]
+            return (
+              <button
+                key={bk.id}
+                onClick={() => onBookingClick?.(bk)}
+                className="w-full flex items-stretch gap-2 text-left group"
+              >
+                <span className={`w-1 rounded-full shrink-0 opacity-40 ${color?.rail || 'bg-outline/40'}`} aria-hidden />
+                <span className="flex items-center gap-1.5 min-w-0 py-1 text-xs text-on-surface-variant group-hover:text-on-surface transition-colors">
+                  <span aria-hidden>{TYPE_ICONS[bk.type] || '🛏️'}</span>
+                  <span className="truncate">{bk.title}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {reminderProps.onAddReminder && (
         <div className="mt-2 pl-3">
           <DayReminders
@@ -312,6 +350,11 @@ function RunDivider({ days, tripMetas, colorMap, expanded, onToggle, onExtendTri
   const [busy, setBusy] = useState(false)
   const length = days.length
   const single = length === 1
+  // When every day of the run sits inside the same single ongoing stay, name it:
+  // "5 days · Fairmont Pacific Rim" reads as the stay it is, not as a hole.
+  const stayIds = new Set(days.flatMap((d) => d.continuing.map((b) => b.id)))
+  const uniformStay =
+    stayIds.size === 1 && days.every((d) => d.continuing.length === 1) ? days[0].continuing[0] : null
   const label = single
     ? (days[0].covered ? '1 day' : '1 day — no accommodation booked')
     : `${length} days`
@@ -356,11 +399,16 @@ function RunDivider({ days, tripMetas, colorMap, expanded, onToggle, onExtendTri
         className="w-full flex items-center gap-2 text-[11px] text-on-surface-variant hover:text-on-surface transition-colors"
       >
         <span className="flex-1 border-t border-dashed border-outline/40" />
-        <span className="inline-flex items-center gap-1 px-2 whitespace-nowrap">
-          <svg className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <span className="inline-flex items-center gap-1 px-2 whitespace-nowrap min-w-0">
+          <svg className={`w-3 h-3 shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
-          {label}
+          <span className="shrink-0">{label}</span>
+          {uniformStay && (
+            <span className="truncate max-w-[14rem]">
+              · {TYPE_ICONS[uniformStay.type] || ''} {uniformStay.title}
+            </span>
+          )}
         </span>
         <span className="flex-1 border-t border-dashed border-outline/40" />
       </button>
@@ -389,7 +437,11 @@ function RunDivider({ days, tripMetas, colorMap, expanded, onToggle, onExtendTri
                     {!before && !after && <span className="text-on-surface-variant/60">no trip</span>}
                   </>
                 ) : (
-                  <span className="text-on-surface-variant/60">{d.covered ? '' : 'no accommodation'}</span>
+                  <span className="text-on-surface-variant/60 truncate min-w-0">
+                    {d.covered
+                      ? d.continuing.map((b) => b.title).join(', ')
+                      : 'no accommodation'}
+                  </span>
                 )}
               </div>
             )
