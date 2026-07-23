@@ -13,10 +13,11 @@ const nextConfig: NextConfig = {
   },
 
   experimental: {
-    // Keep dynamic route segments in the client Router Cache for 30s, so
-    // re-selecting a recently viewed trip (?trip=…) renders instantly from
-    // cache. Mutations purge it via revalidatePath("/", "layout").
-    staleTimes: { dynamic: 30 },
+    // No staleTimes here, deliberately: the Router Cache reuses a page payload
+    // across navigations that differ only in search params, and trip selection
+    // lives in ?trip=… — with a stale time set, changing the selection served
+    // up to 30s-old data for the previous selection (bookings missing from the
+    // calendar in prod). Trip switches must always refetch.
 
     ...(process.env.NODE_ENV !== "production" && {
       serverActions: {

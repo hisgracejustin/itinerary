@@ -164,11 +164,14 @@ Bookmarkable and shareable. All five pages currently type it as
 
 A checkbox per trip:
 
-- **Click the row** → select only that trip (preserves today's fast path).
-- **Click the checkbox** → add / remove.
+- **Click anywhere on the row** → toggle that trip in/out of the selection (the
+  checkbox is a state indicator, not a separate control).
+- **All Trips** clears the selection.
 - Header shows `3 trips selected · Clear`.
 
-Checkboxes beat cmd-click because they work on touch.
+Checkboxes beat cmd-click because they work on touch. (Shipped first as
+row = "only this trip" + checkbox = toggle; the split behavior proved
+surprising in use, so the whole row toggles.)
 
 ### Data layer
 

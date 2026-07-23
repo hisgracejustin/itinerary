@@ -27,8 +27,17 @@ export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp,
   // The other nav links carry the whole current selection along.
   const navHref = (path) => hrefWithTrips(path, selectedTrips);
 
-  // Clicking a row selects only that trip (today's fast path). Clicking its
-  // checkbox adds/removes it from the current multi-selection.
+  // Clicking anywhere on a trip row toggles it in/out of the selection — the
+  // checkbox is a state indicator, not a separate control. (Shipped first as
+  // row = "only this trip" + checkbox = toggle; the split behavior proved
+  // surprising in use.) "All Trips" clears the selection.
+  //
+  // Selection changes are plain <a> anchors, NOT next/link: Next 16's client
+  // router can commit a stale RSC payload when a navigation changes only the
+  // search params, and even router.refresh() then refetches with the stale
+  // params (vercel/next.js#88535, #92187). A full document navigation is the
+  // only path that reliably renders the new selection; these pages are
+  // force-dynamic anyway.
   const toggledHref = (tripId) =>
     hrefWithTrips(
       pathname,
@@ -113,41 +122,36 @@ export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp,
         {selectedTrips.length > 0 && (
           <div className="flex items-center justify-between px-3 pb-1.5 text-[11px] text-on-surface-variant">
             <span>{selectedTrips.length} trip{selectedTrips.length === 1 ? "" : "s"} selected</span>
-            <Link
+            <a
               href={hrefWithTrips(pathname, [])}
-              scroll={false}
               onClick={onNavigate}
               className="text-primary hover:text-primary/80 font-medium"
             >
               Clear
-            </Link>
+            </a>
           </div>
         )}
         <ul className="space-y-0.5">
           <li>
-            <Link
+            <a
               href={hrefWithTrips(pathname, [])}
-              scroll={false}
               onClick={onNavigate}
               className={`block w-full text-left px-3 py-2 ${tripRowClass(selectedTrips.length === 0)}`}
             >
               All Trips
-            </Link>
+            </a>
           </li>
           {trips.map((trip) => {
             const active = selectedSet.has(trip.id);
             return (
               <li key={trip.id}>
-                <div className={tripRowClass(active)}>
-                  {/* Checkbox: add/remove this trip from the selection. Big tap
-                      target for touch (the whole 40px square is the hit area). */}
-                  <Link
-                    href={toggledHref(trip.id)}
-                    scroll={false}
-                    onClick={onNavigate}
-                    aria-label={`${active ? "Remove" : "Add"} ${trip.name}`}
-                    className="shrink-0 w-10 h-10 flex items-center justify-center rounded-full"
-                  >
+                <a
+                  href={toggledHref(trip.id)}
+                  onClick={onNavigate}
+                  aria-label={`${active ? "Remove" : "Add"} ${trip.name}`}
+                  className={tripRowClass(active)}
+                >
+                  <span className="shrink-0 w-10 h-10 flex items-center justify-center">
                     <span
                       className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
                         active ? "bg-primary border-primary text-white" : "border-outline/60 text-transparent"
@@ -157,17 +161,9 @@ export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp,
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                       </svg>
                     </span>
-                  </Link>
-                  {/* Row: select only this trip (the common single-trip path). */}
-                  <Link
-                    href={hrefWithTrips(pathname, [trip.id])}
-                    scroll={false}
-                    onClick={onNavigate}
-                    className="flex-1 min-w-0 truncate pr-3 py-2"
-                  >
-                    {trip.name}
-                  </Link>
-                </div>
+                  </span>
+                  <span className="flex-1 min-w-0 truncate pr-3 py-2">{trip.name}</span>
+                </a>
               </li>
             );
           })}
