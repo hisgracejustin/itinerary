@@ -15,6 +15,7 @@ import { useTodoList } from '../hooks/useTodoList'
 import { friendlyError } from '../lib/friendlyError'
 import { useToast } from '../components/Toast'
 import useMediaQuery from '../hooks/useMediaQuery'
+import FilterChip from '../components/FilterChip'
 import AssigneePicker, { Avatar, memberLabel } from '../components/AssigneePicker'
 
 // The board's three columns, in board order. `status` values match the DB enum.
@@ -462,27 +463,6 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
         </div>
       )}
     </div>
-  )
-}
-
-function FilterChip({ active, onClick, label, count, avatar, warn = false }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap transition-colors shrink-0 ${
-        active
-          ? 'bg-primary text-white border-primary'
-          : warn && count > 0
-          ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
-          : 'bg-white text-on-surface-variant border-outline/30 hover:bg-surface-container'
-      }`}
-    >
-      {avatar}
-      {label}
-      {count > 0 && (
-        <span className={active ? 'opacity-80' : 'opacity-60'}>{count}</span>
-      )}
-    </button>
   )
 }
 
