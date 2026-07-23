@@ -58,7 +58,7 @@ function dayReminderReducer(state, action) {
   }
 }
 
-export default function Calendar({ initialBookings, initialTodos, initialDayNotes, initialDayReminders }) {
+export default function Calendar({ initialBookings, initialTodos, initialDayNotes, initialDayReminders, initialView }) {
   const { selectedTrip, tripMeta, tripMetas, spanStart, spanEnd } = useTripContext()
   const { toast } = useToast()
   const bookings = initialBookings
@@ -75,9 +75,24 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   const hasSpan = !!(journeyStart && journeyEnd)
   const VIEWS = hasSpan ? ['journey', 'month', 'week', 'day'] : ['month', 'week', 'day']
 
-  // Default to the Journey view whenever any trip is selected (the screen is
-  // remounted per selection, so this initializes correctly each time).
-  const [view, setView] = useState(hasSpan ? 'journey' : 'month')
+  // An explicitly chosen view must survive trip toggles, which are full
+  // document navigations (see Sidebar): the choice is kept in sessionStorage,
+  // the sidebar appends it as ?view= when navigating, and the page hands it
+  // back here as `initialView` (SSR-visible, so no hydration flash). Journey is
+  // only the default when nothing was chosen. Deliberately NOT mirrored via
+  // history.replaceState — Next's patched history triggers the same stale
+  // router machinery the anchors exist to avoid (vercel/next.js#92187).
+  const [view, setView] = useState(
+    VIEWS.includes(initialView) ? initialView : hasSpan ? 'journey' : 'month'
+  )
+  const persistView = (v) => {
+    setView(v)
+    try {
+      window.sessionStorage.setItem('calendarView', v)
+    } catch {
+      /* storage unavailable — the view just won't persist across toggles */
+    }
+  }
   // The component is remounted (keyed by selection) on change, so the initial
   // month is derived once here — jumping to the span start, or today otherwise.
   const [currentDate, setCurrentDate] = useState(() =>
@@ -91,7 +106,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
     if (v === 'month' && view === 'month') {
       setCalendarCollapsed(!calendarCollapsed)
     } else {
-      setView(v)
+      persistView(v)
       setCalendarCollapsed(false)
     }
   }
@@ -209,7 +224,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
 
   const handleSelectDate = (date) => {
     setCurrentDate(date)
-    setView('day')
+    persistView('day')
   }
 
   // Gap-day action: extend a trip's start_date/end_date to cover uncovered days.

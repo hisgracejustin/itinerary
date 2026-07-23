@@ -50,8 +50,24 @@ export function AppShell({ user, trips, children }: Props) {
   const selectedTrip = selectedTrips.length === 1 ? selectedTrips[0] : null;
   const tripMeta = tripMetas.length === 1 ? tripMetas[0] : null;
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  // Trip toggles are full document navigations (see Sidebar), so this shell
+  // re-initializes on every toggle — the initial paint must already be correct
+  // or the sidebar visibly animates open→closed on phones and default→persisted
+  // width on desktop each time. Three pieces make it settle without motion:
+  //  - `sidebarOpen` starts null = "let CSS decide": the null classes render
+  //    closed on mobile and open on md+, so the pre-hydration paint is right on
+  //    both. Hydration then resolves it to a real boolean.
+  //  - width initializes straight from localStorage (lazy, SSR-guarded).
+  //  - transitions are disabled until after hydration (`hydrated` below).
+  const [sidebarOpen, setSidebarOpen] = useState<boolean | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_SIDEBAR_WIDTH;
+    const stored = Number(window.localStorage.getItem("sidebarWidth"));
+    return stored >= MIN_SIDEBAR_WIDTH && stored <= MAX_SIDEBAR_WIDTH
+      ? stored
+      : DEFAULT_SIDEBAR_WIDTH;
+  });
+  const [hydrated, setHydrated] = useState(false);
   const [resizing, setResizing] = useState(false);
   const resizingRef = useRef(false);
   // Keep the latest width available to the (stable) mouseup handler.
@@ -67,12 +83,12 @@ export function AppShell({ user, trips, children }: Props) {
     sidebarWidthRef.current = sidebarWidth;
   }, [sidebarWidth]);
 
-  // Restore persisted sidebar width (client-only; guards SSR).
+  // Resolve the CSS-decided null to a real boolean, and enable layout
+  // transitions only after hydration so the server-rendered defaults never
+  // animate into the client state on load.
   useEffect(() => {
-    const stored = Number(window.localStorage.getItem("sidebarWidth"));
-    if (stored >= MIN_SIDEBAR_WIDTH && stored <= MAX_SIDEBAR_WIDTH) {
-      setSidebarWidth(stored);
-    }
+    setSidebarOpen((v) => v ?? window.innerWidth >= 768);
+    setHydrated(true);
   }, []);
 
   // A ?trip= that isn't one of the user's trips (revoked access, stale/shared
@@ -139,16 +155,26 @@ export function AppShell({ user, trips, children }: Props) {
       {/* Mobile overlay */}
       <div
         className={`fixed inset-0 bg-black/40 z-20 md:hidden transition-opacity duration-300 ease-material ${
-          sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+          sidebarOpen === true ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
         onClick={() => setSidebarOpen(false)}
       />
-      {/* Sidebar */}
+      {/* Sidebar. Width rides a CSS var so the null ("let CSS decide") state
+          can be responsive: closed on mobile, open at the persisted width on
+          md+. suppressHydrationWarning: the var is 288px in server HTML and the
+          persisted width on the client — hydration patches it, deliberately. */}
       <div
-        style={{ width: sidebarOpen ? sidebarWidth : 0 }}
+        suppressHydrationWarning
+        style={{ "--sbw": `${sidebarWidth}px` } as React.CSSProperties}
         className={`fixed md:relative z-30 inset-y-0 left-0 md:inset-auto md:h-full overflow-hidden ${
-          resizing ? "" : "transition-[width,transform] duration-300 ease-material"
-        } ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
+          hydrated && !resizing ? "transition-[width,transform] duration-300 ease-material" : ""
+        } ${
+          sidebarOpen === null
+            ? "w-0 md:w-[var(--sbw)] -translate-x-full md:translate-x-0"
+            : sidebarOpen
+              ? "w-[var(--sbw)] translate-x-0"
+              : "w-0 -translate-x-full md:translate-x-0"
+        }`}
       >
         <Sidebar
           user={user}

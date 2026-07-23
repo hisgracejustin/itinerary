@@ -19,6 +19,27 @@ const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0";
 
 export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp, onNavigate }) {
   const pathname = usePathname();
+  // Trip toggles are full document navigations, which would reset the calendar
+  // to its default view — so carry the chosen view along as ?view=. The choice
+  // lives in sessionStorage (fallback: the current URL) and is read at CLICK
+  // time, because anything routed through Next's history/searchParams can be
+  // stale (vercel/next.js#88535, #92187). Modified clicks (new tab etc.) are
+  // left to the browser with the base href.
+  const goWithView = (onNavigateCb) => (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    let href = e.currentTarget.getAttribute("href");
+    try {
+      const v =
+        window.sessionStorage.getItem("calendarView") ||
+        new URLSearchParams(window.location.search).get("view");
+      if (v) href += (href.includes("?") ? "&" : "?") + "view=" + encodeURIComponent(v);
+    } catch {
+      /* storage unavailable — navigate without the view param */
+    }
+    onNavigateCb?.();
+    window.location.assign(href);
+  };
   // Default in the body, not the signature: a `= []` default narrows the prop to
   // never[] at the .tsx call site (same reason as the Todos screen).
   const selectedTrips = selectedTripsProp ?? [];
@@ -124,7 +145,7 @@ export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp,
             <span>{selectedTrips.length} trip{selectedTrips.length === 1 ? "" : "s"} selected</span>
             <a
               href={hrefWithTrips(pathname, [])}
-              onClick={onNavigate}
+              onClick={goWithView(onNavigate)}
               className="text-primary hover:text-primary/80 font-medium"
             >
               Clear
@@ -135,7 +156,7 @@ export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp,
           <li>
             <a
               href={hrefWithTrips(pathname, [])}
-              onClick={onNavigate}
+              onClick={goWithView(onNavigate)}
               className={`block w-full text-left px-3 py-2 ${tripRowClass(selectedTrips.length === 0)}`}
             >
               All Trips
@@ -147,7 +168,7 @@ export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp,
               <li key={trip.id}>
                 <a
                   href={toggledHref(trip.id)}
-                  onClick={onNavigate}
+                  onClick={goWithView(onNavigate)}
                   aria-label={`${active ? "Remove" : "Add"} ${trip.name}`}
                   className={tripRowClass(active)}
                 >

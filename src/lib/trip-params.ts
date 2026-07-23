@@ -4,10 +4,17 @@
  * string[], so every page normalizes through here.
  */
 
-/** Normalize the raw `trip` searchParam to a clean id array, or null for "All Trips". */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Normalize the raw `trip` searchParam to a clean id array, or null for "All
+ * Trips". Non-UUID junk is dropped here, not just client-side: trips.id is a
+ * Postgres uuid column, so a malformed id would crash the server render with a
+ * cast error before the AppShell URL cleanup ever runs.
+ */
 export function parseTripParam(trip?: string | string[]): string[] | null {
   if (!trip) return null;
-  const arr = (Array.isArray(trip) ? trip : [trip]).filter(Boolean);
+  const arr = (Array.isArray(trip) ? trip : [trip]).filter((id) => UUID_RE.test(id));
   return arr.length ? arr : null;
 }
 

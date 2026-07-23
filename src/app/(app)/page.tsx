@@ -13,10 +13,11 @@ export const dynamic = "force-dynamic";
 export default async function CalendarRoute({
   searchParams,
 }: {
-  searchParams: Promise<{ trip?: string | string[] }>;
+  searchParams: Promise<{ trip?: string | string[]; view?: string | string[] }>;
 }) {
-  const { trip } = await searchParams;
+  const { trip, view } = await searchParams;
   const tripIds = parseTripParam(trip);
+  const initialView = typeof view === "string" ? view : undefined;
   const user = await requirePageUser();
   const [bookings, todos, dayNotes, dayReminders] = await Promise.all([
     getBookingsForUser(user.id, tripIds),
@@ -31,6 +32,7 @@ export default async function CalendarRoute({
       initialTodos={todos}
       initialDayNotes={dayNotes}
       initialDayReminders={dayReminders}
+      initialView={initialView}
     />
   );
 }
