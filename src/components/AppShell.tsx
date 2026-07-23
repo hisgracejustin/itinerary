@@ -7,6 +7,7 @@ import Sidebar from "./Sidebar";
 import BookingModal from "./BookingModal";
 import { createBooking, updateBooking, deleteBooking } from "@/lib/client-actions";
 import { TripContext, type TripSummary } from "@/lib/trip-context";
+import { hrefWithTrips } from "@/lib/trip-params";
 
 type Props = {
   user: { email: string; name: string | null };
@@ -24,11 +25,30 @@ export function AppShell({ user, trips, children }: Props) {
   // already-fetched trips list — no extra query.
   const router = useRouter();
   const pathname = usePathname();
-  const selectedTrip = useSearchParams().get("trip");
-  const tripMeta = useMemo(
-    () => trips.find((t) => t.id === selectedTrip) ?? null,
-    [trips, selectedTrip],
+  const searchParams = useSearchParams();
+  // Selection is repeated `?trip=` params. Keep only ids the user actually has
+  // access to (a revoked/stale/shared id yields nothing and is dropped below),
+  // in the trips list's canonical order so span math and keys are stable.
+  const rawSelected = useMemo(() => searchParams.getAll("trip"), [searchParams]);
+  const selectedTrips = useMemo(
+    () => trips.filter((t) => rawSelected.includes(t.id)).map((t) => t.id),
+    [trips, rawSelected],
   );
+  const tripMetas = useMemo(
+    () => trips.filter((t) => selectedTrips.includes(t.id)),
+    [trips, selectedTrips],
+  );
+  const spanStart = useMemo(
+    () => tripMetas.reduce<string | null>((min, t) => (!min || t.start_date < min ? t.start_date : min), null),
+    [tripMetas],
+  );
+  const spanEnd = useMemo(
+    () => tripMetas.reduce<string | null>((max, t) => (!max || t.end_date > max ? t.end_date : max), null),
+    [tripMetas],
+  );
+  // Compatibility single-trip view for screens not yet multi-aware.
+  const selectedTrip = selectedTrips.length === 1 ? selectedTrips[0] : null;
+  const tripMeta = tripMetas.length === 1 ? tripMetas[0] : null;
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
@@ -56,11 +76,13 @@ export function AppShell({ user, trips, children }: Props) {
   }, []);
 
   // A ?trip= that isn't one of the user's trips (revoked access, stale/shared
-  // link) would otherwise show an empty, chip-less dead end — fall back to All
-  // Trips instead.
+  // link) — or a duplicate — would otherwise linger in the URL. Rewrite to the
+  // canonical valid subset (which may be empty → All Trips).
   useEffect(() => {
-    if (selectedTrip && !tripMeta) router.replace(pathname);
-  }, [selectedTrip, tripMeta, pathname, router]);
+    if (rawSelected.length !== selectedTrips.length) {
+      router.replace(hrefWithTrips(pathname, selectedTrips));
+    }
+  }, [rawSelected, selectedTrips, pathname, router]);
 
   // Collapse the sidebar on small screens (client-only; guards SSR).
   useEffect(() => {
@@ -112,7 +134,7 @@ export function AppShell({ user, trips, children }: Props) {
     // The provider wraps the WHOLE shell, not just <main>: the Add Booking modal
     // below is rendered by the shell itself, and BookingForm calls
     // useTripContext() (which throws when there is no provider above it).
-    <TripContext.Provider value={{ selectedTrip, tripMeta, trips }}>
+    <TripContext.Provider value={{ selectedTrips, tripMetas, spanStart, spanEnd, selectedTrip, tripMeta, trips }}>
     <div className="fixed inset-0 flex flex-row bg-surface-dim pb-[env(safe-area-inset-bottom)]">
       {/* Mobile overlay */}
       <div
@@ -131,7 +153,7 @@ export function AppShell({ user, trips, children }: Props) {
         <Sidebar
           user={user}
           trips={trips}
-          selectedTrip={selectedTrip}
+          selectedTrips={selectedTrips}
           onNavigate={closeOnMobile}
         />
         {/* Resize handle (desktop only) */}

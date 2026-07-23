@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOutAction } from "../actions/auth";
+import { hrefWithTrips } from "../lib/trip-params";
 
 const BOOKING_TYPES = [
   { id: "flight", label: "Flights", color: "bg-flight", icon: "✈️" },
@@ -16,16 +17,28 @@ const BOOKING_TYPES = [
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0";
 
-/** Keep the selected trip in the URL as we navigate between screens. */
-function hrefWithTrip(path, trip) {
-  return trip ? `${path}?trip=${encodeURIComponent(trip)}` : path;
-}
-
-export default function Sidebar({ user, trips, selectedTrip, onNavigate }) {
+export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp, onNavigate }) {
   const pathname = usePathname();
+  // Default in the body, not the signature: a `= []` default narrows the prop to
+  // never[] at the .tsx call site (same reason as the Todos screen).
+  const selectedTrips = selectedTripsProp ?? [];
+  const selectedSet = new Set(selectedTrips);
 
-  const tripLinkClass = (active) =>
-    `block w-full text-left px-3 py-2 rounded-full text-sm transition-all duration-150 ${
+  // The other nav links carry the whole current selection along.
+  const navHref = (path) => hrefWithTrips(path, selectedTrips);
+
+  // Clicking a row selects only that trip (today's fast path). Clicking its
+  // checkbox adds/removes it from the current multi-selection.
+  const toggledHref = (tripId) =>
+    hrefWithTrips(
+      pathname,
+      selectedSet.has(tripId)
+        ? selectedTrips.filter((id) => id !== tripId)
+        : trips.filter((t) => selectedSet.has(t.id) || t.id === tripId).map((t) => t.id),
+    );
+
+  const tripRowClass = (active) =>
+    `flex items-center rounded-full text-sm transition-all duration-150 ${
       active
         ? "bg-primary-light text-primary font-medium"
         : "text-on-surface hover:bg-surface-container"
@@ -36,7 +49,7 @@ export default function Sidebar({ user, trips, selectedTrip, onNavigate }) {
       {/* Navigation */}
       <nav className="p-3 pt-4">
         <NavItem
-          to={hrefWithTrip("/", selectedTrip)}
+          to={navHref("/")}
           active={pathname === "/"}
           onClick={onNavigate}
           icon={
@@ -47,7 +60,7 @@ export default function Sidebar({ user, trips, selectedTrip, onNavigate }) {
           label="Calendar"
         />
         <NavItem
-          to={hrefWithTrip("/todos", selectedTrip)}
+          to={navHref("/todos")}
           active={pathname === "/todos"}
           onClick={onNavigate}
           icon={
@@ -58,7 +71,7 @@ export default function Sidebar({ user, trips, selectedTrip, onNavigate }) {
           label="To-dos"
         />
         <NavItem
-          to={hrefWithTrip("/costs", selectedTrip)}
+          to={navHref("/costs")}
           active={pathname === "/costs"}
           onClick={onNavigate}
           icon={
@@ -69,7 +82,7 @@ export default function Sidebar({ user, trips, selectedTrip, onNavigate }) {
           label="Costs"
         />
         <NavItem
-          to={hrefWithTrip("/settings", selectedTrip)}
+          to={navHref("/settings")}
           active={pathname === "/settings"}
           onClick={onNavigate}
           icon={
@@ -97,29 +110,67 @@ export default function Sidebar({ user, trips, selectedTrip, onNavigate }) {
             Manage
           </Link>
         </div>
+        {selectedTrips.length > 0 && (
+          <div className="flex items-center justify-between px-3 pb-1.5 text-[11px] text-on-surface-variant">
+            <span>{selectedTrips.length} trip{selectedTrips.length === 1 ? "" : "s"} selected</span>
+            <Link
+              href={hrefWithTrips(pathname, [])}
+              scroll={false}
+              onClick={onNavigate}
+              className="text-primary hover:text-primary/80 font-medium"
+            >
+              Clear
+            </Link>
+          </div>
+        )}
         <ul className="space-y-0.5">
           <li>
             <Link
-              href={hrefWithTrip(pathname, null)}
+              href={hrefWithTrips(pathname, [])}
               scroll={false}
               onClick={onNavigate}
-              className={tripLinkClass(!selectedTrip)}
+              className={`block w-full text-left px-3 py-2 ${tripRowClass(selectedTrips.length === 0)}`}
             >
               All Trips
             </Link>
           </li>
-          {trips.map((trip) => (
-            <li key={trip.id}>
-              <Link
-                href={hrefWithTrip(pathname, trip.id)}
-                scroll={false}
-                onClick={onNavigate}
-                className={tripLinkClass(selectedTrip === trip.id)}
-              >
-                {trip.name}
-              </Link>
-            </li>
-          ))}
+          {trips.map((trip) => {
+            const active = selectedSet.has(trip.id);
+            return (
+              <li key={trip.id}>
+                <div className={tripRowClass(active)}>
+                  {/* Checkbox: add/remove this trip from the selection. Big tap
+                      target for touch (the whole 40px square is the hit area). */}
+                  <Link
+                    href={toggledHref(trip.id)}
+                    scroll={false}
+                    onClick={onNavigate}
+                    aria-label={`${active ? "Remove" : "Add"} ${trip.name}`}
+                    className="shrink-0 w-10 h-10 flex items-center justify-center rounded-full"
+                  >
+                    <span
+                      className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                        active ? "bg-primary border-primary text-white" : "border-outline/60 text-transparent"
+                      }`}
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </span>
+                  </Link>
+                  {/* Row: select only this trip (the common single-trip path). */}
+                  <Link
+                    href={hrefWithTrips(pathname, [trip.id])}
+                    scroll={false}
+                    onClick={onNavigate}
+                    className="flex-1 min-w-0 truncate pr-3 py-2"
+                  >
+                    {trip.name}
+                  </Link>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </div>
 
@@ -134,7 +185,7 @@ export default function Sidebar({ user, trips, selectedTrip, onNavigate }) {
             return (
               <li key={id}>
                 <Link
-                  href={hrefWithTrip(`/bookings/${id}`, selectedTrip)}
+                  href={navHref(`/bookings/${id}`)}
                   onClick={onNavigate}
                   className={`flex items-center gap-3 px-3 py-2 rounded-full text-sm transition-all duration-150 ${
                     isActive

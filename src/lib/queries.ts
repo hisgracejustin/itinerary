@@ -16,6 +16,19 @@ const bookingCols = getTableColumns(tables.bookings);
 const todoCols = getTableColumns(tables.todos);
 const dayNoteCols = getTableColumns(tables.dayNotes);
 
+/**
+ * Normalize the trip filter accepted across the read queries. `null`/`undefined`
+ * (and an empty selection) mean "every accessible trip"; one or more ids narrow
+ * to those trips via `inArray`. A single string is still accepted for callers
+ * that haven't moved to the array form.
+ */
+type TripFilter = string | string[] | null | undefined;
+function toTripIds(tripId: TripFilter): string[] | null {
+  if (tripId == null) return null;
+  const arr = (Array.isArray(tripId) ? tripId : [tripId]).filter(Boolean);
+  return arr.length ? arr : null;
+}
+
 /** Trips the user is a member of (the sidebar list; also carries each trip's dates). */
 export function getTripsForUser(userId: string) {
   return db
@@ -47,8 +60,8 @@ export async function getTripForUser(userId: string, tripId: string) {
   return trip ?? null;
 }
 
-/** Bookings for one trip, or across every accessible trip when `tripId` is null. */
-export function getBookingsForUser(userId: string, tripId?: string | null) {
+/** Bookings for the selected trip(s), or across every accessible trip when none given. */
+export function getBookingsForUser(userId: string, tripId?: TripFilter) {
   const base = db
     .select(bookingCols)
     .from(tables.bookings)
@@ -59,9 +72,10 @@ export function getBookingsForUser(userId: string, tripId?: string | null) {
         eq(tables.tripMembers.user_id, userId),
       ),
     );
-  if (tripId) {
+  const ids = toTripIds(tripId);
+  if (ids) {
     return base
-      .where(eq(tables.bookings.trip_id, tripId))
+      .where(inArray(tables.bookings.trip_id, ids))
       .orderBy(asc(tables.bookings.start_date));
   }
   return base.orderBy(asc(tables.bookings.start_date));
@@ -82,7 +96,7 @@ const assigneeCols = {
  * trip_id is NOT NULL, so the membership INNER JOIN is the whole authorization
  * story — there is no unowned row for a query to accidentally expose.
  */
-export function getTodosForUser(userId: string, tripId?: string | null) {
+export function getTodosForUser(userId: string, tripId?: TripFilter) {
   const base = db
     .select({ ...todoCols, ...assigneeCols })
     .from(tables.todos)
@@ -94,9 +108,10 @@ export function getTodosForUser(userId: string, tripId?: string | null) {
       ),
     )
     .leftJoin(tables.users, eq(tables.users.id, tables.todos.assignee_id));
-  if (tripId) {
+  const ids = toTripIds(tripId);
+  if (ids) {
     return base
-      .where(eq(tables.todos.trip_id, tripId))
+      .where(inArray(tables.todos.trip_id, ids))
       .orderBy(asc(tables.todos.position), asc(tables.todos.created_at));
   }
   return base.orderBy(asc(tables.todos.position), asc(tables.todos.created_at));
@@ -153,19 +168,22 @@ export async function getTripsWithMembers(userId: string) {
  *  - no trip selected → everyone the user shares any trip with (themselves
  *    included), deduped, since tripless to-dos aren't scoped to one trip.
  */
-export async function getAssignableUsers(userId: string, tripId?: string | null) {
-  if (tripId) {
+export async function getAssignableUsers(userId: string, tripId?: TripFilter) {
+  const ids = toTripIds(tripId);
+  if (ids) {
+    // Members of the selected trip(s), deduped. Role is only meaningful for a
+    // single trip; across several a user may hold different roles, so it's
+    // dropped — the assignment UI only needs identity, not role.
     return db
-      .select({
+      .selectDistinct({
         id: tables.users.id,
         name: tables.users.name,
         email: tables.users.email,
         image: tables.users.image,
-        role: tables.tripMembers.role,
       })
       .from(tables.tripMembers)
       .innerJoin(tables.users, eq(tables.users.id, tables.tripMembers.user_id))
-      .where(eq(tables.tripMembers.trip_id, tripId))
+      .where(inArray(tables.tripMembers.trip_id, ids))
       .orderBy(asc(tables.users.name), asc(tables.users.email));
   }
 
@@ -201,8 +219,8 @@ export async function getAssignableUsers(userId: string, tripId?: string | null)
   return self ? [self, ...rows] : rows;
 }
 
-/** Day notes for one trip, or every accessible trip when `tripId` is null. */
-export function getDayNotesForUser(userId: string, tripId?: string | null) {
+/** Day notes for the selected trip(s), or every accessible trip when none given. */
+export function getDayNotesForUser(userId: string, tripId?: TripFilter) {
   const base = db
     .select(dayNoteCols)
     .from(tables.dayNotes)
@@ -213,8 +231,9 @@ export function getDayNotesForUser(userId: string, tripId?: string | null) {
         eq(tables.tripMembers.user_id, userId),
       ),
     );
-  if (tripId) {
-    return base.where(eq(tables.dayNotes.trip_id, tripId)).orderBy(asc(tables.dayNotes.date));
+  const ids = toTripIds(tripId);
+  if (ids) {
+    return base.where(inArray(tables.dayNotes.trip_id, ids)).orderBy(asc(tables.dayNotes.date));
   }
   return base.orderBy(asc(tables.dayNotes.date));
 }
@@ -222,7 +241,7 @@ export function getDayNotesForUser(userId: string, tripId?: string | null) {
 const dayReminderCols = getTableColumns(tables.dayReminders);
 
 /** Per-day reminders, ordered by date then manual position, then insertion. */
-export function getDayRemindersForUser(userId: string, tripId?: string | null) {
+export function getDayRemindersForUser(userId: string, tripId?: TripFilter) {
   const order = [
     asc(tables.dayReminders.date),
     asc(tables.dayReminders.position),
@@ -238,8 +257,9 @@ export function getDayRemindersForUser(userId: string, tripId?: string | null) {
         eq(tables.tripMembers.user_id, userId),
       ),
     );
-  if (tripId) {
-    return base.where(eq(tables.dayReminders.trip_id, tripId)).orderBy(...order);
+  const ids = toTripIds(tripId);
+  if (ids) {
+    return base.where(inArray(tables.dayReminders.trip_id, ids)).orderBy(...order);
   }
   return base.orderBy(...order);
 }
