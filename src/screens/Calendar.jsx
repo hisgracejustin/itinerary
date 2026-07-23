@@ -9,6 +9,9 @@ import WeekView from '../components/WeekView'
 import DayView from '../components/DayView'
 import JourneyView from '../components/JourneyView'
 import BookingModal from '../components/BookingModal'
+import { updateTrip } from '@/lib/client-actions'
+import { useToast } from '../components/Toast'
+import { friendlyError } from '../lib/friendlyError'
 
 // Day notes are props-only (server-rendered), so a plain `await onUpsertDayNote()`
 // then close-the-editor can flash blank for a frame or two: the save resolves
@@ -57,6 +60,7 @@ function dayReminderReducer(state, action) {
 
 export default function Calendar({ initialBookings, initialTodos, initialDayNotes, initialDayReminders }) {
   const { selectedTrip, tripMeta, tripMetas, spanStart, spanEnd } = useTripContext()
+  const { toast } = useToast()
   const bookings = initialBookings
   const todos = initialTodos
   const [dayNotes, applyOptimisticDayNote] = useOptimistic(initialDayNotes, dayNoteReducer)
@@ -208,6 +212,19 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
     setView('day')
   }
 
+  // Gap-day action: extend a trip's start_date/end_date to cover uncovered days.
+  // This is the same edit as changing dates in Settings (goes through the
+  // WRITE_ROLES-guarded updateTrip action) — no extra confirmation, just a toast.
+  // On success the layout revalidates, the span grows, and the gap closes.
+  const handleExtendTrip = async (tripId, patch) => {
+    try {
+      await updateTrip(tripId, patch)
+      toast.success('Trip dates updated')
+    } catch (err) {
+      toast.error(friendlyError(err))
+    }
+  }
+
   const formatHeader = () => {
     const opts = { month: 'long', year: 'numeric' }
     if (view === 'journey' && hasSpan) {
@@ -308,6 +325,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
             onEditReminder={reminderProps.onEditReminder}
             onRemoveReminder={reminderProps.onRemoveReminder}
             onReorderReminder={reminderProps.onReorderReminder}
+            onExtendTrip={handleExtendTrip}
           />
         )}
         {view === 'month' && (

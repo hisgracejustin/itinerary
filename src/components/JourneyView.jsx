@@ -302,15 +302,52 @@ function DaySection({
 /**
  * A collapsed run of empty days. The label states its length; a lone night with
  * no bed reads "1 day — no accommodation booked". Expands to per-day rows.
- * `onExtendTrip` (Journey's gap-day action) is wired in a later phase.
+ *
+ * When the run contains gap days (belonging to no selected trip), it offers
+ * "add to <trip>" actions that extend the abutting trip to cover the gap — the
+ * collapsed action covers the whole run; per-day actions let a gap be split
+ * between the trailing and leading trip.
  */
 function RunDivider({ days, tripMetas, colorMap, expanded, onToggle, onExtendTrip }) {
-  void tripMetas; void colorMap; void onExtendTrip
+  const [busy, setBusy] = useState(false)
   const length = days.length
   const single = length === 1
   const label = single
     ? (days[0].covered ? '1 day' : '1 day — no accommodation booked')
     : `${length} days`
+
+  const firstStr = days[0].dateStr
+  const lastStr = days[length - 1].dateStr
+  const hasGap = days.some((d) => d.owners.length === 0)
+
+  // The nearest trip ending before the run (extend its end forward) and the
+  // nearest trip starting after it (extend its start backward). Gaps only occur
+  // between two trips, so both normally exist.
+  const before = tripMetas
+    .filter((t) => t.end_date < firstStr)
+    .sort((a, b) => (a.end_date < b.end_date ? 1 : -1))[0] || null
+  const after = tripMetas
+    .filter((t) => t.start_date > lastStr)
+    .sort((a, b) => (a.start_date < b.start_date ? -1 : 1))[0] || null
+
+  const extend = async (trip, patch) => {
+    if (busy) return
+    setBusy(true)
+    try { await onExtendTrip?.(trip.id, patch) } finally { setBusy(false) }
+  }
+
+  // A plain render helper (not a nested component) — extends `trip` by `patch`.
+  const renderAdd = (trip, patch) => (
+    <button
+      key={`${trip.id}-${patch.start_date || patch.end_date}`}
+      onClick={() => extend(trip, patch)}
+      disabled={busy}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors disabled:opacity-50 ${colorMap[trip.id]?.text || 'text-on-surface-variant'} ${colorMap[trip.id]?.border || 'border-outline/40'} hover:bg-surface-container`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${colorMap[trip.id]?.rail || 'bg-outline/40'}`} aria-hidden />
+      <span className="truncate max-w-[9rem]">add to {trip.name}</span>
+    </button>
+  )
 
   return (
     <div className="py-1">
@@ -328,18 +365,35 @@ function RunDivider({ days, tripMetas, colorMap, expanded, onToggle, onExtendTri
         <span className="flex-1 border-t border-dashed border-outline/40" />
       </button>
 
+      {/* Collapsed: one action per abutting trip, covering the whole run. */}
+      {hasGap && !expanded && (
+        <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5">
+          {before && renderAdd(before, { end_date: lastStr })}
+          {after && renderAdd(after, { start_date: firstStr })}
+        </div>
+      )}
+
       {expanded && (
         <div className="mt-1.5 space-y-1 pl-3">
-          {days.map((d) => (
-            <div key={d.dateStr} className="flex items-center gap-2 text-xs text-on-surface-variant">
-              <span className="w-28 shrink-0">
-                {d.day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-              </span>
-              <span className="text-on-surface-variant/60">
-                {d.owners.length === 0 ? 'no trip' : d.covered ? '' : 'no accommodation'}
-              </span>
-            </div>
-          ))}
+          {days.map((d) => {
+            const isGap = d.owners.length === 0
+            return (
+              <div key={d.dateStr} className="flex items-center gap-2 flex-wrap text-xs text-on-surface-variant">
+                <span className="w-28 shrink-0">
+                  {d.day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                </span>
+                {isGap ? (
+                  <>
+                    {before && renderAdd(before, { end_date: d.dateStr })}
+                    {after && renderAdd(after, { start_date: d.dateStr })}
+                    {!before && !after && <span className="text-on-surface-variant/60">no trip</span>}
+                  </>
+                ) : (
+                  <span className="text-on-surface-variant/60">{d.covered ? '' : 'no accommodation'}</span>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
