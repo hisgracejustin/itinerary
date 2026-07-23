@@ -13,7 +13,7 @@ function toLocalDateStr(date) {
   return `${y}-${m}-${d}`
 }
 
-export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, selectedTrip, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, collapsed = false, onCollapsedChange }) {
+export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, selectedTrip, spanStart, spanEnd, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, collapsed = false, onCollapsedChange }) {
   // Default: if trip selected → first day of trip, else today
   const getDefaultDay = useCallback(() => {
     if (selectedTrip && tripMeta?.start_date) {
@@ -586,11 +586,14 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       </span>
                     )
                   })}
-                  {/* No accommodation warning (right-aligned) */}
-                  {tripMeta?.start_date && tripMeta?.end_date && (() => {
+                  {/* No accommodation warning (right-aligned) — bounded by the
+                      whole journey span (union of selected trips), so a night
+                      covered by another selected trip's hotel doesn't false-warn. */}
+                  {spanStart && spanEnd && (() => {
                     const viewDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-                    const tripEndDay = new Date(tripMeta.end_date + 'T00:00:00')
-                    if (viewDay >= tripEndDay) return null
+                    const spanStartDay = new Date(spanStart.getFullYear(), spanStart.getMonth(), spanStart.getDate())
+                    const spanEndDay = new Date(spanEnd.getFullYear(), spanEnd.getMonth(), spanEnd.getDate())
+                    if (viewDay < spanStartDay || viewDay >= spanEndDay) return null
                     if (!hasOvernightCoverage(bookings, date)) {
                       return (
                         <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-500 text-[11px]" title="No accommodation booked">

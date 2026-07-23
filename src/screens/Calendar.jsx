@@ -7,9 +7,8 @@ import MonthView from '../components/MonthView'
 import MobileMonthView from '../components/MobileMonthView'
 import WeekView from '../components/WeekView'
 import DayView from '../components/DayView'
-import TripAgenda from '../components/TripAgenda'
+import JourneyView from '../components/JourneyView'
 import BookingModal from '../components/BookingModal'
-import { getRangeGrid } from '../lib/calendar'
 
 // Day notes are props-only (server-rendered), so a plain `await onUpsertDayNote()`
 // then close-the-editor can flash blank for a frame or two: the save resolves
@@ -57,7 +56,7 @@ function dayReminderReducer(state, action) {
 }
 
 export default function Calendar({ initialBookings, initialTodos, initialDayNotes, initialDayReminders }) {
-  const { selectedTrip, tripMeta } = useTripContext()
+  const { selectedTrip, tripMeta, tripMetas, spanStart, spanEnd } = useTripContext()
   const bookings = initialBookings
   const todos = initialTodos
   const [dayNotes, applyOptimisticDayNote] = useOptimistic(initialDayNotes, dayNoteReducer)
@@ -65,21 +64,20 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   const [dayReminders, applyOptimisticReminder] = useOptimistic(initialDayReminders ?? [], dayReminderReducer)
   const [, startReminderTransition] = useTransition()
 
-  // Trip span (only when a dated trip is selected). The "Trip" view uses this to
-  // show the whole trip on one page instead of paging month by month.
-  const tripStart = tripMeta?.start_date ? new Date(tripMeta.start_date + 'T00:00:00') : null
-  const tripEnd = tripMeta?.end_date ? new Date(tripMeta.end_date + 'T00:00:00') : null
-  const hasTripRange = !!(tripStart && tripEnd)
-  const tripDays = hasTripRange ? getRangeGrid(tripStart, tripEnd) : null
-  const VIEWS = hasTripRange ? ['trip', 'month', 'week', 'day'] : ['month', 'week', 'day']
+  // Journey span — earliest start → latest end across the selected trips. Journey
+  // replaces the old Trip view: Trip view is just Journey with one trip selected.
+  const journeyStart = spanStart ? new Date(spanStart + 'T00:00:00') : null
+  const journeyEnd = spanEnd ? new Date(spanEnd + 'T00:00:00') : null
+  const hasSpan = !!(journeyStart && journeyEnd)
+  const VIEWS = hasSpan ? ['journey', 'month', 'week', 'day'] : ['month', 'week', 'day']
 
-  // Default to the whole-trip view when a dated trip is selected (the screen is
-  // remounted per trip, so this initializes correctly each time).
-  const [view, setView] = useState(hasTripRange ? 'trip' : 'month')
-  // The component is remounted (keyed by trip) on trip change, so the initial
-  // month is derived once here — jumping to the trip's start, or today otherwise.
+  // Default to the Journey view whenever any trip is selected (the screen is
+  // remounted per selection, so this initializes correctly each time).
+  const [view, setView] = useState(hasSpan ? 'journey' : 'month')
+  // The component is remounted (keyed by selection) on change, so the initial
+  // month is derived once here — jumping to the span start, or today otherwise.
   const [currentDate, setCurrentDate] = useState(() =>
-    tripMeta?.start_date ? new Date(tripMeta.start_date + 'T00:00:00') : new Date()
+    spanStart ? new Date(spanStart + 'T00:00:00') : new Date()
   )
   const [calendarCollapsed, setCalendarCollapsed] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -212,11 +210,11 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
 
   const formatHeader = () => {
     const opts = { month: 'long', year: 'numeric' }
-    if (view === 'trip' && hasTripRange) {
-      const sameYear = tripStart.getFullYear() === tripEnd.getFullYear()
+    if (view === 'journey' && hasSpan) {
+      const sameYear = journeyStart.getFullYear() === journeyEnd.getFullYear()
       const fmt = (d, withYear) =>
         d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(withYear ? { year: 'numeric' } : {}) })
-      return `${fmt(tripStart, !sameYear)} – ${fmt(tripEnd, true)}`
+      return `${fmt(journeyStart, !sameYear)} – ${fmt(journeyEnd, true)}`
     }
     if (view === 'day') return currentDate.toLocaleDateString(undefined, { ...opts, day: 'numeric', weekday: 'long' })
     return currentDate.toLocaleDateString(undefined, opts)
@@ -227,15 +225,19 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 shrink-0 gap-3">
         <div className="flex items-center gap-3">
           <h2 className="text-lg sm:text-xl font-medium text-on-surface">{formatHeader()}</h2>
-          {tripMeta && (
-            <span className="text-xs font-medium bg-primary-light text-primary px-3 py-1 rounded-full">
-              {tripMeta.name}
+          {tripMetas.length === 1 ? (
+            <span className="text-xs font-medium bg-primary-light text-primary px-3 py-1 rounded-full truncate max-w-[40vw]">
+              {tripMetas[0].name}
             </span>
-          )}
+          ) : tripMetas.length > 1 ? (
+            <span className="text-xs font-medium bg-primary-light text-primary px-3 py-1 rounded-full whitespace-nowrap">
+              {tripMetas.length} trips
+            </span>
+          ) : null}
         </div>
         <div className="flex items-center gap-1.5">
-          {/* Trip view spans the whole trip, so month paging doesn't apply. */}
-          {view !== 'trip' && (
+          {/* Journey view spans the whole selection, so month paging doesn't apply. */}
+          {view !== 'journey' && (
             <>
               <button
                 onClick={goToToday}
@@ -290,38 +292,23 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
       </div>
 
       <div className="flex-1 mat-surface overflow-hidden">
-        {view === 'trip' && hasTripRange && (
-          <>
-            {/* Desktop: the whole trip as one continuous week grid */}
-            <div className="hidden sm:block h-full">
-              <MonthView
-                currentDate={currentDate}
-                days={tripDays}
-                bookings={bookings}
-                todos={todos}
-                dayNotes={dayNotes}
-                tripMeta={tripMeta}
-                selectedTrip={selectedTrip}
-                onSelectDate={handleSelectDate}
-                onBookingClick={openEditModal}
-                onUpsertDayNote={handleUpsertDayNote}
-                {...reminderProps}
-              />
-            </div>
-            {/* Mobile: whole-trip agenda */}
-            <div className="sm:hidden h-full">
-              <TripAgenda
-                tripStart={tripStart}
-                tripEnd={tripEnd}
-                bookings={bookings}
-                todos={todos}
-                dayNotes={dayNotes}
-                selectedTrip={selectedTrip}
-                onBookingClick={openEditModal}
-                {...reminderProps}
-              />
-            </div>
-          </>
+        {view === 'journey' && hasSpan && (
+          <JourneyView
+            bookings={bookings}
+            todos={todos}
+            dayNotes={dayNotes}
+            dayReminders={dayReminders}
+            tripMetas={tripMetas}
+            spanStart={journeyStart}
+            spanEnd={journeyEnd}
+            onSelectDate={handleSelectDate}
+            onBookingClick={openEditModal}
+            onUpsertDayNote={handleUpsertDayNote}
+            onAddReminder={reminderProps.onAddReminder}
+            onEditReminder={reminderProps.onEditReminder}
+            onRemoveReminder={reminderProps.onRemoveReminder}
+            onReorderReminder={reminderProps.onReorderReminder}
+          />
         )}
         {view === 'month' && (
           <>
@@ -334,6 +321,8 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
                 dayNotes={dayNotes}
                 tripMeta={tripMeta}
                 selectedTrip={selectedTrip}
+                spanStart={journeyStart}
+                spanEnd={journeyEnd}
                 onSelectDate={handleSelectDate}
                 onBookingClick={openEditModal}
                 onUpsertDayNote={handleUpsertDayNote}
@@ -349,6 +338,8 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
                 dayNotes={dayNotes}
                 tripMeta={tripMeta}
                 selectedTrip={selectedTrip}
+                spanStart={journeyStart}
+                spanEnd={journeyEnd}
                 onSelectDate={handleSelectDate}
                 onDayHighlight={(date) => setCurrentDate(date)}
                 onBookingClick={openEditModal}

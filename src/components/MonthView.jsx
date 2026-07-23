@@ -40,7 +40,7 @@ function sortBookingsForDay(dayBookings, day) {
   })
 }
 
-export default function MonthView({ currentDate, days: propDays, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, selectedTrip, onSelectDate, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder }) {
+export default function MonthView({ currentDate, days: propDays, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, selectedTrip, spanStart, spanEnd, onSelectDate, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder }) {
   // Wide desktop → show the agenda side panel and select-a-day inline; below that
   // width the panel is hidden and clicking a day navigates to the Day view.
   const isWide = useMediaQuery('(min-width: 1024px)')
@@ -356,12 +356,14 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
                         </span>
                       )
                     })}
-                    {/* No accommodation warning */}
-                    {tripMeta?.start_date && tripMeta?.end_date && (() => {
+                    {/* No accommodation warning — bounded by the whole journey
+                        span (union of selected trips), so a night covered by
+                        another selected trip's hotel doesn't false-warn. */}
+                    {spanStart && spanEnd && (() => {
                       const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
-                      const tripEndDay = new Date(tripMeta.end_date + 'T00:00:00')
-                      const tripStartDay = new Date(tripMeta.start_date + 'T00:00:00')
-                      if (viewDay < tripStartDay || viewDay >= tripEndDay) return null
+                      const spanStartDay = new Date(spanStart.getFullYear(), spanStart.getMonth(), spanStart.getDate())
+                      const spanEndDay = new Date(spanEnd.getFullYear(), spanEnd.getMonth(), spanEnd.getDate())
+                      if (viewDay < spanStartDay || viewDay >= spanEndDay) return null
                       if (!hasOvernightCoverage(bookings, day)) {
                         return (
                           <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-50 text-amber-500 text-[10px]" title="No accommodation booked">

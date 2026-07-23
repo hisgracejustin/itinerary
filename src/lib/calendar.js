@@ -134,6 +134,30 @@ export const TYPE_COLORS = {
 }
 
 /**
+ * Trip identity colors for the Journey view. This is a SECOND visual channel,
+ * distinct from TYPE_COLORS (which encodes booking type): a thin rail on a row's
+ * leading edge marks which trip the item belongs to. Assigned by the trip's
+ * position in the current selection, so two selected trips always contrast.
+ */
+export const TRIP_RAIL_COLORS = [
+  { rail: 'bg-rose-400', text: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-300' },
+  { rail: 'bg-sky-400', text: 'text-sky-700', bg: 'bg-sky-50', border: 'border-sky-300' },
+  { rail: 'bg-violet-400', text: 'text-violet-700', bg: 'bg-violet-50', border: 'border-violet-300' },
+  { rail: 'bg-lime-500', text: 'text-lime-700', bg: 'bg-lime-50', border: 'border-lime-300' },
+  { rail: 'bg-orange-400', text: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-300' },
+  { rail: 'bg-cyan-400', text: 'text-cyan-700', bg: 'bg-cyan-50', border: 'border-cyan-300' },
+  { rail: 'bg-fuchsia-400', text: 'text-fuchsia-700', bg: 'bg-fuchsia-50', border: 'border-fuchsia-300' },
+  { rail: 'bg-teal-400', text: 'text-teal-700', bg: 'bg-teal-50', border: 'border-teal-300' },
+]
+
+/** Map selected trip ids → a stable rail color, by selection order. */
+export function tripColorMap(tripIds) {
+  const map = {}
+  tripIds.forEach((id, i) => { map[id] = TRIP_RAIL_COLORS[i % TRIP_RAIL_COLORS.length] })
+  return map
+}
+
+/**
  * Emoji icons for booking types.
  */
 export const TYPE_ICONS = {
