@@ -9,7 +9,16 @@ export default function UploadBooking({ trip, onParsed }) {
   const [preview, setPreview] = useState(null)
   const [error, setError] = useState(null)
   const [dragOver, setDragOver] = useState(false)
+  // Transient message under the paste button ("No image on the clipboard").
+  const [pasteHint, setPasteHint] = useState(null)
+  // Whether the async Clipboard API is usable — the touch path, where there is
+  // no Cmd/Ctrl+V. Detected after mount (SSR has no navigator).
+  const [canClipboardRead, setCanClipboardRead] = useState(false)
   const inputRef = useRef(null)
+
+  useEffect(() => {
+    setCanClipboardRead(typeof navigator !== 'undefined' && !!navigator.clipboard?.read)
+  }, [])
 
   const isPDF = file?.type === 'application/pdf'
 
@@ -62,6 +71,30 @@ export default function UploadBooking({ trip, onParsed }) {
     handleFile(e.target.files[0])
   }
 
+  // Button variant of paste for touch devices. Must run inside the tap's user
+  // gesture — iOS shows its native "Paste" permission bubble on clipboard.read.
+  const handlePasteButton = async (e) => {
+    // Guard against ever being nested in the click-to-browse drop zone.
+    e.stopPropagation()
+    setPasteHint(null)
+    try {
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const type = item.types.find((t) => t.startsWith('image/'))
+        if (type) {
+          const blob = await item.getType(type)
+          const ext = (type.split('/')[1] || 'png').replace('jpeg', 'jpg')
+          handleFile(new File([blob], `pasted-screenshot.${ext}`, { type }))
+          return
+        }
+      }
+      setPasteHint('No image on the clipboard — copy a screenshot first')
+    } catch {
+      // Permission denied or the platform withheld the clipboard.
+      setPasteHint('Clipboard access was blocked')
+    }
+  }
+
   const handleParse = async () => {
     setStatus('parsing')
     setError(null)
@@ -86,6 +119,7 @@ export default function UploadBooking({ trip, onParsed }) {
   // Idle state — drop zone
   if (status === 'idle') {
     return (
+      <div className="space-y-3">
       <div
         onDrop={handleDrop}
         onDragOver={handleDragOver}
@@ -119,6 +153,26 @@ export default function UploadBooking({ trip, onParsed }) {
             </p>
           </div>
         </div>
+      </div>
+      {/* The touch path: no Cmd/Ctrl+V on a phone, so a tap that reads the
+          clipboard directly (iOS shows its native Paste confirmation). */}
+      {canClipboardRead && (
+        <div className="text-center">
+          <button
+            type="button"
+            onClick={handlePasteButton}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 active:scale-[0.98] transition-all"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            Paste screenshot
+          </button>
+          {pasteHint && (
+            <p className="text-xs text-amber-600 mt-2">{pasteHint}</p>
+          )}
+        </div>
+      )}
       </div>
     )
   }
