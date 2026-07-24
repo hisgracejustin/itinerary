@@ -337,6 +337,18 @@ export default function Settle({
               </p>
             </>
           )}
+          {statItems.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-white/15 space-y-0.5 text-[12.5px]">
+              <p className="flex items-baseline justify-between text-white/65">
+                <span>Total trip spend</span>
+                <span className="font-semibold text-white/90">~{wholeHKD(totalSpendHKD)}</span>
+              </p>
+              <p className="flex items-baseline justify-between text-white/65">
+                <span>Per person average</span>
+                <span className="font-semibold text-white/90">~{wholeHKD(perPersonHKD)}</span>
+              </p>
+            </div>
+          )}
         </section>
 
         {/* 2 — Transfers, grouped by currency, straight under the hero (no
@@ -674,17 +686,6 @@ export default function Settle({
           )}
         </section>
 
-        {/* 8 — Trip-spend stats (Everyone scope, approximate HKD). */}
-        {statItems.length > 0 && (
-          <section className="mat-surface p-5 text-sm text-on-surface space-y-1">
-            <p>
-              Total trip spend: <span className="font-bold">~{wholeHKD(totalSpendHKD)}</span>
-            </p>
-            <p>
-              Per person average: <span className="font-bold">~{wholeHKD(perPersonHKD)}</span>
-            </p>
-          </section>
-        )}
       </div>
 
       {bookingModalOpen && (
