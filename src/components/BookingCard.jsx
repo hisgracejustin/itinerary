@@ -346,7 +346,7 @@ const DETAIL_COMPONENTS = {
   activity: ActivityDetails,
 }
 
-export default function BookingCard({ booking, onClick, hideTrip, displayDate }) {
+export default function BookingCard({ booking, onClick, hideTrip, displayDate, compact }) {
   const colors = TYPE_COLORS[booking.type] || TYPE_COLORS.activity
   const details = parseDetails(booking)
   const DetailComponent = DETAIL_COMPONENTS[booking.type] || ActivityDetails
@@ -376,6 +376,50 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate })
     }
     return null
   })()
+
+  // Compact: a single tight row for timeline overviews (the phone-width
+  // journey view) — icon, title, and one right-aligned fact. Full details stay
+  // one tap away in the booking modal.
+  if (compact) {
+    const start = booking.start_date ? new Date(booking.start_date) : null
+    const end = booking.end_date ? new Date(booking.end_date) : null
+    const nights =
+      booking.type === 'hotel' && start && end
+        ? Math.round(
+            (new Date(end.getFullYear(), end.getMonth(), end.getDate()) -
+              new Date(start.getFullYear(), start.getMonth(), start.getDate())) /
+              86400000,
+          )
+        : null
+    const fact = (() => {
+      if (stayNote) {
+        // Pair the note with its moment: check-in/out times for stays, the
+        // day's endpoint time for transport.
+        const isStart = /Check-in|Pick-up|Take-off|Depart/.test(stayNote)
+        const time =
+          booking.type === 'hotel' || booking.type === 'cruise'
+            ? (isStart ? details.check_in_time : details.check_out_time) || ''
+            : formatTime(isStart ? booking.start_date : booking.end_date) || ''
+        return time ? `${stayNote} · ${time}` : stayNote
+      }
+      if (nights) return `${nights} night${nights !== 1 ? 's' : ''}`
+      return formatTime(booking.start_date) || ''
+    })()
+    return (
+      <div
+        onClick={() => onClick?.(booking)}
+        className={`px-3 py-2 rounded-xl border-l-4 ${colors.border} bg-white shadow-elevation-1 transition-all duration-150 cursor-pointer mat-press flex items-center gap-2`}
+      >
+        <span className="text-base shrink-0" aria-hidden>
+          {booking.type === 'rental' ? getRentalIcon(details) : TYPE_ICONS[booking.type] || '🎯'}
+        </span>
+        <span className="flex-1 min-w-0 truncate text-sm font-medium text-on-surface">{booking.title}</span>
+        {fact && (
+          <span className="shrink-0 whitespace-nowrap text-xs text-on-surface-variant">{fact}</span>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div

@@ -118,11 +118,14 @@ export default function JourneyView({
     return { day, dateStr, dayBookings, continuing, dayTodos, dayNote, dayRems, owners, hasContent, covered }
   })
 
-  // Group into segments: maximal runs of empty days vs individual content days.
+  // Group into segments. Days inside a selected trip ALWAYS render as days —
+  // they're part of the trip even when nothing is booked (an ongoing stay shows
+  // as a slim line; a truly empty trip day still earns its "No stay" badge).
+  // Only maximal runs of days outside every selected trip collapse.
   const segments = []
   let run = null
   for (const d of dayData) {
-    if (d.hasContent) {
+    if (d.hasContent || d.owners.length > 0) {
       if (run) { segments.push({ type: 'run', days: run }); run = null }
       segments.push({ type: 'day', data: d })
     } else {
@@ -290,7 +293,15 @@ function DaySection({
                     {tripNameById[booking.trip_id] || ''}
                   </div>
                 )}
-                <BookingCard booking={booking} onClick={onBookingClick} hideTrip displayDate={day} />
+                {/* Phones get the one-line compact card — the full detail card
+                    (check-in grid, address, notes) ate most of a small screen
+                    per booking. Details stay one tap away in the modal. */}
+                <div className="sm:hidden">
+                  <BookingCard booking={booking} onClick={onBookingClick} hideTrip displayDate={day} compact />
+                </div>
+                <div className="hidden sm:block">
+                  <BookingCard booking={booking} onClick={onBookingClick} hideTrip displayDate={day} />
+                </div>
               </div>
             </div>
           )

@@ -66,8 +66,11 @@ chips.
 
 ### Empty runs collapse — by content, not by a day count
 
-**Rule: any maximal run of days with nothing on them collapses to a single
-divider labelled with its length. Any day with content renders.**
+**Rule: any maximal run of days outside every selected trip collapses to a
+single divider labelled with its length. Days inside a trip always render —
+they're part of the trip — with an ongoing stay shown as a slim one-line row
+rather than a repeated full card.** (An earlier build collapsed stay-only trip
+days too; in use that read as the trip having holes in it.)
 
 There is deliberately **no threshold**. An earlier draft said "gaps ≤ 2 days
 render inline", which was an arbitrary constant standing in for a question it
