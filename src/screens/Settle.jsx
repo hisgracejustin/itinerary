@@ -260,7 +260,7 @@ export default function Settle({
                     <th className="text-center font-semibold pb-2 px-2">Paid by</th>
                     <th className="text-left font-semibold pb-2 px-2">Split by</th>
                     <th className="text-right font-semibold pb-2 px-2 whitespace-nowrap">Net result</th>
-                    <th className="text-right font-semibold pb-2 pl-2 whitespace-nowrap">~Net result (HKD)</th>
+                    <th className="text-right font-semibold pb-2 pl-2 whitespace-nowrap">Net result (HKD)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -332,6 +332,11 @@ export default function Settle({
                 </tbody>
               </table>
             </div>
+            {splitCostRows.some(({ b }) => b.cost_currency !== 'HKD') && (
+              <p className="text-[11px] text-on-surface-variant/70 mt-2">
+                Non-HKD amounts converted at approximate rates.
+              </p>
+            )}
           </section>
         )}
 
