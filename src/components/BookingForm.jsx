@@ -133,6 +133,10 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
   // Moving a booking to another trip must not carry over people who don't belong
   // there — prune split rows (and a now-foreign payer) to the new trip's roster.
   useEffect(() => {
+    // No roster resolved yet (mount, before the seed effect's trip lands) — do
+    // NOT prune: this first run would apply an empty member set to the freshly
+    // seeded state and silently wipe the booking's payer and splits.
+    if (!splitTrip) return
     const memberIds = new Set(splitMembers.map((m) => m.id))
     setForm((prev) => {
       const prunedSplits = (prev.splits || []).filter((s) => memberIds.has(s.user_id))
