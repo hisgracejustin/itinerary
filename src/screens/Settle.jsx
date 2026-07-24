@@ -3,7 +3,9 @@
 import { useMemo, useRef, useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
 import { computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
-import { formatCurrency, CURRENCIES } from '../lib/currencies'
+// toHKD is for the Split-costs SORT ORDER only — every displayed amount on this
+// page stays exact per-currency (no ~ conversions).
+import { formatCurrency, CURRENCIES, toHKD } from '../lib/currencies'
 import { TYPE_ICONS } from '../lib/calendar'
 import AssigneePicker, { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
 import SplitEditor from '../components/SplitEditor'
@@ -244,27 +246,55 @@ export default function Settle({
           </section>
         )}
 
-        {/* 2b — Per-item breakdown: each split booking + what it means for you */}
+        {/* 2b — Per-item breakdown: each split booking + what it means for you,
+            sorted most-receiving first (approx-HKD used for ORDERING only). */}
         {splitCostRows.length > 0 && (
           <section className="mat-surface p-5">
             <SectionTitle>Split costs</SectionTitle>
             <div className="space-y-1">
-              {splitCostRows.map(({ b, net }) => (
-                <div
-                  key={b.id}
-                  onClick={() => openBooking(b)}
-                  className="flex items-center gap-2 py-2 border-b border-outline/20 last:border-0 cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors"
-                >
-                  <span className="text-base shrink-0">{TYPE_ICONS[b.type] || '🗂️'}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm text-on-surface font-medium truncate">{b.title}</div>
-                    <div className="text-xs text-on-surface-variant truncate">
-                      {personLabel(b.paid_by)} paid {formatCurrency(effectiveOf(b), b.cost_currency)}
+              {[...splitCostRows]
+                .sort((a, b) => {
+                  const key = (r) => (r.net == null ? 0 : toHKD(r.net, r.b.cost_currency))
+                  return key(b) - key(a)
+                })
+                .map(({ b, net }) => {
+                  const payer = memberByUserId.get(b.paid_by)
+                  const splitters = (b.splits || []).map(
+                    (s) => memberByUserId.get(s.user_id) ?? { id: s.user_id },
+                  )
+                  return (
+                    <div
+                      key={b.id}
+                      onClick={() => openBooking(b)}
+                      className="flex items-center gap-2 py-2 border-b border-outline/20 last:border-0 cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors"
+                    >
+                      <span className="text-base shrink-0">{TYPE_ICONS[b.type] || '🗂️'}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm text-on-surface font-medium truncate">{b.title}</div>
+                        <div className="text-xs text-on-surface-variant truncate">
+                          paid {formatCurrency(effectiveOf(b), b.cost_currency)}
+                        </div>
+                      </div>
+                      <span className="shrink-0" title={`Paid by ${memberLabel(payer)}`}>
+                        <Avatar member={payer} size="xs" />
+                      </span>
+                      <span
+                        className="flex -space-x-1.5 shrink-0"
+                        title={`Split between ${splitters.map((m) => memberLabel(m)).join(', ')}`}
+                      >
+                        {splitters.slice(0, 4).map((m) => (
+                          <Avatar key={m.id} member={m} size="xs" />
+                        ))}
+                        {splitters.length > 4 && (
+                          <span className="w-5 h-5 rounded-full bg-surface-container text-[9px] flex items-center justify-center text-on-surface-variant border border-white">
+                            +{splitters.length - 4}
+                          </span>
+                        )}
+                      </span>
+                      <NetPill net={net} currency={b.cost_currency} />
                     </div>
-                  </div>
-                  <NetPill net={net} currency={b.cost_currency} />
-                </div>
-              ))}
+                  )
+                })}
             </div>
           </section>
         )}
