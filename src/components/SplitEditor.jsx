@@ -88,6 +88,35 @@ export default function SplitEditor({
     }
   }
 
+  // ---- Per-item settlement preview: who ends up owing the payer's unit for
+  // THIS item alone. Shares aggregate by settlement unit (party/solo) using the
+  // same formula as split.js; the payer's own unit is absorbed, everyone else
+  // shows as "X → payer's unit HK$…" under the card.
+  const memberById = new Map(members.map((m) => [m.id, m]))
+  const unitKeyOf = (id) => memberById.get(id)?.party_id || `solo-${id}`
+  const unitNameOf = (id) => {
+    const pid = memberById.get(id)?.party_id
+    if (pid && partyById.has(pid)) return partyById.get(pid).name
+    return memberFirstName(memberById.get(id) ?? { id })
+  }
+  const transferPreview = []
+  if (paidBy && splits.length > 0 && amount > 0 && !extrasExceed && memberById.has(paidBy)) {
+    const payerUnit = unitKeyOf(paidBy)
+    const owedByUnit = new Map()
+    for (const s of splits) {
+      if (!memberById.has(s.user_id)) continue
+      const w = Number(s.weight) || 0
+      const extra = Number(s.extra_amount) || 0
+      const share = extra + (sumW > 0 ? (remainder * w) / sumW : 0)
+      const key = unitKeyOf(s.user_id)
+      if (key === payerUnit || share <= 0) continue
+      const prev = owedByUnit.get(key)
+      owedByUnit.set(key, { name: unitNameOf(s.user_id), amt: (prev?.amt || 0) + share })
+    }
+    transferPreview.push(...owedByUnit.values())
+  }
+  const payerUnitName = paidBy && memberById.has(paidBy) ? unitNameOf(paidBy) : null
+
   const handlePaidBy = (member) => {
     const newPaid = member?.id ?? null
     if (newPaid && !paidBy && splits.length === 0) {
@@ -241,6 +270,20 @@ export default function SplitEditor({
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Result preview: what this item alone does to the balances. */}
+      {transferPreview.length > 0 && (
+        <div className="pt-2 border-t border-outline/20 space-y-1">
+          {transferPreview.map((t, i) => (
+            <p key={i} className="text-[11px] text-on-surface-variant min-w-0 truncate">
+              <span className="font-medium text-on-surface">{t.name}</span>
+              <span aria-hidden> → </span>
+              <span className="font-medium text-on-surface">{payerUnitName}</span>{' '}
+              {formatCurrency(t.amt, currency)}
+            </p>
+          ))}
         </div>
       )}
     </div>
