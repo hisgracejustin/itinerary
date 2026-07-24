@@ -91,13 +91,13 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
   const days = propDays ?? getMonthGrid(year, month)
   const today = new Date()
 
-  // Keep the agenda's selected day sensible: default to the trip start (if a trip
-  // with dates is selected) or today, and re-anchor when the trip changes.
+  // Anchor the agenda's selected day to the trip start when a single trip is
+  // picked. Deliberately nothing else: growing the selection to several trips
+  // (selectedTrip → null) or clearing it must NOT yank the panel to today —
+  // whatever day is showing just stays.
   useEffect(() => {
     if (selectedTrip && tripMeta?.start_date) {
       setSelectedDay(new Date(tripMeta.start_date + 'T00:00:00'))
-    } else {
-      setSelectedDay(new Date())
     }
   }, [selectedTrip, tripMeta?.start_date])
 

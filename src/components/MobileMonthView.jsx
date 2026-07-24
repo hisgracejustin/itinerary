@@ -58,8 +58,11 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
     }
   }, [collapsed])
 
-  // Reset selected day when trip changes
+  // Anchor the selected day to the trip start when a SINGLE trip is picked.
+  // Growing the selection to several trips (selectedTrip → null) or clearing
+  // it must NOT yank the day to today — whatever day is showing just stays.
   useEffect(() => {
+    if (!selectedTrip || !tripMeta?.start_date) return
     setSelectedDay(getDefaultDay())
     // Only expand if calendar is currently collapsed
     if (isCollapsedRef.current) {
