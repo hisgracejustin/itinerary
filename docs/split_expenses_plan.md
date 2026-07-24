@@ -1,8 +1,9 @@
 # Split expenses & settle up — implementation plan
 
-**Status:** plan / not implemented. Scope confirmed with Justin (2026-07-23);
+**Status:** ready to implement. Scope confirmed with Justin (2026-07-23);
 updated 2026-07-24 for the shipped client-state multi-trip selection (see the
-"Trip selection" section of [architecture.md](architecture.md)).
+"Trip selection" section of [architecture.md](architecture.md)); final UX
+decisions 4–6 confirmed with Justin 2026-07-24.
 
 ## Context
 
@@ -26,7 +27,18 @@ Decisions already made (do not re-litigate):
    over time.
 3. **New "Settle up" page** in the sidebar. The Costs page separately gains a
    clear Everyone / Me / Us scope toggle.
-4. **Settlement math is per-currency exact — never FX-converted.** The static
+4. **Splitting auto-enables when a payer is picked** (confirmed 2026-07-24):
+   in the BookingForm cost section, choosing "Paid by" pre-fills an
+   everyone-equal split (editable/removable). No separate enable toggle. A
+   booking with a cost but no payer stays unallocated → "Needs attention".
+5. **Intra-party settlements are blocked in the form** (confirmed 2026-07-24):
+   the "to" picker excludes members of the payer's own party — such a payment
+   would have zero effect on unit balances.
+6. **Opposite-direction per-currency transfers confirmed** (2026-07-24):
+   Justin walked the two-cost HKD+JPY couple scenario and confirmed that a
+   pair owing each other in two currencies gets two suggested transfers with
+   no cross-currency netting.
+7. **Settlement math is per-currency exact — never FX-converted.** The static
    `toHKD` table in [`src/lib/currencies.js`](../src/lib/currencies.js) is
    approximate and is only for cost *exploration* (Costs page totals, sorting,
    by-type bars, always rendered with a `~` prefix). It must never determine
@@ -225,7 +237,9 @@ All follow the existing pattern: `"use server"`, `runAction(async (user) => …)
 same replace-all + membership validation as bookings.
 
 **New `src/actions/settle.ts`** — `recordSettlementAction`,
-`deleteSettlementAction`. Validate both parties are trip members.
+`deleteSettlementAction`. Validate both parties are trip members, and reject
+`from_user`/`to_user` who share a `party_id` in that trip (decision 5 — the
+UI's "to" picker also excludes the payer's own party members).
 
 **[`src/actions/members.ts`](../src/actions/members.ts)** —
 
@@ -271,8 +285,11 @@ Props: `{ members, parties, amount, currency, paidBy, splits, onChange }`
 - **"Split between"** — chip row, one chip per unit: a party chip toggles all
   of its members at once; a solo chip toggles one member. `Avatar` +
   `memberFirstName`; **truncate the name span** (`truncate` on a `min-w-0`
-  span) so chips never wrap ugly on mobile. Default when the user first
-  enables splitting: all members at weight 1.
+  span) so chips never wrap ugly on mobile. **Auto-enable on payer**
+  (decision 4): when `paid_by` goes from unset → set and there are no splits
+  yet, pre-fill all members at weight 1; clearing the payer keeps the splits
+  (they'll surface as "needs a payer" if submitted that way — validation
+  requires a payer while splits exist, so the form prompts before save).
 - **"Adjust shares"** disclosure — per included person, a small
   `inputMode="decimal"` weight input plus the live computed share
   (`formatCurrency(amount × w/Σw, currency)`), styled like the existing
