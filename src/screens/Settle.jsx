@@ -559,22 +559,36 @@ function RatesDisclosure({ currencies, fx }) {
         </button>
       </div>
       {open && (
-        <div className="mt-1.5 space-y-0.5">
-          {currencies.map((c) => {
-            const live = rates && rates[c] > 0
-            const rate = live ? rates[c] : FX_RATES_TO_HKD[c]
-            return (
-              <div key={c} className="text-[11px] text-on-surface-variant truncate">
-                {/* Significant digits, not cents — ¥→HKD is 0.0480, not 0.05. */}
-                1 {c} = HK${(rate ?? 0).toLocaleString(undefined, { maximumSignificantDigits: 4 })}
-                {live
-                  ? fetchedLabel
-                    ? ` · fetched ${fetchedLabel}`
-                    : ''
-                  : ' · built-in approximate rate'}
-              </div>
-            )
-          })}
+        <div className="mt-1.5 overflow-x-auto">
+          <table className="text-[11px] text-on-surface-variant">
+            <thead>
+              <tr className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant/70">
+                <th className="text-left font-semibold pr-4 pb-1">From</th>
+                <th className="text-left font-semibold pr-4 pb-1">To</th>
+                <th className="text-right font-semibold pr-4 pb-1">Rate</th>
+                <th className="text-left font-semibold pb-1 whitespace-nowrap">Last fetched</th>
+              </tr>
+            </thead>
+            <tbody>
+              {currencies.map((c) => {
+                const live = rates && rates[c] > 0
+                const rate = live ? rates[c] : FX_RATES_TO_HKD[c]
+                return (
+                  <tr key={c}>
+                    <td className="pr-4 py-0.5">{c}</td>
+                    <td className="pr-4 py-0.5">HKD</td>
+                    {/* Up to 4dp, trailing zeros trimmed — ¥ is 0.048, not 0.05. */}
+                    <td className="pr-4 py-0.5 text-right tabular-nums">
+                      {parseFloat((rate ?? 0).toFixed(4))}
+                    </td>
+                    <td className="py-0.5 whitespace-nowrap">
+                      {live ? (fetchedLabel ?? '—') : 'built-in approximate rate'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
