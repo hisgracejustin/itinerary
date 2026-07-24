@@ -57,6 +57,32 @@ enforced in code.
 > `pages/` is reserved by Next for the legacy Pages Router, which breaks the
 > server-action transform.
 
+## Trip selection (multi-select, client state)
+
+One or more trips can be selected in the sidebar (checkbox rows; "All Trips"
+clears). Selection is **pure client state** in
+[`src/lib/trip-context.tsx`](../src/lib/trip-context.tsx)
+(`selectedTrips`/`toggleTrip`, plus single-trip compat shims
+`selectedTrip`/`tripMeta` that read as "All Trips" when 0 or 2+ are selected):
+
+- Every `(app)` page fetches the **union** of the user's trips — the same
+  payload the All Trips view always shipped, authorized by the `trip_members`
+  JOIN — and the screens filter it by the selection. A toggle is one instant
+  client render: no navigation, no refetch.
+- Selection must NOT move into search params: Next 16's router serves stale
+  RSC payloads on search-param-only navigations (vercel/next.js#88535,
+  #92187), which shipped as a data-corrupting bug here twice. `?trip=` deep
+  links only *seed* the initial selection (read during SSR); it then persists
+  in localStorage and the URL is cleaned.
+- Trip summaries carry their `members` (layout fetches
+  `getTripsWithMembers`), so member pickers filter client-side too.
+- A "Journey" timeline view for multi-trip spans (trip rails, collapsed gap
+  runs, gap-day "extend trip" actions) exists but is dormant behind
+  `JOURNEY_ENABLED` in [`src/screens/Calendar.jsx`](../src/screens/Calendar.jsx)
+  — Month view with its day panel is the preferred default. Its shipped
+  side-effects remain live: union queries and the accommodation "No stay"
+  warning bounded by the whole selection span.
+
 ## Data model
 
 | Table | Notes |
