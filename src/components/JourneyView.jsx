@@ -345,22 +345,36 @@ function DaySection({
         })}
       </div>
 
-      {/* Ongoing stays are background, not events — one slim line, not a card. */}
+      {/* Ongoing stays are background, not events — the same mid-stay chips the
+          mobile month view uses (amber "night x/y" pill; purple for cruises). */}
       {continuing.length > 0 && (
-        <div className={dayBookings.length > 0 ? 'mt-1.5 space-y-0.5' : 'space-y-0.5'}>
+        <div className={`flex flex-wrap gap-1 pl-3 ${dayBookings.length > 0 ? 'mt-1.5' : ''}`}>
           {continuing.map((bk) => {
-            const color = colorMap[bk.trip_id]
+            const isCruise = bk.type === 'cruise'
+            const start = new Date(bk.start_date)
+            const end = bk.end_date ? new Date(bk.end_date) : null
+            const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+            const endDay = end ? new Date(end.getFullYear(), end.getMonth(), end.getDate()) : null
+            const viewDay = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+            const totalNights = endDay ? Math.round((endDay - startDay) / 86400000) : null
+            const nightNumber = Math.round((viewDay - startDay) / 86400000) + 1
             return (
               <button
                 key={bk.id}
                 onClick={() => onBookingClick?.(bk)}
-                className="w-full flex items-stretch gap-2 text-left group"
+                className={`inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors ${
+                  isCruise
+                    ? 'bg-purple-100 text-purple-800 hover:bg-purple-200'
+                    : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                }`}
               >
-                <span className={`w-1 rounded-full shrink-0 opacity-40 ${color?.rail || 'bg-outline/40'}`} aria-hidden />
-                <span className="flex items-center gap-1.5 min-w-0 py-1 text-xs text-on-surface-variant group-hover:text-on-surface transition-colors">
-                  <span aria-hidden>{TYPE_ICONS[bk.type] || '🛏️'}</span>
-                  <span className="truncate">{bk.title}</span>
-                </span>
+                <span className="shrink-0" aria-hidden>{isCruise ? '🚢' : TYPE_ICONS[bk.type] || '🏡'}</span>
+                <span className="truncate">{isCruise ? 'On board' : bk.title}</span>
+                {totalNights != null && totalNights > 0 && (
+                  <span className={`font-normal shrink-0 ${isCruise ? 'text-purple-600' : 'text-amber-600'}`}>
+                    {nightNumber}/{totalNights}
+                  </span>
+                )}
               </button>
             )
           })}
