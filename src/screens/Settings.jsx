@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   createTrip, updateTrip, deleteTrip,
-  addTripMember, removeTripMember, setTripMemberRole, updateMemberProfile, setMemberPin,
+  addTripMember, removeTripMember, setTripMemberRole, updateMemberProfile, setMemberPin, setMyAvatar,
   createParty, renameParty, deleteParty,
 } from '@/lib/client-actions'
 import { friendlyError } from '../lib/friendlyError'
@@ -51,12 +51,38 @@ export default function Settings({ trips: tripsProp, currentUserId }) {
     }
   }
 
+  // Union of everyone across the viewer's trips, deduped by user id. Name,
+  // email, image, has_account and has_pin are user-level, so the first
+  // occurrence is as good as any; role/party_id are trip-scoped and ignored here.
+  const peopleById = new Map()
+  for (const trip of trips) {
+    for (const m of trip.members) {
+      if (!peopleById.has(m.id)) peopleById.set(m.id, m)
+    }
+  }
+  const allPeople = [...peopleById.values()].sort((a, b) => {
+    if (a.id === currentUserId) return -1
+    if (b.id === currentUserId) return 1
+    return memberLabel(a).localeCompare(memberLabel(b))
+  })
+
   return (
     <div className="h-full overflow-y-auto w-full max-w-3xl mx-auto pb-10">
       <h2 className="text-xl font-medium text-on-surface mb-1">Settings</h2>
       <p className="text-sm text-on-surface-variant mb-6">
         Manage your trips and who has access to them.
       </p>
+
+      {/* People — person-level stuff (name, email, PIN, avatar), shared across trips */}
+      {allPeople.length > 0 && (
+        <PeopleSection
+          people={allPeople}
+          trips={trips}
+          currentUserId={currentUserId}
+          busy={busy}
+          run={run}
+        />
+      )}
 
       {/* Trips */}
       <section className="mb-8">
@@ -115,6 +141,7 @@ export default function Settings({ trips: tripsProp, currentUserId }) {
               <TripCard
                 key={trip.id}
                 trip={trip}
+                allPeople={allPeople}
                 currentUserId={currentUserId}
                 busy={busy}
                 run={run}
@@ -127,7 +154,295 @@ export default function Settings({ trips: tripsProp, currentUserId }) {
   )
 }
 
-function TripCard({ trip, currentUserId, busy, run }) {
+/**
+ * Global People card: everyone across the viewer's trips, deduped. Person-level
+ * management lives here — rename/email (pencil), sign-in PIN (key), and the
+ * viewer's own avatar. The pencil/key actions are trip-authorized server-side,
+ * so each row uses a trip where the viewer is owner and the person is a member;
+ * rows without such a trip are read-only.
+ */
+function PeopleSection({ people, trips, currentUserId, busy, run }) {
+  const ownerTripIdFor = (personId) =>
+    trips.find((t) => t.myRole === 'owner' && t.members.some((m) => m.id === personId))?.id ?? null
+
+  return (
+    <section className="mb-8">
+      <h3 className="text-sm font-semibold text-on-surface mb-3">People</h3>
+      <div className="mat-surface p-4">
+        <ul className="space-y-1">
+          {people.map((p) => (
+            <PersonRow
+              key={p.id}
+              p={p}
+              ownerTripId={ownerTripIdFor(p.id)}
+              isSelf={p.id === currentUserId}
+              busy={busy}
+              run={run}
+            />
+          ))}
+        </ul>
+        <p className="text-[11px] text-on-surface-variant leading-relaxed mt-2">
+          Everyone across your trips. Who&apos;s on which trip — and their role — is
+          managed on each trip card below.
+        </p>
+      </div>
+    </section>
+  )
+}
+
+const AVATAR_ICONS = Array.from({ length: 16 }, (_, i) => `icon${i + 1}.png`)
+
+/**
+ * One person in the global People card. Owners (of a shared trip) get the
+ * pencil (name/email) and key (PIN) controls; the viewer's own row gets the
+ * avatar picker. Changing an email that belongs to someone who has signed in
+ * unlinks their old login, so we confirm first.
+ */
+function PersonRow({ p, ownerTripId, isSelf, busy, run }) {
+  // 'edit' | 'pin' | 'avatar' | null — which inline panel is open.
+  const [mode, setMode] = useState(null)
+  const [draft, setDraft] = useState({ name: p.name || '', email: p.email || '' })
+  const [pinDraft, setPinDraft] = useState('')
+
+  const canManage = !!ownerTripId
+  const close = () => { setMode(null); setPinDraft('') }
+
+  if (mode === 'edit') {
+    const save = async (e) => {
+      e.preventDefault()
+      const name = draft.name.trim()
+      const email = draft.email.trim()
+      if (!name || !email) return
+      const emailChanged = email.toLowerCase() !== (p.email || '').toLowerCase()
+      if (emailChanged && (p.has_account || p.has_pin)) {
+        const ok = window.confirm(
+          "Changing the email unlinks their old sign-in (Google and/or PIN) — they'll need a fresh sign-in for the new address. Continue?",
+        )
+        if (!ok) return
+      }
+      const done = await run(
+        () => updateMemberProfile({ trip_id: ownerTripId, user_id: p.id, name, email }),
+        `${name} updated`,
+      )
+      if (done) close()
+    }
+    return (
+      <li className="py-1.5">
+        <form onSubmit={save} className="space-y-2">
+          <input
+            type="text"
+            value={draft.name}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            placeholder="Name"
+            aria-label="Name"
+            className="mat-input"
+          />
+          <input
+            type="email"
+            value={draft.email}
+            onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+            placeholder="Email"
+            aria-label="Email"
+            className="mat-input"
+          />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={close} className="mat-btn-outlined text-xs">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={busy || !draft.name.trim() || !draft.email.trim()}
+              className="mat-btn-filled text-xs disabled:opacity-40"
+            >
+              Save
+            </button>
+          </div>
+        </form>
+      </li>
+    )
+  }
+
+  if (mode === 'pin') {
+    const savePin = async (e) => {
+      e.preventDefault()
+      const pin = pinDraft.trim()
+      if (pin.length < 6) return
+      const done = await run(
+        () => setMemberPin({ trip_id: ownerTripId, user_id: p.id, pin }),
+        `PIN set for ${memberLabel(p)} — share it with them`,
+      )
+      if (done) close()
+    }
+    const clearPin = async () => {
+      const done = await run(
+        () => setMemberPin({ trip_id: ownerTripId, user_id: p.id, pin: null }),
+        `PIN removed for ${memberLabel(p)}`,
+      )
+      if (done) close()
+    }
+    return (
+      <li className="py-1.5">
+        <form onSubmit={savePin} className="space-y-2">
+          <p className="text-[11px] text-on-surface-variant leading-relaxed">
+            {p.has_pin
+              ? `${memberFirstName(p)} has a PIN — saving replaces it.`
+              : `Lets ${memberFirstName(p)} sign in with their email and this PIN (no Google needed).`}
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={pinDraft}
+              onChange={(e) => setPinDraft(e.target.value)}
+              placeholder="PIN (6+ characters)"
+              aria-label={`PIN for ${memberLabel(p)}`}
+              minLength={6}
+              autoComplete="off"
+              className="mat-input flex-1"
+            />
+            <button
+              type="button"
+              onClick={() => setPinDraft(String(Math.floor(100000 + Math.random() * 900000)))}
+              className="mat-btn-outlined text-xs shrink-0"
+            >
+              Generate
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            {p.has_pin && (
+              <button
+                type="button"
+                onClick={clearPin}
+                disabled={busy}
+                className="text-xs text-red-500 hover:underline disabled:opacity-40 mr-auto"
+              >
+                Remove PIN
+              </button>
+            )}
+            <button type="button" onClick={close} className="mat-btn-outlined text-xs ml-auto">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={busy || pinDraft.trim().length < 6}
+              className="mat-btn-filled text-xs disabled:opacity-40"
+            >
+              Save PIN
+            </button>
+          </div>
+        </form>
+      </li>
+    )
+  }
+
+  if (mode === 'avatar') {
+    const pickIcon = async (icon) => {
+      const done = await run(() => setMyAvatar({ icon }), 'Avatar updated')
+      if (done) close()
+    }
+    return (
+      <li className="py-1.5">
+        <p className="text-[11px] text-on-surface-variant leading-relaxed mb-2">
+          Pick your avatar — it shows next to your name on every trip.
+        </p>
+        <div className="flex flex-wrap gap-2 mb-2">
+          {AVATAR_ICONS.map((icon) => {
+            const src = `/icons/${icon}`
+            const active = p.image === src
+            return (
+              <button
+                key={icon}
+                type="button"
+                onClick={() => pickIcon(icon)}
+                disabled={busy}
+                aria-label={icon.replace('.png', '')}
+                className={`rounded-full p-0.5 transition-shadow disabled:opacity-40 ${
+                  active ? 'ring-2 ring-primary' : 'hover:ring-2 hover:ring-outline/40'
+                }`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={src} alt="" className="w-10 h-10 rounded-full object-cover" />
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => pickIcon(null)}
+            disabled={busy || !p.image}
+            className="text-xs text-on-surface-variant hover:text-primary hover:underline disabled:opacity-40 mr-auto"
+          >
+            Use initials
+          </button>
+          <button type="button" onClick={close} className="mat-btn-outlined text-xs">
+            Cancel
+          </button>
+        </div>
+      </li>
+    )
+  }
+
+  const badges = [p.has_account && 'login', p.has_pin && 'PIN'].filter(Boolean)
+
+  return (
+    <li className="flex items-center gap-2.5 py-1">
+      <Avatar member={p} />
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm text-on-surface truncate">
+          {memberLabel(p)}
+          {isSelf && <span className="text-on-surface-variant"> (you)</span>}
+        </span>
+        <span className="block text-[11px] text-on-surface-variant truncate">{p.email}</span>
+      </span>
+      {badges.length > 0 && (
+        <span className="text-[10px] uppercase tracking-wide text-on-surface-variant shrink-0">
+          {badges.join(' · ')}
+        </span>
+      )}
+      {isSelf && (
+        <button
+          onClick={() => setMode('avatar')}
+          disabled={busy}
+          aria-label="Change avatar"
+          title="Change avatar"
+          className="text-on-surface-variant hover:text-primary p-1 rounded-full hover:bg-primary-light transition-colors disabled:opacity-30 disabled:hover:bg-transparent shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </button>
+      )}
+      {canManage && (
+        <button
+          onClick={() => { setDraft({ name: p.name || '', email: p.email || '' }); setMode('edit') }}
+          disabled={busy}
+          aria-label={`Edit ${memberLabel(p)}`}
+          title="Edit name and email"
+          className="text-on-surface-variant hover:text-primary p-1 rounded-full hover:bg-primary-light transition-colors disabled:opacity-30 disabled:hover:bg-transparent shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        </button>
+      )}
+      {canManage && (
+        <button
+          onClick={() => { setPinDraft(''); setMode('pin') }}
+          disabled={busy}
+          aria-label={`Set PIN for ${memberLabel(p)}`}
+          title={p.has_pin ? 'PIN set — change or remove' : 'Set a sign-in PIN'}
+          className={`${p.has_pin ? 'text-primary' : 'text-on-surface-variant'} hover:text-primary p-1 rounded-full hover:bg-primary-light transition-colors disabled:opacity-30 disabled:hover:bg-transparent shrink-0`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+          </svg>
+        </button>
+      )}
+    </li>
+  )
+}
+
+function TripCard({ trip, allPeople, currentUserId, busy, run }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState({
     name: trip.name,
@@ -141,6 +456,10 @@ function TripCard({ trip, currentUserId, busy, run }) {
   const isOwner = trip.myRole === 'owner'
   const ownerCount = trip.members.filter((m) => m.role === 'owner').length
   const partyById = new Map((trip.parties || []).map((p) => [p.id, p]))
+  // People the viewer already knows (from any trip) who aren't on this one —
+  // one pick away instead of retyping their email.
+  const memberIds = new Set(trip.members.map((m) => m.id))
+  const addable = allPeople.filter((p) => !memberIds.has(p.id) && p.email)
 
   const saveTrip = async (e) => {
     e.preventDefault()
@@ -277,6 +596,34 @@ function TripCard({ trip, currentUserId, busy, run }) {
 
         {isOwner ? (
           <form onSubmit={addPerson} className="space-y-2">
+            {addable.length > 0 && (
+              <>
+                <select
+                  value=""
+                  disabled={busy}
+                  aria-label="Add someone you know"
+                  onChange={(e) => {
+                    const personEmail = e.target.value
+                    if (!personEmail) return
+                    run(
+                      () => addTripMember({ trip_id: trip.id, email: personEmail, role }),
+                      `${personEmail} added`,
+                    )
+                  }}
+                  className="mat-select w-full disabled:opacity-50"
+                >
+                  <option value="">Add someone you know…</option>
+                  {addable.map((p) => (
+                    <option key={p.id} value={p.email}>
+                      {memberLabel(p)} ({p.email})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-on-surface-variant text-center" aria-hidden>
+                  — or add by email —
+                </p>
+              </>
+            )}
             <input
               type="email"
               value={email}
@@ -319,160 +666,11 @@ function TripCard({ trip, currentUserId, busy, run }) {
 }
 
 /**
- * One person in the People list. Owners get a role select, a pencil to edit the
- * member's name/email inline, and a remove button; everyone else sees the role.
- * Changing an email that belongs to someone who has logged in unlinks their old
- * Google login, so we confirm first.
+ * One person in a trip card's People list — trip-scoped concerns only: role
+ * select and remove (owners), plus the party badge. Person-level editing
+ * (name/email/PIN/avatar) lives in the global People card up top.
  */
 function MemberRow({ m, trip, currentUserId, isOwner, lastOwner, partyById, busy, run }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState({ name: m.name || '', email: m.email || '' })
-  const [pinEditing, setPinEditing] = useState(false)
-  const [pinDraft, setPinDraft] = useState('')
-
-  const startEdit = () => {
-    setDraft({ name: m.name || '', email: m.email || '' })
-    setEditing(true)
-  }
-
-  const save = async (e) => {
-    e.preventDefault()
-    const name = draft.name.trim()
-    const email = draft.email.trim()
-    if (!name || !email) return
-    const emailChanged = email.toLowerCase() !== (m.email || '').toLowerCase()
-    if (emailChanged && (m.has_account || m.has_pin)) {
-      const ok = window.confirm(
-        "Changing the email unlinks their old sign-in (Google and/or PIN) — they'll need a fresh sign-in for the new address. Continue?",
-      )
-      if (!ok) return
-    }
-    const done = await run(
-      () => updateMemberProfile({ trip_id: trip.id, user_id: m.id, name, email }),
-      `${name} updated`,
-    )
-    if (done) setEditing(false)
-  }
-
-  if (editing) {
-    return (
-      <li className="py-1.5">
-        <form onSubmit={save} className="space-y-2">
-          <input
-            type="text"
-            value={draft.name}
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-            placeholder="Name"
-            aria-label="Name"
-            className="mat-input"
-          />
-          <input
-            type="email"
-            value={draft.email}
-            onChange={(e) => setDraft({ ...draft, email: e.target.value })}
-            placeholder="Email"
-            aria-label="Email"
-            className="mat-input"
-          />
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setEditing(false)} className="mat-btn-outlined text-xs">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={busy || !draft.name.trim() || !draft.email.trim()}
-              className="mat-btn-filled text-xs disabled:opacity-40"
-            >
-              Save
-            </button>
-          </div>
-        </form>
-      </li>
-    )
-  }
-
-  if (pinEditing) {
-    const savePin = async (e) => {
-      e.preventDefault()
-      const pin = pinDraft.trim()
-      if (pin.length < 6) return
-      const done = await run(
-        () => setMemberPin({ trip_id: trip.id, user_id: m.id, pin }),
-        `PIN set for ${memberLabel(m)} — share it with them`,
-      )
-      if (done) {
-        setPinEditing(false)
-        setPinDraft('')
-      }
-    }
-    const clearPin = async () => {
-      const done = await run(
-        () => setMemberPin({ trip_id: trip.id, user_id: m.id, pin: null }),
-        `PIN removed for ${memberLabel(m)}`,
-      )
-      if (done) {
-        setPinEditing(false)
-        setPinDraft('')
-      }
-    }
-    return (
-      <li className="py-1.5">
-        <form onSubmit={savePin} className="space-y-2">
-          <p className="text-[11px] text-on-surface-variant leading-relaxed">
-            {m.has_pin
-              ? `${memberFirstName(m)} has a PIN — saving replaces it.`
-              : `Lets ${memberFirstName(m)} sign in with their email and this PIN (no Google needed).`}
-          </p>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={pinDraft}
-              onChange={(e) => setPinDraft(e.target.value)}
-              placeholder="PIN (6+ characters)"
-              aria-label={`PIN for ${memberLabel(m)}`}
-              minLength={6}
-              autoComplete="off"
-              className="mat-input flex-1"
-            />
-            <button
-              type="button"
-              onClick={() => setPinDraft(String(Math.floor(100000 + Math.random() * 900000)))}
-              className="mat-btn-outlined text-xs shrink-0"
-            >
-              Generate
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            {m.has_pin && (
-              <button
-                type="button"
-                onClick={clearPin}
-                disabled={busy}
-                className="text-xs text-red-500 hover:underline disabled:opacity-40 mr-auto"
-              >
-                Remove PIN
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => { setPinEditing(false); setPinDraft('') }}
-              className="mat-btn-outlined text-xs ml-auto"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={busy || pinDraft.trim().length < 6}
-              className="mat-btn-filled text-xs disabled:opacity-40"
-            >
-              Save PIN
-            </button>
-          </div>
-        </form>
-      </li>
-    )
-  }
-
   return (
     <li className="flex items-center gap-2.5 py-1">
       <Avatar member={m} />
@@ -510,32 +708,6 @@ function MemberRow({ m, trip, currentUserId, isOwner, lastOwner, partyById, busy
         <span className="text-[10px] uppercase tracking-wide text-on-surface-variant shrink-0">
           {m.role}
         </span>
-      )}
-      {isOwner && (
-        <button
-          onClick={startEdit}
-          disabled={busy}
-          aria-label={`Edit ${memberLabel(m)}`}
-          title="Edit name and email"
-          className="text-on-surface-variant hover:text-primary p-1 rounded-full hover:bg-primary-light transition-colors disabled:opacity-30 disabled:hover:bg-transparent shrink-0"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-          </svg>
-        </button>
-      )}
-      {isOwner && (
-        <button
-          onClick={() => { setPinDraft(''); setPinEditing(true) }}
-          disabled={busy}
-          aria-label={`Set PIN for ${memberLabel(m)}`}
-          title={m.has_pin ? 'PIN set — change or remove' : 'Set a sign-in PIN'}
-          className={`${m.has_pin ? 'text-primary' : 'text-on-surface-variant'} hover:text-primary p-1 rounded-full hover:bg-primary-light transition-colors disabled:opacity-30 disabled:hover:bg-transparent shrink-0`}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-          </svg>
-        </button>
       )}
       {isOwner && (
         <button

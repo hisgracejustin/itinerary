@@ -417,6 +417,30 @@ export async function setMemberPinAction(input: unknown) {
   });
 }
 
+const setMyAvatarSchema = z.object({
+  // One of the bundled frog icons in public/icons, or null to fall back to
+  // initials. The regex is the whole trust boundary — never a free-form path.
+  icon: z
+    .string()
+    .regex(/^icon([1-9]|1[0-6])\.png$/, "Unknown avatar")
+    .nullable(),
+});
+
+/**
+ * Self-service: the signed-in user picks their own avatar. No trip authz —
+ * `runAction`'s user IS the target row. Clearing (null) also drops a
+ * Google-provided photo, so the initials bubble shows everywhere.
+ */
+export async function setMyAvatarAction(input: unknown) {
+  return runAction(async (user) => {
+    const data = setMyAvatarSchema.parse(input);
+    const image = data.icon === null ? null : `/icons/${data.icon}`;
+    await db.update(tables.users).set({ image }).where(eq(tables.users.id, user.id));
+    revalidateApp();
+    return { image };
+  });
+}
+
 const setMemberPartySchema = z.object({
   trip_id: z.string().uuid(),
   user_id: z.string().min(1),
