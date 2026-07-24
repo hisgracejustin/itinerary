@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getRangeGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, tripColorMap, TYPE_ICONS } from '../lib/calendar'
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
@@ -58,6 +58,8 @@ export default function JourneyView({
   onReorderReminder,
   onSelectDate,
   onExtendTrip,
+  scrollRequest,
+  compact = false,
 }) {
   const today = new Date()
   const colorMap = tripColorMap(tripMetas.map((t) => t.id))
@@ -67,6 +69,34 @@ export default function JourneyView({
   const [expandedRuns, setExpandedRuns] = useState(() => new Set())
   const [editingNoteDate, setEditingNoteDate] = useState(null)
   const [noteText, setNoteText] = useState('')
+
+  // Scroll-to-day requests from the month grid (day cell / "+N more" clicks,
+  // single-trip selection). Finds the exact day section, or the nearest one
+  // when the target sits inside a collapsed run, then flashes a highlight.
+  const scrollerRef = useRef(null)
+  const [highlightDate, setHighlightDate] = useState(null)
+  useEffect(() => {
+    if (!scrollRequest?.dateStr) return
+    const container = scrollerRef.current
+    if (!container) return
+    const sections = Array.from(container.querySelectorAll('[data-journey-date]'))
+    if (sections.length === 0) return
+    const targetMs = new Date(scrollRequest.dateStr + 'T00:00:00').getTime()
+    let el = sections.find((s) => s.getAttribute('data-journey-date') === scrollRequest.dateStr)
+    if (!el) {
+      let bestDiff = Infinity
+      for (const s of sections) {
+        const diff = Math.abs(new Date(s.getAttribute('data-journey-date') + 'T00:00:00').getTime() - targetMs)
+        if (diff < bestDiff) { bestDiff = diff; el = s }
+      }
+    }
+    if (!el) return
+    const top = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 8
+    container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    setHighlightDate(el.getAttribute('data-journey-date'))
+    const t = setTimeout(() => setHighlightDate(null), 1600)
+    return () => clearTimeout(t)
+  }, [scrollRequest])
 
   if (!spanStart || !spanEnd) return null
 
@@ -141,7 +171,7 @@ export default function JourneyView({
   }
 
   return (
-    <div className="h-full overflow-y-auto px-3 sm:px-5 py-4">
+    <div ref={scrollerRef} className={`h-full overflow-y-auto ${compact ? 'px-3 py-3' : 'px-3 sm:px-5 py-4'}`}>
       <div className="max-w-3xl mx-auto space-y-1">
         {segments.map((seg) =>
           seg.type === 'run' ? (
@@ -166,6 +196,7 @@ export default function JourneyView({
             <DaySection
               key={seg.data.dateStr}
               data={seg.data}
+              highlighted={highlightDate === seg.data.dateStr}
               colorMap={colorMap}
               tripNameById={tripNameById}
               showTripName={showTripName}
@@ -190,7 +221,7 @@ export default function JourneyView({
 
 /** One content day: neutral date header, then a rail-marked row per booking. */
 function DaySection({
-  data, colorMap, tripNameById, showTripName, isLastSpanDay, today,
+  data, highlighted = false, colorMap, tripNameById, showTripName, isLastSpanDay, today,
   editingNoteDate, setEditingNoteDate, noteText, setNoteText, saveNote,
   onBookingClick, onUpsertDayNote, onSelectDate, reminderProps,
 }) {
@@ -203,11 +234,17 @@ function DaySection({
   const noStay = !isLastSpanDay && !covered
 
   return (
-    <section className="pt-3 first:pt-0">
+    <section
+      data-journey-date={dateStr}
+      className={`pt-3 first:pt-0 -mx-2 px-2 pb-1 rounded-lg transition-colors duration-500 ${
+        highlighted ? 'bg-primary-light/70' : ''
+      }`}
+    >
       {/* Neutral day header (trip identity lives on the rows, not the header). */}
       <div className="flex items-center gap-2 mb-1.5">
         <button
           onClick={() => onSelectDate?.(day)}
+          title="Open day view"
           className={`text-sm font-semibold hover:underline shrink-0 whitespace-nowrap ${isToday ? 'text-primary' : 'text-on-surface'}`}
         >
           {day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}

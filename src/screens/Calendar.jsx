@@ -59,7 +59,7 @@ function dayReminderReducer(state, action) {
 }
 
 export default function Calendar({ initialBookings, initialTodos, initialDayNotes, initialDayReminders }) {
-  const { selectedTrip, tripMeta, tripMetas, selectedTrips, spanStart, spanEnd } = useTripContext()
+  const { selectedTrip, tripMeta, tripMetas, selectedTrips, spanStart, spanEnd, trips } = useTripContext()
   const { toast } = useToast()
   // Props carry the union of every accessible trip's data; the current trip
   // selection (client state) filters it here. A toggle is one instant render.
@@ -79,13 +79,20 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   const journeyStart = spanStart ? new Date(spanStart + 'T00:00:00') : null
   const journeyEnd = spanEnd ? new Date(spanEnd + 'T00:00:00') : null
   const hasSpan = !!(journeyStart && journeyEnd)
-  // Journey view disabled 2026-07-24 — Justin prefers Month (its day-select
-  // detail panel) as the trip default, and switching defaults between views
-  // caused a visible flash on trip toggles. Flip to re-enable: the timeline,
-  // trip rails, collapsed gap runs, and gap-day "add to trip" actions all live
-  // in JourneyView and come back with this flag.
+  // Full-page Journey view stays disabled — on desktop (lg+) the Month view now
+  // embeds JourneyView permanently as its right rail, so a "Journey" switcher
+  // entry would be redundant there. Flip to re-enable the full-page timeline
+  // (e.g. for mobile, where the rail doesn't exist).
   const JOURNEY_ENABLED = false
   const VIEWS = JOURNEY_ENABLED && hasSpan ? ['journey', 'month', 'week', 'day'] : ['month', 'week', 'day']
+
+  // The journey rail spans the current selection; with nothing selected ("All
+  // Trips") it falls back to every accessible trip so the rail is never empty.
+  const railTripMetas = tripMetas.length ? tripMetas : trips
+  const railStartStr = railTripMetas.reduce((min, t) => (!min || t.start_date < min ? t.start_date : min), null)
+  const railEndStr = railTripMetas.reduce((max, t) => (!max || t.end_date > max ? t.end_date : max), null)
+  const railSpanStart = railStartStr ? new Date(railStartStr + 'T00:00:00') : null
+  const railSpanEnd = railEndStr ? new Date(railEndStr + 'T00:00:00') : null
 
   // Trip toggles are plain state changes now — this component stays mounted,
   // so the chosen view simply persists. No storage, no URL, no remounts.
@@ -258,45 +265,48 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 shrink-0 gap-3">
-        <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-semibold tracking-tight text-on-surface">{formatHeader()}</h2>
-        </div>
-        <div className="flex items-center gap-1.5">
+    // -mt at sm+ pulls the compact control row up into the shell's page padding
+    // so the grid starts right under the header (flex-1 absorbs the reclaimed
+    // space); mobile keeps its spacing untouched.
+    <div className="flex-1 min-h-0 sm:-mt-2 flex flex-col">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 shrink-0 gap-2">
+        <h2 className="text-xl font-semibold tracking-tight text-on-surface">{formatHeader()}</h2>
+        <div className="flex items-center gap-1">
           {/* Journey view spans the whole selection, so month paging doesn't apply. */}
           {view !== 'journey' && (
             <>
               <button
                 onClick={goToToday}
-                className="mat-btn-outlined text-xs px-3 py-1.5"
+                className="mat-btn-outlined text-xs px-2.5 py-1"
               >
                 Today
               </button>
               <button
                 onClick={() => navigate(-1)}
+                aria-label="Previous"
                 className="mat-icon-btn"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
               <button
                 onClick={() => navigate(1)}
+                aria-label="Next"
                 className="mat-icon-btn"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </button>
             </>
           )}
-          <div className="ml-3 flex bg-surface-container rounded-full p-1">
+          <div className="ml-2 flex bg-surface-container rounded-full p-0.5">
             {VIEWS.map((v) => (
               <button
                 key={v}
                 onClick={() => handleViewClick(v)}
-                className={`px-3.5 py-1.5 text-xs rounded-full capitalize transition-all duration-200 flex items-center gap-1 font-medium ${
+                className={`px-3 py-1 text-xs rounded-full capitalize transition-all duration-200 flex items-center gap-1 font-medium ${
                   view === v
                     ? 'bg-white text-on-surface shadow-elevation-1'
                     : 'text-on-surface-variant hover:text-on-surface hover:bg-white/50'
@@ -349,12 +359,17 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
                 todos={todos}
                 dayNotes={dayNotes}
                 tripMeta={tripMeta}
+                tripMetas={tripMetas}
                 selectedTrip={selectedTrip}
                 spanStart={journeyStart}
                 spanEnd={journeyEnd}
+                railTripMetas={railTripMetas}
+                railSpanStart={railSpanStart}
+                railSpanEnd={railSpanEnd}
                 onSelectDate={handleSelectDate}
                 onBookingClick={openEditModal}
                 onUpsertDayNote={handleUpsertDayNote}
+                onExtendTrip={handleExtendTrip}
                 {...reminderProps}
               />
             </div>
