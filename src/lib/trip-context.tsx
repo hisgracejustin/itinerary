@@ -11,6 +11,8 @@ export type TripMember = {
   role: string;
   /** Settlement unit this member belongs to, or null when solo. */
   party_id: string | null;
+  /** True if the member has ever signed in (≥1 row in the accounts table). */
+  has_account: boolean;
 };
 
 /** A settlement unit (couple/group) on a trip. */

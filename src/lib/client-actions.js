@@ -24,6 +24,7 @@ import {
   addTripMemberAction,
   removeTripMemberAction,
   setTripMemberRoleAction,
+  updateMemberProfileAction,
   createPartyAction,
   renamePartyAction,
   deletePartyAction,
@@ -56,6 +57,7 @@ export const deleteTrip = async (id) => unwrap(await deleteTripAction(id));
 export const addTripMember = async (input) => unwrap(await addTripMemberAction(input));
 export const removeTripMember = async (input) => unwrap(await removeTripMemberAction(input));
 export const setTripMemberRole = async (input) => unwrap(await setTripMemberRoleAction(input));
+export const updateMemberProfile = async (input) => unwrap(await updateMemberProfileAction(input));
 
 export const createParty = async (input) => unwrap(await createPartyAction(input));
 export const renameParty = async (input) => unwrap(await renamePartyAction(input));

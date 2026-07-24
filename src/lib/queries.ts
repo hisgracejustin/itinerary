@@ -213,6 +213,17 @@ export async function getTripsWithMembers(userId: string) {
     .where(inArray(tables.tripMembers.trip_id, tripIds))
     .orderBy(asc(tables.users.name), asc(tables.users.email));
 
+  // Which of these members have ever signed in (≥1 row in the accounts table) —
+  // so the Settings UI can phrase the email-change confirm. One batched select.
+  const memberIds = [...new Set(rows.map((r) => r.id))];
+  const accountRows = memberIds.length
+    ? await db
+        .select({ userId: tables.authAccounts.userId })
+        .from(tables.authAccounts)
+        .where(inArray(tables.authAccounts.userId, memberIds))
+    : [];
+  const withAccount = new Set(accountRows.map((a) => a.userId));
+
   const byTrip = new Map<string, typeof rows>();
   for (const r of rows) {
     const list = byTrip.get(r.trip_id) ?? [];
@@ -239,7 +250,10 @@ export async function getTripsWithMembers(userId: string) {
   }
 
   return trips.map((trip) => {
-    const members = (byTrip.get(trip.id) ?? []).map(({ trip_id: _t, ...m }) => m);
+    const members = (byTrip.get(trip.id) ?? []).map(({ trip_id: _t, ...m }) => ({
+      ...m,
+      has_account: withAccount.has(m.id),
+    }));
     return {
       ...trip,
       members,

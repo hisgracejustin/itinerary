@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   createTrip, updateTrip, deleteTrip,
-  addTripMember, removeTripMember, setTripMemberRole,
+  addTripMember, removeTripMember, setTripMemberRole, updateMemberProfile,
   createParty, renameParty, deleteParty,
 } from '@/lib/client-actions'
 import { friendlyError } from '../lib/friendlyError'
@@ -258,69 +258,19 @@ function TripCard({ trip, currentUserId, busy, run }) {
           People ({trip.members.length})
         </h5>
         <ul className="space-y-1 mb-3">
-          {trip.members.map((m) => {
-            // Guard the UI against the same rule the server enforces, so the
-            // control is visibly unavailable rather than failing on submit.
-            const lastOwner = m.role === 'owner' && ownerCount <= 1
-            return (
-              <li key={m.id} className="flex items-center gap-2.5 py-1">
-                <Avatar member={m} />
-                <span className="flex-1 min-w-0">
-                  <span className="block text-sm text-on-surface truncate">
-                    {memberLabel(m)}
-                    {m.id === currentUserId && <span className="text-on-surface-variant"> (you)</span>}
-                  </span>
-                  <span className="block text-[11px] text-on-surface-variant truncate">{m.email}</span>
-                  {m.party_id && partyById.has(m.party_id) && (
-                    <span className="inline-flex items-center gap-1 mt-0.5 max-w-full text-[10px] font-medium text-primary bg-primary-light px-1.5 py-0.5 rounded-full">
-                      <span aria-hidden>👥</span>
-                      <span className="truncate min-w-0">{partyById.get(m.party_id).name}</span>
-                    </span>
-                  )}
-                </span>
-                {isOwner ? (
-                  <select
-                    value={m.role}
-                    disabled={busy || lastOwner}
-                    title={lastOwner ? 'A trip needs at least one owner' : 'Change role'}
-                    onChange={(e) =>
-                      run(
-                        () => setTripMemberRole({ trip_id: trip.id, user_id: m.id, role: e.target.value }),
-                        `${memberLabel(m)} is now ${e.target.value}`,
-                      )
-                    }
-                    className="mat-select text-xs shrink-0 disabled:opacity-50"
-                  >
-                    {ROLES.map((r) => (
-                      <option key={r.value} value={r.value}>{r.label}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="text-[10px] uppercase tracking-wide text-on-surface-variant shrink-0">
-                    {m.role}
-                  </span>
-                )}
-                {isOwner && (
-                  <button
-                    onClick={() =>
-                      run(
-                        () => removeTripMember({ trip_id: trip.id, user_id: m.id }),
-                        `${memberLabel(m)} removed`,
-                      )
-                    }
-                    disabled={busy || lastOwner}
-                    aria-label={`Remove ${memberLabel(m)}`}
-                    title={lastOwner ? 'A trip needs at least one owner' : 'Remove from trip'}
-                    className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 disabled:hover:bg-transparent shrink-0"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
-              </li>
-            )
-          })}
+          {trip.members.map((m) => (
+            <MemberRow
+              key={m.id}
+              m={m}
+              trip={trip}
+              currentUserId={currentUserId}
+              isOwner={isOwner}
+              lastOwner={m.role === 'owner' && ownerCount <= 1}
+              partyById={partyById}
+              busy={busy}
+              run={run}
+            />
+          ))}
         </ul>
 
         {isOwner && <PartyManager trip={trip} busy={busy} run={run} />}
@@ -365,6 +315,150 @@ function TripCard({ trip, currentUserId, busy, run }) {
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * One person in the People list. Owners get a role select, a pencil to edit the
+ * member's name/email inline, and a remove button; everyone else sees the role.
+ * Changing an email that belongs to someone who has logged in unlinks their old
+ * Google login, so we confirm first.
+ */
+function MemberRow({ m, trip, currentUserId, isOwner, lastOwner, partyById, busy, run }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState({ name: m.name || '', email: m.email || '' })
+
+  const startEdit = () => {
+    setDraft({ name: m.name || '', email: m.email || '' })
+    setEditing(true)
+  }
+
+  const save = async (e) => {
+    e.preventDefault()
+    const name = draft.name.trim()
+    const email = draft.email.trim()
+    if (!name || !email) return
+    const emailChanged = email.toLowerCase() !== (m.email || '').toLowerCase()
+    if (emailChanged && m.has_account) {
+      const ok = window.confirm(
+        "Their old Google login will be unlinked — they'll need to sign in with the new address next time. Continue?",
+      )
+      if (!ok) return
+    }
+    const done = await run(
+      () => updateMemberProfile({ trip_id: trip.id, user_id: m.id, name, email }),
+      `${name} updated`,
+    )
+    if (done) setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <li className="py-1.5">
+        <form onSubmit={save} className="space-y-2">
+          <input
+            type="text"
+            value={draft.name}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            placeholder="Name"
+            aria-label="Name"
+            className="mat-input"
+          />
+          <input
+            type="email"
+            value={draft.email}
+            onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+            placeholder="Email"
+            aria-label="Email"
+            className="mat-input"
+          />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setEditing(false)} className="mat-btn-outlined text-xs">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={busy || !draft.name.trim() || !draft.email.trim()}
+              className="mat-btn-filled text-xs disabled:opacity-40"
+            >
+              Save
+            </button>
+          </div>
+        </form>
+      </li>
+    )
+  }
+
+  return (
+    <li className="flex items-center gap-2.5 py-1">
+      <Avatar member={m} />
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm text-on-surface truncate">
+          {memberLabel(m)}
+          {m.id === currentUserId && <span className="text-on-surface-variant"> (you)</span>}
+        </span>
+        <span className="block text-[11px] text-on-surface-variant truncate">{m.email}</span>
+        {m.party_id && partyById.has(m.party_id) && (
+          <span className="inline-flex items-center gap-1 mt-0.5 max-w-full text-[10px] font-medium text-primary bg-primary-light px-1.5 py-0.5 rounded-full">
+            <span aria-hidden>👥</span>
+            <span className="truncate min-w-0">{partyById.get(m.party_id).name}</span>
+          </span>
+        )}
+      </span>
+      {isOwner ? (
+        <select
+          value={m.role}
+          disabled={busy || lastOwner}
+          title={lastOwner ? 'A trip needs at least one owner' : 'Change role'}
+          onChange={(e) =>
+            run(
+              () => setTripMemberRole({ trip_id: trip.id, user_id: m.id, role: e.target.value }),
+              `${memberLabel(m)} is now ${e.target.value}`,
+            )
+          }
+          className="mat-select text-xs shrink-0 disabled:opacity-50"
+        >
+          {ROLES.map((r) => (
+            <option key={r.value} value={r.value}>{r.label}</option>
+          ))}
+        </select>
+      ) : (
+        <span className="text-[10px] uppercase tracking-wide text-on-surface-variant shrink-0">
+          {m.role}
+        </span>
+      )}
+      {isOwner && (
+        <button
+          onClick={startEdit}
+          disabled={busy}
+          aria-label={`Edit ${memberLabel(m)}`}
+          title="Edit name and email"
+          className="text-on-surface-variant hover:text-primary p-1 rounded-full hover:bg-primary-light transition-colors disabled:opacity-30 disabled:hover:bg-transparent shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        </button>
+      )}
+      {isOwner && (
+        <button
+          onClick={() =>
+            run(
+              () => removeTripMember({ trip_id: trip.id, user_id: m.id }),
+              `${memberLabel(m)} removed`,
+            )
+          }
+          disabled={busy || lastOwner}
+          aria-label={`Remove ${memberLabel(m)}`}
+          title={lastOwner ? 'A trip needs at least one owner' : 'Remove from trip'}
+          className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 disabled:hover:bg-transparent shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
+    </li>
   )
 }
 

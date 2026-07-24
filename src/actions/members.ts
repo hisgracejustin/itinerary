@@ -298,6 +298,84 @@ export async function deletePartyAction(input: unknown) {
   });
 }
 
+const updateMemberProfileSchema = z
+  .object({
+    trip_id: z.string().uuid(),
+    user_id: z.string().min(1),
+    name: z.string().min(1).optional(),
+    email: z
+      .string()
+      .email()
+      .transform((e) => e.trim().toLowerCase())
+      .optional(),
+  })
+  .refine((d) => d.name !== undefined || d.email !== undefined, {
+    message: "Provide a name or an email to change",
+  });
+
+/**
+ * Owner edits a member's display name and/or email. Changing the email unlinks
+ * their existing login identities (the `accounts` rows) so the old Google login
+ * can't reopen the account; on next sign-in Auth.js links the new address back
+ * to the same `users` row by email (allowDangerousEmailAccountLinking).
+ */
+export async function updateMemberProfileAction(input: unknown) {
+  return runAction(async (user) => {
+    const data = updateMemberProfileSchema.parse(input);
+    await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
+    await requireTripMembers(data.trip_id, [data.user_id]);
+
+    const [current] = await db
+      .select({
+        id: tables.users.id,
+        name: tables.users.name,
+        email: tables.users.email,
+      })
+      .from(tables.users)
+      .where(eq(tables.users.id, data.user_id))
+      .limit(1);
+    if (!current) throw new Error("That person isn't a member of this trip");
+
+    const updates: { name?: string; email?: string; emailVerified?: Date | null } = {};
+
+    if (data.name !== undefined) updates.name = data.name;
+
+    const emailChanged =
+      data.email !== undefined && data.email !== (current.email ?? "").toLowerCase();
+    if (emailChanged) {
+      const [clash] = await db
+        .select({ id: tables.users.id })
+        .from(tables.users)
+        .where(eq(tables.users.email, data.email!))
+        .limit(1);
+      if (clash && clash.id !== current.id) {
+        throw new Error("That email already belongs to another person");
+      }
+      updates.email = data.email;
+      updates.emailVerified = null;
+    }
+
+    if (updates.name !== undefined || updates.email !== undefined) {
+      await db.update(tables.users).set(updates).where(eq(tables.users.id, current.id));
+    }
+
+    if (emailChanged) {
+      // Drop the old login identities so the previous Google account can't
+      // reopen this row; the new address re-links on next sign-in by email.
+      await db
+        .delete(tables.authAccounts)
+        .where(eq(tables.authAccounts.userId, current.id));
+    }
+
+    revalidateApp();
+    return {
+      id: current.id,
+      name: updates.name ?? current.name,
+      email: updates.email ?? current.email,
+    };
+  });
+}
+
 const setMemberPartySchema = z.object({
   trip_id: z.string().uuid(),
   user_id: z.string().min(1),
