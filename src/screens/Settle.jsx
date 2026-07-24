@@ -247,54 +247,91 @@ export default function Settle({
         )}
 
         {/* 2b — Per-item breakdown: each split booking + what it means for you,
-            sorted most-receiving first (approx-HKD used for ORDERING only). */}
+            sorted most-receiving first. All HKD conversions route through
+            toHKD — the single point the live-FX work (todo 1) will upgrade. */}
         {splitCostRows.length > 0 && (
           <section className="mat-surface p-5">
             <SectionTitle>Split costs</SectionTitle>
-            <div className="space-y-1">
-              {[...splitCostRows]
-                .sort((a, b) => {
-                  const key = (r) => (r.net == null ? 0 : toHKD(r.net, r.b.cost_currency))
-                  return key(b) - key(a)
-                })
-                .map(({ b, net }) => {
-                  const payer = memberByUserId.get(b.paid_by)
-                  const splitters = (b.splits || []).map(
-                    (s) => memberByUserId.get(s.user_id) ?? { id: s.user_id },
-                  )
-                  return (
-                    <div
-                      key={b.id}
-                      onClick={() => openBooking(b)}
-                      className="flex items-center gap-2 py-2 border-b border-outline/20 last:border-0 cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors"
-                    >
-                      <span className="text-base shrink-0">{TYPE_ICONS[b.type] || '🗂️'}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm text-on-surface font-medium truncate">{b.title}</div>
-                        <div className="text-xs text-on-surface-variant truncate">
-                          paid {formatCurrency(effectiveOf(b), b.cost_currency)}
-                        </div>
-                      </div>
-                      <span className="shrink-0" title={`Paid by ${memberLabel(payer)}`}>
-                        <Avatar member={payer} size="xs" />
-                      </span>
-                      <span
-                        className="flex -space-x-1.5 shrink-0"
-                        title={`Split between ${splitters.map((m) => memberLabel(m)).join(', ')}`}
-                      >
-                        {splitters.slice(0, 4).map((m) => (
-                          <Avatar key={m.id} member={m} size="xs" />
-                        ))}
-                        {splitters.length > 4 && (
-                          <span className="w-5 h-5 rounded-full bg-surface-container text-[9px] flex items-center justify-center text-on-surface-variant border border-white">
-                            +{splitters.length - 4}
-                          </span>
-                        )}
-                      </span>
-                      <NetPill net={net} currency={b.cost_currency} />
-                    </div>
-                  )
-                })}
+            <div className="overflow-x-auto -mx-2 px-2">
+              <table className="w-full min-w-[540px] text-sm">
+                <thead>
+                  <tr className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">
+                    <th className="text-left font-semibold pb-2">Cost</th>
+                    <th className="text-center font-semibold pb-2 px-2">Paid by</th>
+                    <th className="text-left font-semibold pb-2 px-2">Split by</th>
+                    <th className="text-right font-semibold pb-2 px-2 whitespace-nowrap">Net result</th>
+                    <th className="text-right font-semibold pb-2 pl-2 whitespace-nowrap">Net result (HKD)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...splitCostRows]
+                    .sort((a, b) => {
+                      const key = (r) => (r.net == null ? 0 : toHKD(r.net, r.b.cost_currency))
+                      return key(b) - key(a)
+                    })
+                    .map(({ b, net }) => {
+                      const payer = memberByUserId.get(b.paid_by)
+                      const splitters = (b.splits || []).map(
+                        (s) => memberByUserId.get(s.user_id) ?? { id: s.user_id },
+                      )
+                      const eps = epsFor(b.cost_currency)
+                      const netHKD = net == null ? null : toHKD(net, b.cost_currency)
+                      return (
+                        <tr
+                          key={b.id}
+                          onClick={() => openBooking(b)}
+                          className="border-t border-outline/20 cursor-pointer hover:bg-surface-container/50 transition-colors"
+                        >
+                          <td className="py-2 pr-2">
+                            <div className="flex items-center gap-2 min-w-0 max-w-[220px]">
+                              <span className="text-base shrink-0">{TYPE_ICONS[b.type] || '🗂️'}</span>
+                              <div className="min-w-0">
+                                <div className="text-sm text-on-surface font-medium truncate">{b.title}</div>
+                                <div className="text-xs text-on-surface-variant truncate">
+                                  paid {formatCurrency(effectiveOf(b), b.cost_currency)}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-2 px-2 text-center">
+                            <span className="inline-flex" title={`Paid by ${memberLabel(payer)}`}>
+                              <Avatar member={payer} size="xs" />
+                            </span>
+                          </td>
+                          <td className="py-2 px-2">
+                            <span
+                              className="flex -space-x-1.5"
+                              title={`Split between ${splitters.map((m) => memberLabel(m)).join(', ')}`}
+                            >
+                              {splitters.slice(0, 4).map((m) => (
+                                <Avatar key={m.id} member={m} size="xs" />
+                              ))}
+                              {splitters.length > 4 && (
+                                <span className="w-5 h-5 rounded-full bg-surface-container text-[9px] flex items-center justify-center text-on-surface-variant border border-white shrink-0">
+                                  +{splitters.length - 4}
+                                </span>
+                              )}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 text-right">
+                            <NetPill net={net} currency={b.cost_currency} />
+                          </td>
+                          <td className="py-2 pl-2 text-right whitespace-nowrap">
+                            {netHKD == null || Math.abs(net) < eps ? (
+                              <span className="text-xs text-on-surface-variant">—</span>
+                            ) : (
+                              <span className={`text-xs font-medium ${netHKD > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                                {netHKD > 0 ? '+' : '−'}
+                                {b.cost_currency === 'HKD' ? '' : '~'}
+                                HK${Math.abs(netHKD).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                </tbody>
+              </table>
             </div>
           </section>
         )}
