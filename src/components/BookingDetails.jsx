@@ -1,4 +1,6 @@
 import { formatCurrency } from '../lib/currencies'
+import { itemUnitTransfers } from '../lib/split'
+import { useTripContext } from '../lib/trip-context'
 
 const TYPE_LABELS = {
   flight: '✈️ Flight',
@@ -65,8 +67,24 @@ function Row({ label, children }) {
 }
 
 export default function BookingDetails({ booking }) {
+  const { trips } = useTripContext()
   if (!booking) return null
   const details = booking.details || {}
+
+  // Net result of this booking's split, aggregated by settlement unit — "who
+  // owes the payer's unit for this item". Roster comes from the booking's trip.
+  const bookingTrip = (trips || []).find((t) => t.id === booking.trip_id)
+  const effectiveCost =
+    booking.cost_amount != null ? booking.cost_amount * (booking.cost_share ?? 1) : 0
+  const splitResult = bookingTrip
+    ? itemUnitTransfers({
+        members: bookingTrip.members || [],
+        parties: bookingTrip.parties || [],
+        amount: effectiveCost,
+        paidBy: booking.paid_by,
+        splits: booking.splits,
+      })
+    : null
   const dateOnly = booking.type === 'hotel' && details.informal
   const start = formatDate(booking.start_date, dateOnly)
   const end = formatDate(booking.end_date, dateOnly)
@@ -93,6 +111,19 @@ export default function BookingDetails({ booking }) {
             {booking.cost_share != null && booking.cost_share !== 1 && (
               <span className="text-on-surface-variant"> · your share {formatCurrency(booking.cost_amount * booking.cost_share, booking.cost_currency || 'USD')}</span>
             )}
+          </Row>
+        )}
+        {splitResult && splitResult.lines.length > 0 && (
+          <Row label="Split">
+            <span className="block space-y-0.5">
+              {splitResult.lines.map((l, i) => (
+                <span key={i} className="block">
+                  {l.name}
+                  <span className="text-on-surface-variant" aria-hidden> → </span>
+                  {splitResult.payerName} {formatCurrency(l.amount, booking.cost_currency || 'USD')}
+                </span>
+              ))}
+            </span>
           </Row>
         )}
       </div>

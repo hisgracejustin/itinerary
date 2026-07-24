@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import AssigneePicker, { Avatar, memberFirstName } from './AssigneePicker'
 import { formatCurrency } from '../lib/currencies'
+import { itemUnitTransfers } from '../lib/split'
 
 /**
  * Shared split editor, used by BookingForm (and the expense form in commit 3).
@@ -89,33 +90,10 @@ export default function SplitEditor({
   }
 
   // ---- Per-item settlement preview: who ends up owing the payer's unit for
-  // THIS item alone. Shares aggregate by settlement unit (party/solo) using the
-  // same formula as split.js; the payer's own unit is absorbed, everyone else
-  // shows as "X → payer's unit HK$…" under the card.
-  const memberById = new Map(members.map((m) => [m.id, m]))
-  const unitKeyOf = (id) => memberById.get(id)?.party_id || `solo-${id}`
-  const unitNameOf = (id) => {
-    const pid = memberById.get(id)?.party_id
-    if (pid && partyById.has(pid)) return partyById.get(pid).name
-    return memberFirstName(memberById.get(id) ?? { id })
-  }
-  const transferPreview = []
-  if (paidBy && splits.length > 0 && amount > 0 && !extrasExceed && memberById.has(paidBy)) {
-    const payerUnit = unitKeyOf(paidBy)
-    const owedByUnit = new Map()
-    for (const s of splits) {
-      if (!memberById.has(s.user_id)) continue
-      const w = Number(s.weight) || 0
-      const extra = Number(s.extra_amount) || 0
-      const share = extra + (sumW > 0 ? (remainder * w) / sumW : 0)
-      const key = unitKeyOf(s.user_id)
-      if (key === payerUnit || share <= 0) continue
-      const prev = owedByUnit.get(key)
-      owedByUnit.set(key, { name: unitNameOf(s.user_id), amt: (prev?.amt || 0) + share })
-    }
-    transferPreview.push(...owedByUnit.values())
-  }
-  const payerUnitName = paidBy && memberById.has(paidBy) ? unitNameOf(paidBy) : null
+  // THIS item alone — same math as split.js (shared helper).
+  const previewResult = itemUnitTransfers({ members, parties, amount, paidBy, splits })
+  const transferPreview = previewResult?.lines ?? []
+  const payerUnitName = previewResult?.payerName ?? null
 
   const handlePaidBy = (member) => {
     const newPaid = member?.id ?? null
@@ -281,7 +259,7 @@ export default function SplitEditor({
               <span className="font-medium text-on-surface">{t.name}</span>
               <span aria-hidden> → </span>
               <span className="font-medium text-on-surface">{payerUnitName}</span>{' '}
-              {formatCurrency(t.amt, currency)}
+              {formatCurrency(t.amount, currency)}
             </p>
           ))}
         </div>

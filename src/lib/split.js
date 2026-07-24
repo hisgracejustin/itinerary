@@ -57,6 +57,85 @@ function label(member) {
 
 const memberId = (m) => m?.id ?? m?.user_id
 
+const firstName = (member) => label(member).trim().split(/\s+/)[0]
+
+/**
+ * Per-user share map for one item's split rows — the extras formula
+ * computeBalances uses (share = extra + w/Σw × (amount − Σextras)), with the
+ * same guards. Returns a Map(user_id → share), or null when the item can't be
+ * divided (no rows, extras exceed the amount, or a positive remainder with no
+ * weights).
+ */
+export function itemShares(amount, splits) {
+  if (!Array.isArray(splits) || splits.length === 0) return null
+  const sumW = splits.reduce((s, r) => s + (Number(r.weight) || 0), 0)
+  const sumExtras = splits.reduce((s, r) => s + (Number(r.extra_amount) || 0), 0)
+  if (sumExtras > amount + 0.01) return null
+  const remainder = amount - sumExtras
+  if (remainder > 0.01 && sumW <= 0) return null
+  const shares = new Map()
+  for (const row of splits) {
+    const w = Number(row.weight) || 0
+    const extra = Number(row.extra_amount) || 0
+    const share = extra + (sumW > 0 ? (w / sumW) * remainder : 0)
+    shares.set(row.user_id, (shares.get(row.user_id) || 0) + share)
+  }
+  return shares
+}
+
+/**
+ * Group-level result of ONE item: which settlement units end up owing the
+ * payer's unit, and how much. Used for the live preview in SplitEditor and the
+ * "Split" row in the booking view modal.
+ *
+ * @returns {{ payerName: string, lines: [{ name, amount }] } | null}
+ */
+export function itemUnitTransfers({ members = [], parties = [], amount, paidBy, splits }) {
+  if (!paidBy || !(amount > 0)) return null
+  const memberById = new Map()
+  for (const m of members) {
+    const id = memberId(m)
+    if (id && !memberById.has(id)) memberById.set(id, m)
+  }
+  if (!memberById.has(paidBy)) return null
+  const shares = itemShares(amount, splits)
+  if (!shares) return null
+
+  const partyNameById = new Map(parties.map((p) => [p.id, p.name]))
+  const unitKeyOf = (id) => memberById.get(id)?.party_id || `solo-${id}`
+  const unitNameOf = (id) => {
+    const pid = memberById.get(id)?.party_id
+    if (pid && partyNameById.has(pid)) return partyNameById.get(pid)
+    return firstName(memberById.get(id))
+  }
+
+  const payerUnit = unitKeyOf(paidBy)
+  const owedByUnit = new Map()
+  for (const [userId, share] of shares) {
+    if (!memberById.has(userId)) continue
+    const key = unitKeyOf(userId)
+    if (key === payerUnit || share <= 0) continue
+    const prev = owedByUnit.get(key)
+    owedByUnit.set(key, { name: unitNameOf(userId), amount: (prev?.amount || 0) + share })
+  }
+  return { payerName: unitNameOf(paidBy), lines: [...owedByUnit.values()] }
+}
+
+/**
+ * The viewer's unit-level net for ONE item: + it is owed, − it owes, 0 even.
+ * `unitMemberIds` is the viewer plus anyone sharing their party in the item's
+ * trip. Returns null when the item isn't settleable (no payer / bad splits).
+ */
+export function itemViewerNet({ amount, paidBy, splits, unitMemberIds }) {
+  if (!paidBy) return null
+  const shares = itemShares(amount, splits)
+  if (!shares) return null
+  const ids = new Set(unitMemberIds)
+  let net = ids.has(paidBy) ? amount : 0
+  for (const [userId, share] of shares) if (ids.has(userId)) net -= share
+  return net
+}
+
 /** Normalize a cost-bearing booking into a settle item, or null if not priced. */
 function bookingItem(b) {
   if (b.cost_amount == null || !b.cost_currency) return null
@@ -138,22 +217,15 @@ export function computeBalances({
       missingPayer.push(item.ref)
       continue
     }
-    const sumW = item.splits.reduce((s, r) => s + (Number(r.weight) || 0), 0)
-    const sumExtras = item.splits.reduce((s, r) => s + (Number(r.extra_amount) || 0), 0)
-    // Extras beyond the amount would leave a negative remainder to divide — skip
-    // the item entirely rather than poison balances.
-    if (sumExtras > item.amount + 0.01) continue
-    const remainder = item.amount - sumExtras
-    // A positive remainder with no weights has nothing to divide by. (Σweights = 0
-    // with extras covering ≈ the whole amount falls through fine — remainder ≈ 0.)
-    if (remainder > 0.01 && sumW <= 0) continue
+    // Guards (extras exceeding the amount, positive remainder with no weights)
+    // live in itemShares — a null means the item is skipped rather than
+    // poisoning balances.
+    const shares = itemShares(item.amount, item.splits)
+    if (!shares) continue
 
     add(totals(paid, item.paid_by), item.currency, item.amount)
-    for (const row of item.splits) {
-      const w = Number(row.weight) || 0
-      const extra = Number(row.extra_amount) || 0
-      const share = extra + (sumW > 0 ? (w / sumW) * remainder : 0)
-      add(totals(owed, row.user_id), item.currency, share)
+    for (const [userId, share] of shares) {
+      add(totals(owed, userId), item.currency, share)
     }
   }
 

@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
-import { computeBalances, suggestTransfers } from '../lib/split'
+import { computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
 import { formatCurrency, CURRENCIES } from '../lib/currencies'
 import { TYPE_ICONS } from '../lib/calendar'
 import AssigneePicker, { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
@@ -76,6 +76,37 @@ export default function Settle({
     [members, parties, bookings, expenses, settlements],
   )
   const transfers = useMemo(() => suggestTransfers(units), [units])
+
+  // The viewer's settlement unit in a given trip: them plus anyone sharing
+  // their party there. Feeds the per-item "+/− for you" pills.
+  const viewerUnitIds = (tripId) => {
+    const rows = members.filter((m) => m.trip_id === tripId)
+    const me = rows.find((m) => m.id === currentUserId)
+    if (!me?.party_id) return [currentUserId]
+    return rows.filter((m) => m.party_id === me.party_id).map((m) => m.id)
+  }
+  const effectiveOf = (b) => (b.cost_amount || 0) * (b.cost_share != null ? b.cost_share : 1)
+  const viewerNetOfExpense = (e) =>
+    itemViewerNet({
+      amount: e.amount || 0,
+      paidBy: e.paid_by,
+      splits: e.splits || [],
+      unitMemberIds: viewerUnitIds(e.trip_id),
+    })
+
+  // Per-item breakdown: every fully split cost-bearing booking in the selection,
+  // with the viewer's unit-level net for it.
+  const splitCostRows = bookings
+    .filter((b) => b.cost_amount && b.cost_currency && (b.splits || []).length > 0 && b.paid_by)
+    .map((b) => ({
+      b,
+      net: itemViewerNet({
+        amount: effectiveOf(b),
+        paidBy: b.paid_by,
+        splits: b.splits,
+        unitMemberIds: viewerUnitIds(b.trip_id),
+      }),
+    }))
 
   // Only surface units that actually took part (paid, owed, or settled).
   const activeUnits = units
@@ -213,12 +244,38 @@ export default function Settle({
           </section>
         )}
 
+        {/* 2b — Per-item breakdown: each split booking + what it means for you */}
+        {splitCostRows.length > 0 && (
+          <section className="mat-surface p-5">
+            <SectionTitle>Split costs</SectionTitle>
+            <div className="space-y-1">
+              {splitCostRows.map(({ b, net }) => (
+                <div
+                  key={b.id}
+                  onClick={() => openBooking(b)}
+                  className="flex items-center gap-2 py-2 border-b border-outline/20 last:border-0 cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors"
+                >
+                  <span className="text-base shrink-0">{TYPE_ICONS[b.type] || '🗂️'}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm text-on-surface font-medium truncate">{b.title}</div>
+                    <div className="text-xs text-on-surface-variant truncate">
+                      {personLabel(b.paid_by)} paid {formatCurrency(effectiveOf(b), b.cost_currency)}
+                    </div>
+                  </div>
+                  <NetPill net={net} currency={b.cost_currency} />
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* 3 — Expenses */}
         <ExpensesSection
           expenses={expenses}
           personLabel={personLabel}
           trips={trips}
           selectedTrip={selectedTrip}
+          viewerNetOf={viewerNetOfExpense}
           busy={busy}
           run={run}
           toast={toast}
@@ -376,6 +433,33 @@ function EmptyLine({ children }) {
   return <p className="text-sm text-on-surface-variant/80 py-2">{children}</p>
 }
 
+/**
+ * The viewer's take on one item: green "+X" (your unit is owed), red "−X"
+ * (your unit owes), a muted "even" when it nets out, nothing when the item
+ * doesn't involve you at all or isn't settleable.
+ */
+function NetPill({ net, currency }) {
+  if (net == null) return null
+  const eps = epsFor(currency)
+  if (Math.abs(net) < eps) {
+    return (
+      <span className="text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full shrink-0">
+        even
+      </span>
+    )
+  }
+  return (
+    <span
+      className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${
+        net > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+      }`}
+      title={net > 0 ? 'your side is owed' : 'your side owes'}
+    >
+      {net > 0 ? '+' : '−'}{formatCurrency(Math.abs(net), currency)}
+    </span>
+  )
+}
+
 /** Overlapping avatars for a settlement unit (up to 3). */
 function UnitAvatars({ unit, memberByUserId }) {
   const rows = unit.memberIds.map((id) => memberByUserId.get(id) ?? { id })
@@ -489,7 +573,7 @@ function TripSelect({ trips, value, onChange }) {
   )
 }
 
-function ExpensesSection({ expenses, personLabel, trips, selectedTrip, busy, run, toast }) {
+function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNetOf, busy, run, toast }) {
   const blank = () => ({ id: null, trip_id: selectedTrip ?? '', title: '', amount: '', currency: 'HKD', date: '', paid_by: null, splits: [] })
   const [form, setForm] = useState(null) // null = closed
 
@@ -642,6 +726,7 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, busy, run
                   {e.date ? ` · ${e.date}` : ''}
                 </div>
               </div>
+              <NetPill net={viewerNetOf ? viewerNetOf(e) : null} currency={e.currency} />
               <span className="text-sm font-medium text-on-surface shrink-0">
                 {formatCurrency(Number(e.amount) || 0, e.currency)}
               </span>
