@@ -207,6 +207,7 @@ export async function getTripsWithMembers(userId: string) {
       name: tables.users.name,
       email: tables.users.email,
       image: tables.users.image,
+      password_hash: tables.users.password_hash,
     })
     .from(tables.tripMembers)
     .innerJoin(tables.users, eq(tables.users.id, tables.tripMembers.user_id))
@@ -250,9 +251,10 @@ export async function getTripsWithMembers(userId: string) {
   }
 
   return trips.map((trip) => {
-    const members = (byTrip.get(trip.id) ?? []).map(({ trip_id: _t, ...m }) => ({
+    const members = (byTrip.get(trip.id) ?? []).map(({ trip_id: _t, password_hash, ...m }) => ({
       ...m,
       has_account: withAccount.has(m.id),
+      has_pin: !!password_hash,
     }));
     return {
       ...trip,

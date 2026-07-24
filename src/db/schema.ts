@@ -38,6 +38,11 @@ export const users = pgTable("users", {
   email: text("email").unique().notNull(),
   emailVerified: timestamp("email_verified", { withTimezone: true }),
   image: text("image"),
+  // Email+PIN login for members without a Google account. Set by a trip owner,
+  // verified by the "pin" Credentials provider. `salt:hash` scrypt format.
+  password_hash: text("password_hash"),
+  failed_pin_attempts: integer("failed_pin_attempts").notNull().default(0),
+  pin_locked_until: timestamp("pin_locked_until", { withTimezone: true }),
 });
 
 export const authAccounts = pgTable(

@@ -71,6 +71,13 @@
       "when": 1784866648064,
       "tag": "0009_smooth_titanium_man",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784876955400,
+      "tag": "0010_clumsy_amphibian",
+      "breakpoints": true
     }
   ]
 }

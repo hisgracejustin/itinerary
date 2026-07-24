@@ -7,6 +7,7 @@ import { db, tables } from "@/db";
 import { runAction } from "@/lib/action-utils";
 import { requireTripAccess, requireTripMembers } from "@/lib/authz";
 import { partySchema } from "@/lib/schemas";
+import { hashPin } from "@/lib/pin";
 
 const revalidateApp = () => revalidatePath("/", "layout");
 
@@ -336,7 +337,14 @@ export async function updateMemberProfileAction(input: unknown) {
       .limit(1);
     if (!current) throw new Error("That person isn't a member of this trip");
 
-    const updates: { name?: string; email?: string; emailVerified?: Date | null } = {};
+    const updates: {
+      name?: string;
+      email?: string;
+      emailVerified?: Date | null;
+      password_hash?: null;
+      failed_pin_attempts?: number;
+      pin_locked_until?: null;
+    } = {};
 
     if (data.name !== undefined) updates.name = data.name;
 
@@ -353,6 +361,10 @@ export async function updateMemberProfileAction(input: unknown) {
       }
       updates.email = data.email;
       updates.emailVerified = null;
+      // The PIN was issued to the previous identity — clear it with the email.
+      updates.password_hash = null;
+      updates.failed_pin_attempts = 0;
+      updates.pin_locked_until = null;
     }
 
     if (updates.name !== undefined || updates.email !== undefined) {
@@ -373,6 +385,35 @@ export async function updateMemberProfileAction(input: unknown) {
       name: updates.name ?? current.name,
       email: updates.email ?? current.email,
     };
+  });
+}
+
+const setMemberPinSchema = z.object({
+  trip_id: z.string().uuid(),
+  user_id: z.string().min(1),
+  // null clears the PIN (revokes email+PIN login for this member).
+  pin: z.string().min(6).max(64).nullable(),
+});
+
+/**
+ * Owner sets/clears a member's login PIN (email + PIN sign-in for people
+ * without a Google account). Stores only the hash; also resets any lockout.
+ */
+export async function setMemberPinAction(input: unknown) {
+  return runAction(async (user) => {
+    const data = setMemberPinSchema.parse(input);
+    await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
+    await requireTripMembers(data.trip_id, [data.user_id]);
+    await db
+      .update(tables.users)
+      .set({
+        password_hash: data.pin === null ? null : hashPin(data.pin),
+        failed_pin_attempts: 0,
+        pin_locked_until: null,
+      })
+      .where(eq(tables.users.id, data.user_id));
+    revalidateApp();
+    return { user_id: data.user_id, has_pin: data.pin !== null };
   });
 }
 
