@@ -1,9 +1,9 @@
 # Split expenses & settle up — implementation plan
 
-**Status:** ready to implement. Scope confirmed with Justin (2026-07-23);
-updated 2026-07-24 for the shipped client-state multi-trip selection (see the
-"Trip selection" section of [architecture.md](architecture.md)); final UX
-decisions 4–6 confirmed with Justin 2026-07-24.
+**Status:** shipped 2026-07-24 (commits `6b2320f`, `3359f25`, `72784a5`,
+`6b23bcf`), verified end-to-end with the headless-browser scenario below.
+Scope confirmed with Justin (2026-07-23); final UX decisions 4–6 confirmed
+2026-07-24.
 
 ## Context
 
