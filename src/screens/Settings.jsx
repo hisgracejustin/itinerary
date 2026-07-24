@@ -4,10 +4,11 @@ import { useState } from 'react'
 import {
   createTrip, updateTrip, deleteTrip,
   addTripMember, removeTripMember, setTripMemberRole,
+  createParty, renameParty, deleteParty,
 } from '@/lib/client-actions'
 import { friendlyError } from '../lib/friendlyError'
 import { useToast } from '../components/Toast'
-import { Avatar, memberLabel } from '../components/AssigneePicker'
+import { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
 
 const ROLES = [
   { value: 'owner', label: 'Owner', hint: 'Full control, including people and deleting the trip' },
@@ -139,6 +140,7 @@ function TripCard({ trip, currentUserId, busy, run }) {
 
   const isOwner = trip.myRole === 'owner'
   const ownerCount = trip.members.filter((m) => m.role === 'owner').length
+  const partyById = new Map((trip.parties || []).map((p) => [p.id, p]))
 
   const saveTrip = async (e) => {
     e.preventDefault()
@@ -269,6 +271,12 @@ function TripCard({ trip, currentUserId, busy, run }) {
                     {m.id === currentUserId && <span className="text-on-surface-variant"> (you)</span>}
                   </span>
                   <span className="block text-[11px] text-on-surface-variant truncate">{m.email}</span>
+                  {m.party_id && partyById.has(m.party_id) && (
+                    <span className="inline-flex items-center gap-1 mt-0.5 max-w-full text-[10px] font-medium text-primary bg-primary-light px-1.5 py-0.5 rounded-full">
+                      <span aria-hidden>👥</span>
+                      <span className="truncate min-w-0">{partyById.get(m.party_id).name}</span>
+                    </span>
+                  )}
                 </span>
                 {isOwner ? (
                   <select
@@ -315,6 +323,8 @@ function TripCard({ trip, currentUserId, busy, run }) {
           })}
         </ul>
 
+        {isOwner && <PartyManager trip={trip} busy={busy} run={run} />}
+
         {isOwner ? (
           <form onSubmit={addPerson} className="space-y-2">
             <input
@@ -354,6 +364,158 @@ function TripCard({ trip, currentUserId, busy, run }) {
           </p>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Owner-only party grouping: treat a couple/group as one settlement unit. Pick
+ * 2+ ungrouped members → name (defaults to "A & B") → group. Existing groups can
+ * be renamed or ungrouped (which detaches its members via the FK's set-null).
+ */
+function PartyManager({ trip, busy, run }) {
+  const parties = trip.parties || []
+  const [sel, setSel] = useState([])
+  const [name, setName] = useState('')
+  const [renaming, setRenaming] = useState(null) // party_id being renamed
+  const [renameValue, setRenameValue] = useState('')
+
+  const memberById = new Map(trip.members.map((m) => [m.id, m]))
+  const ungrouped = trip.members.filter((m) => !m.party_id)
+
+  const defaultName = (ids) =>
+    ids.map((id) => memberFirstName(memberById.get(id))).filter(Boolean).join(' & ')
+
+  const toggleSel = (id) => {
+    setSel((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      // Keep the name in step with the selection unless the user has typed a
+      // custom one that no longer matches any auto value.
+      setName((cur) => (cur === '' || cur === defaultName(prev) ? defaultName(next) : cur))
+      return next
+    })
+  }
+
+  const create = async () => {
+    if (sel.length < 2) return
+    const ok = await run(
+      () => createParty({ trip_id: trip.id, name: (name.trim() || defaultName(sel)), member_ids: sel }),
+      'Group created',
+    )
+    if (ok) { setSel([]); setName('') }
+  }
+
+  const saveRename = async (party_id) => {
+    if (!renameValue.trim()) return
+    const ok = await run(
+      () => renameParty({ trip_id: trip.id, party_id, name: renameValue.trim() }),
+      'Group renamed',
+    )
+    if (ok) setRenaming(null)
+  }
+
+  return (
+    <div className="border-t border-outline/20 pt-3 mb-3">
+      <h5 className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
+        Couples &amp; groups
+      </h5>
+      <p className="text-[11px] text-on-surface-variant mb-2 leading-relaxed">
+        Group people who settle together (a couple) so they show as one unit on Settle up.
+      </p>
+
+      {/* Existing groups */}
+      {parties.length > 0 && (
+        <ul className="space-y-2 mb-3">
+          {parties.map((p) => {
+            const groupMembers = trip.members.filter((m) => m.party_id === p.id)
+            return (
+              <li key={p.id} className="rounded-xl border border-outline/30 p-2.5">
+                {renaming === p.id ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      className="mat-input flex-1"
+                      aria-label="Group name"
+                    />
+                    <button onClick={() => saveRename(p.id)} disabled={busy} className="mat-btn-filled text-xs disabled:opacity-40">Save</button>
+                    <button onClick={() => setRenaming(null)} className="mat-btn-outlined text-xs">Cancel</button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="flex -space-x-1.5 shrink-0">
+                      {groupMembers.slice(0, 3).map((m) => <Avatar key={m.id} member={m} size="xs" />)}
+                    </span>
+                    <span className="text-sm text-on-surface font-medium truncate min-w-0 flex-1">{p.name}</span>
+                    <button
+                      onClick={() => { setRenaming(p.id); setRenameValue(p.name) }}
+                      disabled={busy}
+                      className="text-[11px] text-primary font-medium hover:underline disabled:opacity-40 shrink-0"
+                    >
+                      Rename
+                    </button>
+                    <button
+                      onClick={() => run(() => deleteParty({ trip_id: trip.id, party_id: p.id }), 'Group removed')}
+                      disabled={busy}
+                      className="text-[11px] text-on-surface-variant hover:text-red-500 font-medium disabled:opacity-40 shrink-0"
+                    >
+                      Ungroup
+                    </button>
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {/* Group creator */}
+      {ungrouped.length >= 2 ? (
+        <div className="rounded-xl border border-dashed border-outline/40 p-2.5 space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            {ungrouped.map((m) => {
+              const active = sel.includes(m.id)
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => toggleSel(m.id)}
+                  className={`inline-flex items-center gap-1.5 min-w-0 max-w-[10rem] pl-1 pr-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                    active
+                      ? 'border-primary bg-primary-light text-primary'
+                      : 'border-outline/30 bg-white text-on-surface-variant hover:bg-surface-container'
+                  }`}
+                >
+                  <Avatar member={m} size="xs" />
+                  <span className="truncate min-w-0">{memberFirstName(m)}</span>
+                </button>
+              )
+            })}
+          </div>
+          {sel.length >= 2 && (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Group name"
+                className="mat-input flex-1"
+                aria-label="Group name"
+              />
+              <button onClick={create} disabled={busy} className="mat-btn-filled text-xs shrink-0 disabled:opacity-40">
+                {busy ? 'Saving…' : 'Group as couple'}
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        parties.length === 0 && (
+          <p className="text-[11px] text-on-surface-variant/70">
+            Add at least two people to this trip to group them.
+          </p>
+        )
+      )}
     </div>
   )
 }
