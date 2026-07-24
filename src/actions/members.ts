@@ -24,9 +24,7 @@ const addMemberSchema = z.object({
  * If no account exists for that email yet we create the `users` row up front:
  * Auth.js links a Google sign-in to an existing row with the same email (the
  * provider sets allowDangerousEmailAccountLinking), so the placeholder becomes
- * their real account on first login. Note they must also be on the app's
- * ALLOWED_EMAILS allowlist to sign in at all — that's deployment config, not
- * something this action can grant.
+ * their real account on first login.
  */
 export async function addTripMemberAction(input: unknown) {
   return runAction(async (user) => {
