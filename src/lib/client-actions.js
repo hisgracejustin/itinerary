@@ -27,6 +27,7 @@ import {
   updateMemberProfileAction,
   setMemberPinAction,
   setMyAvatarAction,
+  setMemberAvatarAction,
   createPartyAction,
   renamePartyAction,
   deletePartyAction,
@@ -62,6 +63,7 @@ export const setTripMemberRole = async (input) => unwrap(await setTripMemberRole
 export const updateMemberProfile = async (input) => unwrap(await updateMemberProfileAction(input));
 export const setMemberPin = async (input) => unwrap(await setMemberPinAction(input));
 export const setMyAvatar = async (input) => unwrap(await setMyAvatarAction(input));
+export const setMemberAvatar = async (input) => unwrap(await setMemberAvatarAction(input));
 
 export const createParty = async (input) => unwrap(await createPartyAction(input));
 export const renameParty = async (input) => unwrap(await renamePartyAction(input));

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   createTrip, updateTrip, deleteTrip,
-  addTripMember, removeTripMember, setTripMemberRole, updateMemberProfile, setMemberPin, setMyAvatar,
+  addTripMember, removeTripMember, setTripMemberRole, updateMemberProfile, setMemberPin, setMyAvatar, setMemberAvatar,
   createParty, renameParty, deleteParty,
 } from '@/lib/client-actions'
 import { friendlyError } from '../lib/friendlyError'
@@ -336,13 +336,21 @@ function PersonRow({ p, ownerTripId, isSelf, busy, run }) {
 
   if (mode === 'avatar') {
     const pickIcon = async (icon) => {
-      const done = await run(() => setMyAvatar({ icon }), 'Avatar updated')
+      const done = await run(
+        () =>
+          isSelf
+            ? setMyAvatar({ icon })
+            : setMemberAvatar({ trip_id: ownerTripId, user_id: p.id, icon }),
+        'Avatar updated',
+      )
       if (done) close()
     }
     return (
       <li className="py-1.5">
         <p className="text-[11px] text-on-surface-variant leading-relaxed mb-2">
-          Pick your avatar — it shows next to your name on every trip.
+          {isSelf
+            ? 'Pick your avatar — it shows next to your name on every trip.'
+            : `Pick ${memberFirstName(p)}'s avatar — it shows next to their name on every trip.`}
         </p>
         <div className="flex flex-wrap gap-2 mb-2">
           {AVATAR_ICONS.map((icon) => {
@@ -382,7 +390,7 @@ function PersonRow({ p, ownerTripId, isSelf, busy, run }) {
     )
   }
 
-  const badges = [p.has_account && 'login', p.has_pin && 'PIN'].filter(Boolean)
+  const badges = [p.has_account && 'verified', p.has_pin && 'PIN'].filter(Boolean)
 
   return (
     <li className="flex items-center gap-2.5 py-1">
@@ -399,11 +407,11 @@ function PersonRow({ p, ownerTripId, isSelf, busy, run }) {
           {badges.join(' · ')}
         </span>
       )}
-      {isSelf && (
+      {(isSelf || canManage) && (
         <button
           onClick={() => setMode('avatar')}
           disabled={busy}
-          aria-label="Change avatar"
+          aria-label={isSelf ? 'Change avatar' : `Change ${memberLabel(p)}'s avatar`}
           title="Change avatar"
           className="text-on-surface-variant hover:text-primary p-1 rounded-full hover:bg-primary-light transition-colors disabled:opacity-30 disabled:hover:bg-transparent shrink-0"
         >

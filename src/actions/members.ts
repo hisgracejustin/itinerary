@@ -441,6 +441,27 @@ export async function setMyAvatarAction(input: unknown) {
   });
 }
 
+const setMemberAvatarSchema = setMyAvatarSchema.extend({
+  trip_id: z.string().uuid(),
+  user_id: z.string().min(1),
+});
+
+/**
+ * Owner sets a member's avatar — same trust boundary as the icon regex above,
+ * gated like the other person-level edits (owner of a trip the person is on).
+ */
+export async function setMemberAvatarAction(input: unknown) {
+  return runAction(async (user) => {
+    const data = setMemberAvatarSchema.parse(input);
+    await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
+    await requireTripMembers(data.trip_id, [data.user_id]);
+    const image = data.icon === null ? null : `/icons/${data.icon}`;
+    await db.update(tables.users).set({ image }).where(eq(tables.users.id, data.user_id));
+    revalidateApp();
+    return { user_id: data.user_id, image };
+  });
+}
+
 const setMemberPartySchema = z.object({
   trip_id: z.string().uuid(),
   user_id: z.string().min(1),
