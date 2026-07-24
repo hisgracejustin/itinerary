@@ -199,3 +199,22 @@
 .animate-slide-up {
   animation: slide-up 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* Trip toggles are full document navigations (Next 16 stale-router workaround —
+   see Sidebar.jsx). Same-origin cross-document view transitions turn that hard
+   document swap into a brief cross-fade: the browser holds a snapshot of the
+   old page and fades the new one in. Pure CSS; browsers without support simply
+   ignore it. */
+@view-transition {
+  navigation: auto;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 160ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}

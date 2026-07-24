@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOutAction } from "../actions/auth";
@@ -25,7 +26,7 @@ export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp,
   // time, because anything routed through Next's history/searchParams can be
   // stale (vercel/next.js#88535, #92187). Modified clicks (new tab etc.) are
   // left to the browser with the base href.
-  const goWithView = (onNavigateCb) => (e) => {
+  const goWithView = (onNavigateCb, optimisticUpdate) => (e) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     let href = e.currentTarget.getAttribute("href");
@@ -37,13 +38,23 @@ export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp,
     } catch {
       /* storage unavailable — navigate without the view param */
     }
+    optimisticUpdate?.();
     onNavigateCb?.();
-    window.location.assign(href);
+    // One frame's delay lets the optimistic checkbox flip actually paint
+    // before the document starts swapping; imperceptible otherwise.
+    requestAnimationFrame(() => window.location.assign(href));
   };
   // Default in the body, not the signature: a `= []` default narrows the prop to
   // never[] at the .tsx call site (same reason as the Todos screen).
   const selectedTrips = selectedTripsProp ?? [];
   const selectedSet = new Set(selectedTrips);
+
+  // A toggle navigates a whole document, so the real checkbox state only
+  // arrives with the next page. Flip it optimistically at tap time — the row
+  // responds instantly and the incoming page (which agrees) just confirms it.
+  // Never cleared: this component dies with the document.
+  const [optimistic, setOptimistic] = useState({});
+  const isChecked = (tripId) => optimistic[tripId] ?? selectedSet.has(tripId);
 
   // The other nav links carry the whole current selection along.
   const navHref = (path) => hrefWithTrips(path, selectedTrips);
@@ -145,7 +156,9 @@ export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp,
             <span>{selectedTrips.length} trip{selectedTrips.length === 1 ? "" : "s"} selected</span>
             <a
               href={hrefWithTrips(pathname, [])}
-              onClick={goWithView(onNavigate)}
+              onClick={goWithView(onNavigate, () =>
+                setOptimistic(Object.fromEntries(trips.map((t) => [t.id, false]))),
+              )}
               className="text-primary hover:text-primary/80 font-medium"
             >
               Clear
@@ -156,19 +169,23 @@ export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp,
           <li>
             <a
               href={hrefWithTrips(pathname, [])}
-              onClick={goWithView(onNavigate)}
+              onClick={goWithView(onNavigate, () =>
+                setOptimistic(Object.fromEntries(trips.map((t) => [t.id, false]))),
+              )}
               className={`block w-full text-left px-3 py-2 ${tripRowClass(selectedTrips.length === 0)}`}
             >
               All Trips
             </a>
           </li>
           {trips.map((trip) => {
-            const active = selectedSet.has(trip.id);
+            const active = isChecked(trip.id);
             return (
               <li key={trip.id}>
                 <a
                   href={toggledHref(trip.id)}
-                  onClick={goWithView(onNavigate)}
+                  onClick={goWithView(onNavigate, () =>
+                    setOptimistic((o) => ({ ...o, [trip.id]: !isChecked(trip.id) })),
+                  )}
                   aria-label={`${active ? "Remove" : "Add"} ${trip.name}`}
                   className={tripRowClass(active)}
                 >
