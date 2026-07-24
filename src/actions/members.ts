@@ -1,11 +1,12 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db, tables } from "@/db";
 import { runAction } from "@/lib/action-utils";
-import { requireTripAccess } from "@/lib/authz";
+import { requireTripAccess, requireTripMembers } from "@/lib/authz";
+import { partySchema } from "@/lib/schemas";
 
 const revalidateApp = () => revalidatePath("/", "layout");
 
@@ -174,7 +175,157 @@ export async function removeTripMemberAction(input: unknown) {
           eq(tables.todos.assignee_id, data.user_id),
         ),
       );
+
+    // Scrub their cost footprint on this trip: drop their split rows and null any
+    // payer pointers at them. Settlement history stays. Acceptable data loss —
+    // the balances no longer involve someone who left the trip.
+    const tripBookingIds = db
+      .select({ id: tables.bookings.id })
+      .from(tables.bookings)
+      .where(eq(tables.bookings.trip_id, data.trip_id));
+    const tripExpenseIds = db
+      .select({ id: tables.expenses.id })
+      .from(tables.expenses)
+      .where(eq(tables.expenses.trip_id, data.trip_id));
+    await db
+      .delete(tables.bookingSplits)
+      .where(
+        and(
+          eq(tables.bookingSplits.user_id, data.user_id),
+          inArray(tables.bookingSplits.booking_id, tripBookingIds),
+        ),
+      );
+    await db
+      .delete(tables.expenseSplits)
+      .where(
+        and(
+          eq(tables.expenseSplits.user_id, data.user_id),
+          inArray(tables.expenseSplits.expense_id, tripExpenseIds),
+        ),
+      );
+    await db
+      .update(tables.bookings)
+      .set({ paid_by: null })
+      .where(
+        and(eq(tables.bookings.trip_id, data.trip_id), eq(tables.bookings.paid_by, data.user_id)),
+      );
+    await db
+      .update(tables.expenses)
+      .set({ paid_by: null })
+      .where(
+        and(eq(tables.expenses.trip_id, data.trip_id), eq(tables.expenses.paid_by, data.user_id)),
+      );
     revalidateApp();
     return { user_id: data.user_id };
+  });
+}
+
+const OWNER_ONLY_ARR = [...OWNER_ONLY];
+
+/** Confirm a party belongs to the given trip (owner already verified). */
+async function partyInTrip(tripId: string, partyId: string) {
+  const [row] = await db
+    .select({ id: tables.tripParties.id })
+    .from(tables.tripParties)
+    .where(and(eq(tables.tripParties.id, partyId), eq(tables.tripParties.trip_id, tripId)))
+    .limit(1);
+  if (!row) throw new Error("That party isn't on this trip");
+}
+
+/**
+ * Create a settlement unit (couple/group) and assign it to `member_ids` in one
+ * shot. A member belongs to at most one party, so this overwrites any prior
+ * assignment for those members. Owner-only.
+ */
+export async function createPartyAction(input: unknown) {
+  return runAction(async (user) => {
+    const data = partySchema.parse(input);
+    await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
+    await requireTripMembers(data.trip_id, data.member_ids);
+
+    const [party] = await db
+      .insert(tables.tripParties)
+      .values({ trip_id: data.trip_id, name: data.name })
+      .returning();
+    if (data.member_ids.length > 0) {
+      await db
+        .update(tables.tripMembers)
+        .set({ party_id: party.id })
+        .where(
+          and(
+            eq(tables.tripMembers.trip_id, data.trip_id),
+            inArray(tables.tripMembers.user_id, data.member_ids),
+          ),
+        );
+    }
+    revalidateApp();
+    return party;
+  });
+}
+
+const renamePartySchema = z.object({
+  trip_id: z.string().uuid(),
+  party_id: z.string().uuid(),
+  name: z.string().min(1),
+});
+
+export async function renamePartyAction(input: unknown) {
+  return runAction(async (user) => {
+    const data = renamePartySchema.parse(input);
+    await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
+    await partyInTrip(data.trip_id, data.party_id);
+    await db
+      .update(tables.tripParties)
+      .set({ name: data.name })
+      .where(eq(tables.tripParties.id, data.party_id));
+    revalidateApp();
+    return { party_id: data.party_id, name: data.name };
+  });
+}
+
+const deletePartySchema = z.object({
+  trip_id: z.string().uuid(),
+  party_id: z.string().uuid(),
+});
+
+/** Delete a party; its members detach automatically via the FK's set-null. */
+export async function deletePartyAction(input: unknown) {
+  return runAction(async (user) => {
+    const data = deletePartySchema.parse(input);
+    await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
+    await partyInTrip(data.trip_id, data.party_id);
+    await db.delete(tables.tripParties).where(eq(tables.tripParties.id, data.party_id));
+    revalidateApp();
+    return { party_id: data.party_id };
+  });
+}
+
+const setMemberPartySchema = z.object({
+  trip_id: z.string().uuid(),
+  user_id: z.string().min(1),
+  party_id: z.string().uuid().nullable(),
+});
+
+/**
+ * Assign one member to a party (or `null` to remove them from theirs). A member
+ * belongs to at most one party, so this overwrites. Owner-only.
+ */
+export async function setMemberPartyAction(input: unknown) {
+  return runAction(async (user) => {
+    const data = setMemberPartySchema.parse(input);
+    await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
+    await requireTripMembers(data.trip_id, [data.user_id]);
+    if (data.party_id) await partyInTrip(data.trip_id, data.party_id);
+    await db
+      .update(tables.tripMembers)
+      .set({ party_id: data.party_id })
+      .where(
+        and(
+          eq(tables.tripMembers.trip_id, data.trip_id),
+          eq(tables.tripMembers.user_id, data.user_id),
+        ),
+      );
+    revalidateApp();
+    return { user_id: data.user_id, party_id: data.party_id };
   });
 }

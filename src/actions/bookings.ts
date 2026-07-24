@@ -5,7 +5,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db, tables } from "@/db";
 import { runAction } from "@/lib/action-utils";
-import { requireTripAccess, WRITE_ROLES } from "@/lib/authz";
+import { requireTripAccess, requireTripMembers, WRITE_ROLES } from "@/lib/authz";
 import {
   bookingInsertSchema,
   bookingUpdateSchema,
@@ -18,14 +18,37 @@ import {
 // from fresh server props.
 const revalidateApp = () => revalidatePath("/", "layout");
 
+/**
+ * Replace-all split rows for a booking. `splits === undefined` leaves existing
+ * rows untouched; `splits: []` un-splits; a non-empty set replaces wholesale.
+ */
+async function replaceBookingSplits(
+  bookingId: string,
+  splits: { user_id: string; weight: number }[] | undefined,
+) {
+  if (splits === undefined) return;
+  await db.delete(tables.bookingSplits).where(eq(tables.bookingSplits.booking_id, bookingId));
+  if (splits.length > 0) {
+    await db.insert(tables.bookingSplits).values(
+      splits.map((s) => ({ booking_id: bookingId, user_id: s.user_id, weight: s.weight })),
+    );
+  }
+}
+
 export async function createBookingAction(input: unknown) {
   return runAction(async (user) => {
     const data = bookingInsertSchema.parse(input);
     await requireTripAccess(user.id, data.trip_id, WRITE_ROLES);
+    // The payer and every split participant must belong to the booking's trip.
+    await requireTripMembers(data.trip_id, [
+      data.paid_by,
+      ...(data.splits ?? []).map((s) => s.user_id),
+    ]);
+    const id = data.id || crypto.randomUUID();
     const [row] = await db
       .insert(tables.bookings)
       .values({
-        id: data.id || crypto.randomUUID(),
+        id,
         trip_id: data.trip_id,
         type: data.type,
         title: data.title,
@@ -37,11 +60,13 @@ export async function createBookingAction(input: unknown) {
         cost_amount: data.cost_amount ?? null,
         cost_currency: data.cost_currency ?? null,
         cost_share: data.cost_share ?? null,
+        paid_by: data.paid_by ?? null,
         source: data.source ?? "manual",
         source_file: data.source_file ?? null,
         raw_text: data.raw_text ?? null,
       })
       .returning();
+    await replaceBookingSplits(id, data.splits);
     revalidateApp();
     return row;
   });
@@ -49,7 +74,9 @@ export async function createBookingAction(input: unknown) {
 
 export async function updateBookingAction(id: string, input: unknown) {
   return runAction(async (user) => {
-    const updates = bookingUpdateSchema.parse(input);
+    const parsed = bookingUpdateSchema.parse(input);
+    // `splits` isn't a bookings column — pull it out of the DB update set.
+    const { splits, ...updates } = parsed;
     const [existing] = await db
       .select({ trip_id: tables.bookings.trip_id })
       .from(tables.bookings)
@@ -61,11 +88,24 @@ export async function updateBookingAction(id: string, input: unknown) {
     if (updates.trip_id && updates.trip_id !== existing.trip_id) {
       await requireTripAccess(user.id, updates.trip_id, WRITE_ROLES);
     }
-    const [row] = await db
-      .update(tables.bookings)
-      .set(updates)
-      .where(eq(tables.bookings.id, id))
-      .returning();
+    // Validate payer + split participants against the booking's (possibly new)
+    // trip — moving a booking must not carry over members who don't belong.
+    const targetTripId = updates.trip_id ?? existing.trip_id;
+    await requireTripMembers(targetTripId, [
+      updates.paid_by,
+      ...(splits ?? []).map((s) => s.user_id),
+    ]);
+    let row;
+    if (Object.keys(updates).length > 0) {
+      [row] = await db
+        .update(tables.bookings)
+        .set(updates)
+        .where(eq(tables.bookings.id, id))
+        .returning();
+    } else {
+      [row] = await db.select().from(tables.bookings).where(eq(tables.bookings.id, id)).limit(1);
+    }
+    await replaceBookingSplits(id, splits);
     revalidateApp();
     return row;
   });

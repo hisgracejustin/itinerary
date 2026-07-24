@@ -1,0 +1,284 @@
+/**
+ * Settlement math — pure functions, no DB access, no React. Style mirrors
+ * src/lib/bookingStats.js.
+ *
+ * Everything here is PER-CURRENCY EXACT. `toHKD` (the approximate static FX
+ * table in ./currencies) MUST NOT appear in this file: it exists only for cost
+ * *exploration* on the Costs page (totals/sorting/bars, always rendered with a
+ * `~` prefix) and must never determine what people actually owe each other.
+ *
+ * Semantics:
+ *  - Splittable amount of a booking = `cost_amount × cost_share` — the same
+ *    "effective cost" the Costs screen and bookingStats.spendStat use.
+ *    `cost_share` keeps its meaning ("the trip's portion of an externally shared
+ *    cost"); the per-person split divides what's left. An expense's splittable
+ *    amount is simply `amount`.
+ *  - A person's share of an item = `weight / Σweights` over that item's split
+ *    rows. Equal split = everyone at weight 1. A couple included "as a couple" =
+ *    both members present at weight 1 each (they consume 2 of N shares). Parties
+ *    never appear in split rows — they only aggregate at settlement/display time.
+ *  - No split rows ⇒ the item is UNALLOCATED: excluded from balances and
+ *    surfaced under "Needs attention". We never silently default to
+ *    everyone-equal.
+ *  - Splits WITHOUT a payer are also excluded (they'd break the zero-sum
+ *    invariant) and surfaced as "needs a payer" (`missingPayer`).
+ *  - The payer needn't be in the split (paying on behalf of others is fine).
+ *  - With `cost_share < 1` the payer is assumed to have fronted only the trip's
+ *    effective portion; the external remainder is out of scope.
+ */
+
+// Same zero-decimal set formatCurrency special-cases. ε is the settle threshold:
+// 1 whole unit for zero-decimal currencies, 1 cent otherwise.
+const ZERO_DECIMAL = ['JPY', 'KRW', 'TWD']
+const epsilonFor = (currency) => (ZERO_DECIMAL.includes(currency) ? 1 : 0.01)
+
+/** Display label for a member row (falls back to the email local-part). */
+function label(member) {
+  if (!member) return 'Someone'
+  return member.name || (member.email ? member.email.split('@')[0] : null) || 'Someone'
+}
+
+const memberId = (m) => m?.id ?? m?.user_id
+
+/** Normalize a cost-bearing booking into a settle item, or null if not priced. */
+function bookingItem(b) {
+  if (b.cost_amount == null || !b.cost_currency) return null
+  const share = b.cost_share != null ? b.cost_share : 1
+  return {
+    kind: 'booking',
+    ref: b,
+    amount: b.cost_amount * share,
+    currency: b.cost_currency,
+    paid_by: b.paid_by ?? null,
+    splits: Array.isArray(b.splits) ? b.splits : [],
+  }
+}
+
+/** Normalize an expense into a settle item. Splittable amount is just `amount`. */
+function expenseItem(e) {
+  return {
+    kind: 'expense',
+    ref: e,
+    amount: e.amount ?? 0,
+    currency: e.currency,
+    paid_by: e.paid_by ?? null,
+    splits: Array.isArray(e.splits) ? e.splits : [],
+  }
+}
+
+/** { [currency]: amount } accumulator helper. */
+function add(map, currency, amount) {
+  if (!currency || !amount) return
+  map[currency] = (map[currency] || 0) + amount
+}
+
+/**
+ * Per-unit balances across the given items, all per-currency exact.
+ *
+ * @param {object} data
+ * @param {Array}  data.members     rows carrying an id (or user_id) + party_id
+ * @param {Array}  data.parties     [{ id, name }] — display names for party units
+ * @param {Array}  data.bookings    cost-bearing bookings, each with `splits`
+ * @param {Array}  data.expenses    ad-hoc expenses, each with `splits`
+ * @param {Array}  data.settlements recorded pay-backs
+ * @returns {{
+ *   units: Array<{ key: string, name: string, memberIds: string[],
+ *                  paid: object, owed: object, net: object }>,
+ *   unallocated: Array,   // cost-bearing items with no splits
+ *   missingPayer: Array,  // items with splits but no payer
+ * }}
+ */
+export function computeBalances({
+  members = [],
+  parties = [],
+  bookings = [],
+  expenses = [],
+  settlements = [],
+} = {}) {
+  // Per-user running totals, keyed by currency.
+  const paid = new Map() // userId → { [currency]: amount }
+  const owed = new Map()
+  const totals = (map, userId) => {
+    let t = map.get(userId)
+    if (!t) map.set(userId, (t = {}))
+    return t
+  }
+
+  const unallocated = []
+  const missingPayer = []
+
+  const items = [
+    ...bookings.map(bookingItem).filter(Boolean),
+    ...expenses.map(expenseItem),
+  ]
+
+  for (const item of items) {
+    if (item.splits.length === 0) {
+      unallocated.push(item.ref)
+      continue
+    }
+    if (!item.paid_by) {
+      missingPayer.push(item.ref)
+      continue
+    }
+    const sumW = item.splits.reduce((s, r) => s + (Number(r.weight) || 0), 0)
+    if (sumW <= 0) continue // guard: nothing to divide by
+
+    add(totals(paid, item.paid_by), item.currency, item.amount)
+    for (const row of item.splits) {
+      const w = Number(row.weight) || 0
+      if (w <= 0) continue
+      add(totals(owed, row.user_id), item.currency, item.amount * (w / sumW))
+    }
+  }
+
+  // ---- Aggregate users into units -----------------------------------------
+  // Members sharing a party form one unit; everyone else is solo. Units are
+  // keyed by the sorted member-id SET (not party_id) so the same couple across
+  // two trips — two party rows — merges into one unit. Union-find over party
+  // membership yields exactly that, and keeps every user in exactly one unit.
+  const memberByUserId = new Map()
+  for (const m of members) {
+    const id = memberId(m)
+    if (id && !memberByUserId.has(id)) memberByUserId.set(id, m)
+  }
+  const partyNameById = new Map(parties.map((p) => [p.id, p.name]))
+
+  // The universe of users: members + anyone touched by an item or settlement.
+  const universe = new Set(memberByUserId.keys())
+  for (const id of paid.keys()) universe.add(id)
+  for (const id of owed.keys()) universe.add(id)
+  for (const s of settlements) {
+    if (s.from_user) universe.add(s.from_user)
+    if (s.to_user) universe.add(s.to_user)
+  }
+
+  const parent = new Map()
+  const find = (x) => {
+    if (!parent.has(x)) parent.set(x, x)
+    let root = x
+    while (parent.get(root) !== root) root = parent.get(root)
+    while (parent.get(x) !== root) {
+      const next = parent.get(x)
+      parent.set(x, root)
+      x = next
+    }
+    return root
+  }
+  const union = (a, b) => {
+    const ra = find(a)
+    const rb = find(b)
+    if (ra !== rb) parent.set(ra, rb)
+  }
+
+  for (const id of universe) find(id) // seed
+
+  // Union members that share a party_id (party_id is globally unique per trip,
+  // so grouping by it alone is correct).
+  const byParty = new Map()
+  for (const m of members) {
+    const id = memberId(m)
+    if (!id || !m.party_id) continue
+    if (!byParty.has(m.party_id)) byParty.set(m.party_id, [])
+    byParty.get(m.party_id).push(id)
+  }
+  for (const [, ids] of byParty) {
+    for (let i = 1; i < ids.length; i++) union(ids[0], ids[i])
+  }
+
+  // Collect components.
+  const components = new Map() // root → Set(userIds)
+  for (const id of universe) {
+    const root = find(id)
+    if (!components.has(root)) components.set(root, new Set())
+    components.get(root).add(id)
+  }
+
+  const units = []
+  const unitByUserId = new Map()
+  for (const [, idSet] of components) {
+    const memberIds = [...idSet].sort()
+    const key = memberIds.join('+')
+    const unitPaid = {}
+    const unitOwed = {}
+    const unitNet = {}
+    for (const id of memberIds) {
+      const p = paid.get(id) || {}
+      const o = owed.get(id) || {}
+      for (const [cur, amt] of Object.entries(p)) {
+        add(unitPaid, cur, amt)
+        add(unitNet, cur, amt)
+      }
+      for (const [cur, amt] of Object.entries(o)) {
+        add(unitOwed, cur, amt)
+        add(unitNet, cur, -amt)
+      }
+    }
+    // Name: a party name for grouped units (display-only), else the member label.
+    let name
+    if (memberIds.length > 1) {
+      const withParty = memberIds
+        .map((id) => memberByUserId.get(id))
+        .find((m) => m && m.party_id && partyNameById.has(m.party_id))
+      name = withParty ? partyNameById.get(withParty.party_id) : memberIds.map((id) => label(memberByUserId.get(id))).join(' & ')
+    } else {
+      name = label(memberByUserId.get(memberIds[0]))
+    }
+    const unit = { key, name, memberIds, paid: unitPaid, owed: unitOwed, net: unitNet }
+    units.push(unit)
+    for (const id of memberIds) unitByUserId.set(id, unit)
+  }
+
+  // ---- Apply settlements, exactly in their recorded currency ---------------
+  // from→to of X CUR ⇒ net[fromUnit][CUR] += X, net[toUnit][CUR] −= X. A debtor
+  // (net < 0) who pays moves toward 0 from below; the creditor moves toward 0.
+  for (const s of settlements) {
+    const fromUnit = unitByUserId.get(s.from_user)
+    const toUnit = unitByUserId.get(s.to_user)
+    const amt = Number(s.amount) || 0
+    if (!s.currency || !amt) continue
+    if (fromUnit) add(fromUnit.net, s.currency, amt)
+    if (toUnit) add(toUnit.net, s.currency, -amt)
+  }
+
+  return { units, unallocated, missingPayer }
+}
+
+/**
+ * Greedy min-cash-flow, run INDEPENDENTLY per currency: repeatedly match the
+ * largest debtor with the largest creditor for `min(|debt|, credit)` until every
+ * `|net| < ε`. A pair who shared costs in two currencies gets two suggested
+ * transfers — that is correct, since cross-currency netting would require FX.
+ *
+ * @param {Array} units units from computeBalances
+ * @returns {Array<{ fromUnit: object, toUnit: object, amount: number, currency: string }>}
+ */
+export function suggestTransfers(units = []) {
+  const currencies = new Set()
+  for (const u of units) for (const c of Object.keys(u.net || {})) currencies.add(c)
+
+  const transfers = []
+  for (const currency of currencies) {
+    const eps = epsilonFor(currency)
+    const bal = units
+      .map((u) => ({ unit: u, amt: (u.net && u.net[currency]) || 0 }))
+      .filter((b) => Math.abs(b.amt) >= eps)
+
+    // Repeatedly settle the biggest creditor against the biggest debtor.
+    while (true) {
+      let cred = null
+      let debt = null
+      for (const b of bal) {
+        if (b.amt > 0 && (!cred || b.amt > cred.amt)) cred = b
+        if (b.amt < 0 && (!debt || b.amt < debt.amt)) debt = b
+      }
+      if (!cred || !debt) break
+      const x = Math.min(cred.amt, -debt.amt)
+      if (x < eps) break
+      transfers.push({ fromUnit: debt.unit, toUnit: cred.unit, amount: x, currency })
+      cred.amt -= x
+      debt.amt += x
+    }
+  }
+  return transfers
+}

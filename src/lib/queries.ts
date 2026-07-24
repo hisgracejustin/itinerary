@@ -1,4 +1,4 @@
-import { and, asc, eq, getTableColumns, inArray } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, inArray, isNotNull } from "drizzle-orm";
 import { db, tables } from "@/db";
 
 /**
@@ -15,6 +15,28 @@ import { db, tables } from "@/db";
 const bookingCols = getTableColumns(tables.bookings);
 const todoCols = getTableColumns(tables.todos);
 const dayNoteCols = getTableColumns(tables.dayNotes);
+const expenseCols = getTableColumns(tables.expenses);
+const settlementCols = getTableColumns(tables.settlements);
+
+/** Load booking_splits for a set of booking ids, grouped `booking_id → rows[]`. */
+async function bookingSplitsByBooking(bookingIds: string[]) {
+  const byBooking = new Map<string, { user_id: string; weight: number }[]>();
+  if (bookingIds.length === 0) return byBooking;
+  const rows = await db
+    .select({
+      booking_id: tables.bookingSplits.booking_id,
+      user_id: tables.bookingSplits.user_id,
+      weight: tables.bookingSplits.weight,
+    })
+    .from(tables.bookingSplits)
+    .where(inArray(tables.bookingSplits.booking_id, bookingIds));
+  for (const r of rows) {
+    const list = byBooking.get(r.booking_id) ?? [];
+    list.push({ user_id: r.user_id, weight: r.weight });
+    byBooking.set(r.booking_id, list);
+  }
+  return byBooking;
+}
 
 /**
  * Normalize the trip filter accepted across the read queries. `null`/`undefined`
@@ -60,8 +82,12 @@ export async function getTripForUser(userId: string, tripId: string) {
   return trip ?? null;
 }
 
-/** Bookings for the selected trip(s), or across every accessible trip when none given. */
-export function getBookingsForUser(userId: string, tripId?: TripFilter) {
+/**
+ * Bookings for the selected trip(s), or across every accessible trip when none
+ * given. Each row carries its `splits` ([{user_id, weight}]) so the Costs page
+ * and settle math can divide the cost; `paid_by` rides on the row already.
+ */
+export async function getBookingsForUser(userId: string, tripId?: TripFilter) {
   const base = db
     .select(bookingCols)
     .from(tables.bookings)
@@ -73,12 +99,11 @@ export function getBookingsForUser(userId: string, tripId?: TripFilter) {
       ),
     );
   const ids = toTripIds(tripId);
-  if (ids) {
-    return base
-      .where(inArray(tables.bookings.trip_id, ids))
-      .orderBy(asc(tables.bookings.start_date));
-  }
-  return base.orderBy(asc(tables.bookings.start_date));
+  const rows = ids
+    ? await base.where(inArray(tables.bookings.trip_id, ids)).orderBy(asc(tables.bookings.start_date))
+    : await base.orderBy(asc(tables.bookings.start_date));
+  const byBooking = await bookingSplitsByBooking(rows.map((b) => b.id));
+  return rows.map((b) => ({ ...b, splits: byBooking.get(b.id) ?? [] }));
 }
 
 // Each todo carries its assignee's display fields (flattened, snake_case to
@@ -126,10 +151,13 @@ export async function getTripsWithMembers(userId: string) {
   const trips = await getTripsForUser(userId);
   if (trips.length === 0) return [];
 
+  const tripIds = trips.map((t) => t.id);
+
   const rows = await db
     .select({
       trip_id: tables.tripMembers.trip_id,
       role: tables.tripMembers.role,
+      party_id: tables.tripMembers.party_id,
       id: tables.users.id,
       name: tables.users.name,
       email: tables.users.email,
@@ -137,12 +165,7 @@ export async function getTripsWithMembers(userId: string) {
     })
     .from(tables.tripMembers)
     .innerJoin(tables.users, eq(tables.users.id, tables.tripMembers.user_id))
-    .where(
-      inArray(
-        tables.tripMembers.trip_id,
-        trips.map((t) => t.id),
-      ),
-    )
+    .where(inArray(tables.tripMembers.trip_id, tripIds))
     .orderBy(asc(tables.users.name), asc(tables.users.email));
 
   const byTrip = new Map<string, typeof rows>();
@@ -152,11 +175,30 @@ export async function getTripsWithMembers(userId: string) {
     byTrip.set(r.trip_id, list);
   }
 
+  // Each trip's settlement units (couples/groups) — display names for the roster.
+  const partyRows = await db
+    .select({
+      id: tables.tripParties.id,
+      name: tables.tripParties.name,
+      trip_id: tables.tripParties.trip_id,
+    })
+    .from(tables.tripParties)
+    .where(inArray(tables.tripParties.trip_id, tripIds))
+    .orderBy(asc(tables.tripParties.created_at));
+
+  const partiesByTrip = new Map<string, { id: string; name: string }[]>();
+  for (const p of partyRows) {
+    const list = partiesByTrip.get(p.trip_id) ?? [];
+    list.push({ id: p.id, name: p.name });
+    partiesByTrip.set(p.trip_id, list);
+  }
+
   return trips.map((trip) => {
     const members = (byTrip.get(trip.id) ?? []).map(({ trip_id: _t, ...m }) => m);
     return {
       ...trip,
       members,
+      parties: partiesByTrip.get(trip.id) ?? [],
       myRole: members.find((m) => m.id === userId)?.role ?? null,
     };
   });
@@ -262,4 +304,108 @@ export function getDayRemindersForUser(userId: string, tripId?: TripFilter) {
     return base.where(inArray(tables.dayReminders.trip_id, ids)).orderBy(...order);
   }
   return base.orderBy(...order);
+}
+
+/**
+ * Everything the Settle page needs, for EVERY accessible trip. Like all pages,
+ * Settle fetches the union and the screen filters by the client-side selection,
+ * so multi-trip settling works from day one. Rows carry `trip_id`; members carry
+ * `party_id`; only cost-bearing bookings are included, each with `splits`
+ * attached; expenses carry their `splits` too. The membership INNER JOINs on the
+ * cost data are the authorization (a non-member sees nothing).
+ */
+export async function getSettleData(userId: string) {
+  const trips = await getTripsForUser(userId);
+  const tripIds = trips.map((t) => t.id);
+  if (tripIds.length === 0) {
+    return { members: [], parties: [], bookings: [], expenses: [], settlements: [] };
+  }
+
+  const members = await db
+    .select({
+      trip_id: tables.tripMembers.trip_id,
+      party_id: tables.tripMembers.party_id,
+      role: tables.tripMembers.role,
+      id: tables.users.id,
+      name: tables.users.name,
+      email: tables.users.email,
+      image: tables.users.image,
+    })
+    .from(tables.tripMembers)
+    .innerJoin(tables.users, eq(tables.users.id, tables.tripMembers.user_id))
+    .where(inArray(tables.tripMembers.trip_id, tripIds))
+    .orderBy(asc(tables.users.name), asc(tables.users.email));
+
+  const parties = await db
+    .select({
+      id: tables.tripParties.id,
+      name: tables.tripParties.name,
+      trip_id: tables.tripParties.trip_id,
+    })
+    .from(tables.tripParties)
+    .where(inArray(tables.tripParties.trip_id, tripIds));
+
+  // Cost-bearing bookings only; the membership join authorizes them.
+  const bookingRows = await db
+    .select(bookingCols)
+    .from(tables.bookings)
+    .innerJoin(
+      tables.tripMembers,
+      and(
+        eq(tables.tripMembers.trip_id, tables.bookings.trip_id),
+        eq(tables.tripMembers.user_id, userId),
+      ),
+    )
+    .where(and(isNotNull(tables.bookings.cost_amount), isNotNull(tables.bookings.cost_currency)))
+    .orderBy(asc(tables.bookings.start_date));
+  const bookingSplits = await bookingSplitsByBooking(bookingRows.map((b) => b.id));
+  const bookings = bookingRows.map((b) => ({ ...b, splits: bookingSplits.get(b.id) ?? [] }));
+
+  const expenseRows = await db
+    .select(expenseCols)
+    .from(tables.expenses)
+    .innerJoin(
+      tables.tripMembers,
+      and(
+        eq(tables.tripMembers.trip_id, tables.expenses.trip_id),
+        eq(tables.tripMembers.user_id, userId),
+      ),
+    )
+    .orderBy(asc(tables.expenses.created_at));
+  const expenseSplitRows = expenseRows.length
+    ? await db
+        .select({
+          expense_id: tables.expenseSplits.expense_id,
+          user_id: tables.expenseSplits.user_id,
+          weight: tables.expenseSplits.weight,
+        })
+        .from(tables.expenseSplits)
+        .where(
+          inArray(
+            tables.expenseSplits.expense_id,
+            expenseRows.map((e) => e.id),
+          ),
+        )
+    : [];
+  const splitsByExpense = new Map<string, { user_id: string; weight: number }[]>();
+  for (const r of expenseSplitRows) {
+    const list = splitsByExpense.get(r.expense_id) ?? [];
+    list.push({ user_id: r.user_id, weight: r.weight });
+    splitsByExpense.set(r.expense_id, list);
+  }
+  const expenses = expenseRows.map((e) => ({ ...e, splits: splitsByExpense.get(e.id) ?? [] }));
+
+  const settlements = await db
+    .select(settlementCols)
+    .from(tables.settlements)
+    .innerJoin(
+      tables.tripMembers,
+      and(
+        eq(tables.tripMembers.trip_id, tables.settlements.trip_id),
+        eq(tables.tripMembers.user_id, userId),
+      ),
+    )
+    .orderBy(asc(tables.settlements.created_at));
+
+  return { members, parties, bookings, expenses, settlements };
 }

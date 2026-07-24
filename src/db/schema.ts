@@ -116,6 +116,9 @@ export const tripMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     role: tripRole("role").notNull().default("editor"),
+    // Settlement unit this member belongs to (couple/group). At most one; null =
+    // solo. Set-null on party delete so ungrouping is just deleting the party.
+    party_id: uuid("party_id").references(() => tripParties.id, { onDelete: "set null" }),
     created_at: createdAt(),
   },
   (t) => [
@@ -141,6 +144,10 @@ export const bookings = pgTable(
     cost_amount: numeric("cost_amount", { mode: "number" }),
     cost_currency: text("cost_currency"),
     cost_share: numeric("cost_share", { mode: "number" }).default(1),
+    // Who fronted this cost. Null = unallocated (a cost with no payer is excluded
+    // from settlement balances and surfaced as "needs attention"). Set-null on
+    // user delete so removing a member leaves the booking behind, just unpaid.
+    paid_by: text("paid_by").references(() => users.id, { onDelete: "set null" }),
     source: bookingSource("source").default("manual"),
     source_file: text("source_file"),
     raw_text: text("raw_text"),
@@ -246,6 +253,98 @@ export const dayReminders = pgTable(
   ],
 );
 
+// Settlement units — a couple or group that settles as one. Members point at a
+// party via trip_members.party_id; parties never appear in split rows, they only
+// aggregate at settlement/display time. Per-trip rows: the same real-world couple
+// on two trips is two party rows, merged into one unit by member-id set at math
+// time (see src/lib/split.js).
+export const tripParties = pgTable(
+  "trip_parties",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trip_id: uuid("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    created_at: createdAt(),
+  },
+  (t) => [index("idx_trip_parties_trip_id").on(t.trip_id)],
+);
+
+// Per-person split rows for a booking's cost. A person's share of the splittable
+// amount = weight / Σweights over the booking's rows. No rows = unallocated.
+export const bookingSplits = pgTable(
+  "booking_splits",
+  {
+    booking_id: text("booking_id")
+      .notNull()
+      .references(() => bookings.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    weight: numeric("weight", { mode: "number" }).notNull().default(1),
+  },
+  (t) => [primaryKey({ columns: [t.booking_id, t.user_id] })],
+);
+
+// Ad-hoc shared costs (dinner, taxi…) that aren't bookings. Splittable amount is
+// simply `amount`. paid_by null = unallocated, same treatment as a booking.
+export const expenses = pgTable(
+  "expenses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trip_id: uuid("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    amount: numeric("amount", { mode: "number" }).notNull(),
+    currency: text("currency").notNull(),
+    paid_by: text("paid_by").references(() => users.id, { onDelete: "set null" }),
+    date: text("date"), // optional "YYYY-MM-DD", matching trips' text dates
+    created_at: createdAt(),
+  },
+  (t) => [index("idx_expenses_trip_id").on(t.trip_id)],
+);
+
+// Per-person split rows for an expense — mirrors booking_splits.
+export const expenseSplits = pgTable(
+  "expense_splits",
+  {
+    expense_id: uuid("expense_id")
+      .notNull()
+      .references(() => expenses.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    weight: numeric("weight", { mode: "number" }).notNull().default(1),
+  },
+  (t) => [primaryKey({ columns: [t.expense_id, t.user_id] })],
+);
+
+// Recorded pay-backs, person-to-person (never party-to-party). Applied exactly
+// in their recorded currency — never FX-converted. Kept as history even if a
+// member is later removed from the trip.
+export const settlements = pgTable(
+  "settlements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trip_id: uuid("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
+    from_user: text("from_user")
+      .notNull()
+      .references(() => users.id),
+    to_user: text("to_user")
+      .notNull()
+      .references(() => users.id),
+    amount: numeric("amount", { mode: "number" }).notNull(),
+    currency: text("currency").notNull(),
+    note: text("note"),
+    created_at: createdAt(),
+  },
+  (t) => [index("idx_settlements_trip_id").on(t.trip_id)],
+);
+
 /* -------------------------------- relations -------------------------------- */
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -258,16 +357,49 @@ export const tripsRelations = relations(trips, ({ many }) => ({
   todos: many(todos),
   dayNotes: many(dayNotes),
   dayReminders: many(dayReminders),
+  parties: many(tripParties),
+  expenses: many(expenses),
+  settlements: many(settlements),
 }));
 
 export const tripMembersRelations = relations(tripMembers, ({ one }) => ({
   trip: one(trips, { fields: [tripMembers.trip_id], references: [trips.id] }),
   user: one(users, { fields: [tripMembers.user_id], references: [users.id] }),
+  party: one(tripParties, { fields: [tripMembers.party_id], references: [tripParties.id] }),
 }));
 
 export const bookingsRelations = relations(bookings, ({ one, many }) => ({
   trip: one(trips, { fields: [bookings.trip_id], references: [trips.id] }),
   attachments: many(bookingAttachments),
+  splits: many(bookingSplits),
+  payer: one(users, { fields: [bookings.paid_by], references: [users.id] }),
+}));
+
+export const tripPartiesRelations = relations(tripParties, ({ one, many }) => ({
+  trip: one(trips, { fields: [tripParties.trip_id], references: [trips.id] }),
+  members: many(tripMembers),
+}));
+
+export const bookingSplitsRelations = relations(bookingSplits, ({ one }) => ({
+  booking: one(bookings, { fields: [bookingSplits.booking_id], references: [bookings.id] }),
+  user: one(users, { fields: [bookingSplits.user_id], references: [users.id] }),
+}));
+
+export const expensesRelations = relations(expenses, ({ one, many }) => ({
+  trip: one(trips, { fields: [expenses.trip_id], references: [trips.id] }),
+  payer: one(users, { fields: [expenses.paid_by], references: [users.id] }),
+  splits: many(expenseSplits),
+}));
+
+export const expenseSplitsRelations = relations(expenseSplits, ({ one }) => ({
+  expense: one(expenses, { fields: [expenseSplits.expense_id], references: [expenses.id] }),
+  user: one(users, { fields: [expenseSplits.user_id], references: [users.id] }),
+}));
+
+export const settlementsRelations = relations(settlements, ({ one }) => ({
+  trip: one(trips, { fields: [settlements.trip_id], references: [trips.id] }),
+  fromUser: one(users, { fields: [settlements.from_user], references: [users.id] }),
+  toUser: one(users, { fields: [settlements.to_user], references: [users.id] }),
 }));
 
 export const bookingAttachmentsRelations = relations(bookingAttachments, ({ one }) => ({
@@ -309,3 +441,13 @@ export type NewTodo = typeof todos.$inferInsert;
 export type DayNote = typeof dayNotes.$inferSelect;
 export type DayReminder = typeof dayReminders.$inferSelect;
 export type NewDayReminder = typeof dayReminders.$inferInsert;
+export type TripParty = typeof tripParties.$inferSelect;
+export type NewTripParty = typeof tripParties.$inferInsert;
+export type BookingSplit = typeof bookingSplits.$inferSelect;
+export type NewBookingSplit = typeof bookingSplits.$inferInsert;
+export type Expense = typeof expenses.$inferSelect;
+export type NewExpense = typeof expenses.$inferInsert;
+export type ExpenseSplit = typeof expenseSplits.$inferSelect;
+export type NewExpenseSplit = typeof expenseSplits.$inferInsert;
+export type Settlement = typeof settlements.$inferSelect;
+export type NewSettlement = typeof settlements.$inferInsert;

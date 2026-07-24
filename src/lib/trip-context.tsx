@@ -9,6 +9,14 @@ export type TripMember = {
   email: string | null;
   image: string | null;
   role: string;
+  /** Settlement unit this member belongs to, or null when solo. */
+  party_id: string | null;
+};
+
+/** A settlement unit (couple/group) on a trip. */
+export type TripParty = {
+  id: string;
+  name: string;
 };
 
 /** The trip fields the shell + screens actually read (matches getTripsWithMembers). */
@@ -18,6 +26,7 @@ export type TripSummary = {
   start_date: string;
   end_date: string;
   members: TripMember[];
+  parties: TripParty[];
   myRole: string | null;
 };
 
