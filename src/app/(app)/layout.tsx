@@ -1,10 +1,12 @@
 import { requirePageUser } from "@/lib/page-auth";
-import { getTripsForUser } from "@/lib/queries";
+import { getTripsWithMembers } from "@/lib/queries";
 import { AppShell } from "@/components/AppShell";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const sessionUser = await requirePageUser();
-  const trips = await getTripsForUser(sessionUser.id);
+  // Members ride along on each trip so member pickers (to-do assignees, and
+  // later cost splitting) can filter client-side without extra queries.
+  const trips = await getTripsWithMembers(sessionUser.id);
 
   const user = {
     email: sessionUser.email ?? "",

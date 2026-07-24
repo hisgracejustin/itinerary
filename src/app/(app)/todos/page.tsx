@@ -1,28 +1,16 @@
 import { requirePageUser } from "@/lib/page-auth";
 import { getAssignableUsers, getTodosForUser } from "@/lib/queries";
-import { parseTripParam, tripKey } from "@/lib/trip-params";
 import Todos from "@/screens/Todos";
 
 export const dynamic = "force-dynamic";
 
-export default async function TodosRoute({
-  searchParams,
-}: {
-  searchParams: Promise<{ trip?: string | string[] }>;
-}) {
-  const { trip } = await searchParams;
-  const tripIds = parseTripParam(trip);
+// Union fetch; the screen filters todos and the assignee roster by the
+// client-side trip selection (trip members ride on TripContext).
+export default async function TodosRoute() {
   const user = await requirePageUser();
   const [todos, members] = await Promise.all([
-    getTodosForUser(user.id, tripIds),
-    getAssignableUsers(user.id, tripIds),
+    getTodosForUser(user.id, null),
+    getAssignableUsers(user.id, null),
   ]);
-  return (
-    <Todos
-      key={tripKey(tripIds)}
-      initialTodos={todos}
-      members={members}
-      currentUserId={user.id}
-    />
-  );
+  return <Todos initialTodos={todos} members={members} currentUserId={user.id} />;
 }

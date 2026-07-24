@@ -20,14 +20,20 @@ const TYPE_LABELS = {
   activity: 'Activities',
 }
 
-export default function BookingsByType({ type, bookings }) {
-  const { selectedTrip, tripMeta, trips } = useTripContext()
+export default function BookingsByType({ type, bookings: allBookings }) {
+  const { selectedTrip, tripMeta, trips, selectedTrips } = useTripContext()
   const [modalOpen, setModalOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState(null)
-  // 'all' | <tripId>. Only offered on the All Trips view — with a trip selected
-  // in the sidebar the server already scoped the list, so chips would be dead.
+  // 'all' | <tripId>. Only offered on the All Trips view — with a sidebar
+  // selection the list is already scoped by it, so chips would be dead.
   const [tripFilter, setTripFilter] = useState('all')
-  const showTripChips = !tripMeta && trips.length > 1
+  const showTripChips = selectedTrips.length === 0 && trips.length > 1
+
+  // Props carry the union of every trip; filter by the client-side selection.
+  const selSet = new Set(selectedTrips)
+  const bookings = selectedTrips.length
+    ? allBookings.filter((b) => selSet.has(b.trip_id))
+    : allBookings
 
   const ofType = bookings.filter((b) => b.type === type)
   const filtered =

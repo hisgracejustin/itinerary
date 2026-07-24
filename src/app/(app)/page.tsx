@@ -5,34 +5,28 @@ import {
   getDayRemindersForUser,
   getTodosForUser,
 } from "@/lib/queries";
-import { parseTripParam, tripKey } from "@/lib/trip-params";
 import Calendar from "@/screens/Calendar";
 
 export const dynamic = "force-dynamic";
 
-export default async function CalendarRoute({
-  searchParams,
-}: {
-  searchParams: Promise<{ trip?: string | string[]; view?: string | string[] }>;
-}) {
-  const { trip, view } = await searchParams;
-  const tripIds = parseTripParam(trip);
-  const initialView = typeof view === "string" ? view : undefined;
+// Trip selection is client state (see TripContext): every page loads the union
+// of the user's trips — the same payload the All Trips view always shipped —
+// and the screens filter it by the current selection, so toggling a trip is
+// one instant client render with no navigation or refetch.
+export default async function CalendarRoute() {
   const user = await requirePageUser();
   const [bookings, todos, dayNotes, dayReminders] = await Promise.all([
-    getBookingsForUser(user.id, tripIds),
-    getTodosForUser(user.id, tripIds),
-    getDayNotesForUser(user.id, tripIds),
-    getDayRemindersForUser(user.id, tripIds),
+    getBookingsForUser(user.id, null),
+    getTodosForUser(user.id, null),
+    getDayNotesForUser(user.id, null),
+    getDayRemindersForUser(user.id, null),
   ]);
   return (
     <Calendar
-      key={tripKey(tripIds)}
       initialBookings={bookings}
       initialTodos={todos}
       initialDayNotes={dayNotes}
       initialDayReminders={dayReminders}
-      initialView={initialView}
     />
   );
 }

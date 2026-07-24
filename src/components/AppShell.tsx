@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
 import BookingModal from "./BookingModal";
 import { createBooking, updateBooking, deleteBooking } from "@/lib/client-actions";
 import { TripContext, type TripSummary } from "@/lib/trip-context";
-import { hrefWithTrips } from "@/lib/trip-params";
+import { parseTripParam } from "@/lib/trip-params";
 
 type Props = {
   user: { email: string; name: string | null };
@@ -20,20 +20,81 @@ const MAX_SIDEBAR_WIDTH = 480;
 const DEFAULT_SIDEBAR_WIDTH = 288; // matches the old w-72
 
 export function AppShell({ user, trips, children }: Props) {
-  // Selected trip lives in the URL (?trip=<id>) so RSC pages can read it and
-  // fetch server-side; the shell just reflects it. tripMeta is derived from the
-  // already-fetched trips list — no extra query.
-  const router = useRouter();
-  const pathname = usePathname();
+  // Trip selection is pure client state: pages always load the union of every
+  // accessible trip's data and screens filter it by this selection, so a
+  // toggle is one instant React render — no navigation, no refetch. (Also the
+  // reason: Next 16 serves stale payloads on search-param navigations,
+  // vercel/next.js#88535/#92187, so selection can't live in the router.)
+  //
+  // ?trip= deep links still work: they seed the INITIAL state (read during
+  // SSR, so the first paint is already filtered), get persisted, and the URL
+  // is then cleaned up. With no deep link, the last selection is restored
+  // from localStorage after hydration.
   const searchParams = useSearchParams();
-  // Selection is repeated `?trip=` params. Keep only ids the user actually has
-  // access to (a revoked/stale/shared id yields nothing and is dropped below),
-  // in the trips list's canonical order so span math and keys are stable.
-  const rawSelected = useMemo(() => searchParams.getAll("trip"), [searchParams]);
-  const selectedTrips = useMemo(
-    () => trips.filter((t) => rawSelected.includes(t.id)).map((t) => t.id),
-    [trips, rawSelected],
+  const [selectedTrips, setSelectedTripsState] = useState<string[]>(() => {
+    const fromUrl = parseTripParam(searchParams.getAll("trip")) ?? [];
+    return trips.filter((t) => fromUrl.includes(t.id)).map((t) => t.id);
+  });
+  const hadUrlSelection = useRef(selectedTrips.length > 0);
+
+  const persistSelection = (ids: string[]) => {
+    try {
+      window.localStorage.setItem("selectedTrips", JSON.stringify(ids));
+    } catch {
+      /* storage unavailable — selection just won't survive a restart */
+    }
+  };
+  const setSelectedTrips = useCallback(
+    (ids: string[]) => {
+      const valid = trips.filter((t) => ids.includes(t.id)).map((t) => t.id);
+      setSelectedTripsState(valid);
+      persistSelection(valid);
+    },
+    [trips],
   );
+  const toggleTrip = useCallback(
+    (tripId: string) => {
+      setSelectedTripsState((prev) => {
+        const next = prev.includes(tripId)
+          ? prev.filter((id) => id !== tripId)
+          : trips.filter((t) => prev.includes(t.id) || t.id === tripId).map((t) => t.id);
+        persistSelection(next);
+        return next;
+      });
+    },
+    [trips],
+  );
+
+  // After hydration: restore the saved selection when no deep link seeded one,
+  // and strip consumed params from the URL. (Plain history API — by this point
+  // nothing reads the router's search params, so a stale re-commit is a no-op.)
+  useEffect(() => {
+    if (hadUrlSelection.current) {
+      persistSelection(selectedTrips);
+    } else {
+      try {
+        const saved: unknown = JSON.parse(window.localStorage.getItem("selectedTrips") ?? "[]");
+        if (Array.isArray(saved) && saved.length) {
+          const valid = trips.filter((t) => saved.includes(t.id)).map((t) => t.id);
+          if (valid.length) setSelectedTripsState(valid);
+        }
+      } catch {
+        /* bad/absent saved state — stay on All Trips */
+      }
+    }
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has("trip") || url.searchParams.has("view")) {
+        url.searchParams.delete("trip");
+        url.searchParams.delete("view");
+        window.history.replaceState(window.history.state, "", url);
+      }
+    } catch {
+      /* leave the URL as-is */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only init
+  }, []);
+
   const tripMetas = useMemo(
     () => trips.filter((t) => selectedTrips.includes(t.id)),
     [trips, selectedTrips],
@@ -50,10 +111,9 @@ export function AppShell({ user, trips, children }: Props) {
   const selectedTrip = selectedTrips.length === 1 ? selectedTrips[0] : null;
   const tripMeta = tripMetas.length === 1 ? tripMetas[0] : null;
 
-  // Trip toggles are full document navigations (see Sidebar), so this shell
-  // re-initializes on every toggle — the initial paint must already be correct
-  // or the sidebar visibly animates open→closed on phones and default→persisted
-  // width on desktop each time. Three pieces make it settle without motion:
+  // On real document loads (first visit, refresh) the initial paint must
+  // already be correct or the sidebar visibly animates open→closed on phones
+  // and default→persisted width on desktop. Three pieces settle it motionless:
   //  - `sidebarOpen` starts null = "let CSS decide": the null classes render
   //    closed on mobile and open on md+, so the pre-hydration paint is right on
   //    both. Hydration then resolves it to a real boolean.
@@ -90,15 +150,6 @@ export function AppShell({ user, trips, children }: Props) {
     setSidebarOpen((v) => v ?? window.innerWidth >= 768);
     setHydrated(true);
   }, []);
-
-  // A ?trip= that isn't one of the user's trips (revoked access, stale/shared
-  // link) — or a duplicate — would otherwise linger in the URL. Rewrite to the
-  // canonical valid subset (which may be empty → All Trips).
-  useEffect(() => {
-    if (rawSelected.length !== selectedTrips.length) {
-      router.replace(hrefWithTrips(pathname, selectedTrips));
-    }
-  }, [rawSelected, selectedTrips, pathname, router]);
 
   // Collapse the sidebar on small screens (client-only; guards SSR).
   useEffect(() => {
@@ -150,7 +201,9 @@ export function AppShell({ user, trips, children }: Props) {
     // The provider wraps the WHOLE shell, not just <main>: the Add Booking modal
     // below is rendered by the shell itself, and BookingForm calls
     // useTripContext() (which throws when there is no provider above it).
-    <TripContext.Provider value={{ selectedTrips, tripMetas, spanStart, spanEnd, selectedTrip, tripMeta, trips }}>
+    <TripContext.Provider
+      value={{ selectedTrips, tripMetas, spanStart, spanEnd, selectedTrip, tripMeta, trips, toggleTrip, setSelectedTrips }}
+    >
     <div className="fixed inset-0 flex flex-row bg-surface-dim pb-[env(safe-area-inset-bottom)]">
       {/* Mobile overlay */}
       <div
@@ -179,7 +232,6 @@ export function AppShell({ user, trips, children }: Props) {
         <Sidebar
           user={user}
           trips={trips}
-          selectedTrips={selectedTrips}
           onNavigate={closeOnMobile}
         />
         {/* Resize handle (desktop only) */}

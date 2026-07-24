@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useOptimistic, useTransition } from 'react'
+import { useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from 'react'
 import { useTripContext } from '../lib/trip-context'
 import { createBooking, updateBooking, deleteBooking, upsertDayNote, createDayReminder, updateDayReminder, deleteDayReminder, reorderDayReminders } from '@/lib/client-actions'
 import MonthView from '../components/MonthView'
@@ -58,15 +58,21 @@ function dayReminderReducer(state, action) {
   }
 }
 
-export default function Calendar({ initialBookings, initialTodos, initialDayNotes, initialDayReminders, initialView }) {
-  const { selectedTrip, tripMeta, tripMetas, spanStart, spanEnd } = useTripContext()
+export default function Calendar({ initialBookings, initialTodos, initialDayNotes, initialDayReminders }) {
+  const { selectedTrip, tripMeta, tripMetas, selectedTrips, spanStart, spanEnd } = useTripContext()
   const { toast } = useToast()
-  const bookings = initialBookings
-  const todos = initialTodos
-  const [dayNotes, applyOptimisticDayNote] = useOptimistic(initialDayNotes, dayNoteReducer)
+  // Props carry the union of every accessible trip's data; the current trip
+  // selection (client state) filters it here. A toggle is one instant render.
+  const selSet = useMemo(() => new Set(selectedTrips), [selectedTrips])
+  const inSelection = (row) => selectedTrips.length === 0 || selSet.has(row.trip_id)
+  const bookings = useMemo(() => initialBookings.filter(inSelection), [initialBookings, selSet]) // eslint-disable-line react-hooks/exhaustive-deps
+  const todos = useMemo(() => initialTodos.filter(inSelection), [initialTodos, selSet]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [allDayNotes, applyOptimisticDayNote] = useOptimistic(initialDayNotes, dayNoteReducer)
   const [, startDayNoteTransition] = useTransition()
-  const [dayReminders, applyOptimisticReminder] = useOptimistic(initialDayReminders ?? [], dayReminderReducer)
+  const [allDayReminders, applyOptimisticReminder] = useOptimistic(initialDayReminders ?? [], dayReminderReducer)
   const [, startReminderTransition] = useTransition()
+  const dayNotes = useMemo(() => allDayNotes.filter(inSelection), [allDayNotes, selSet]) // eslint-disable-line react-hooks/exhaustive-deps
+  const dayReminders = useMemo(() => allDayReminders.filter(inSelection), [allDayReminders, selSet]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Journey span — earliest start → latest end across the selected trips. Journey
   // replaces the old Trip view: Trip view is just Journey with one trip selected.
@@ -81,29 +87,22 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   const JOURNEY_ENABLED = false
   const VIEWS = JOURNEY_ENABLED && hasSpan ? ['journey', 'month', 'week', 'day'] : ['month', 'week', 'day']
 
-  // An explicitly chosen view must survive trip toggles, which are full
-  // document navigations (see Sidebar): the choice is kept in sessionStorage,
-  // the sidebar appends it as ?view= when navigating, and the page hands it
-  // back here as `initialView` (SSR-visible, so no hydration flash). Journey is
-  // only the default when nothing was chosen. Deliberately NOT mirrored via
-  // history.replaceState — Next's patched history triggers the same stale
-  // router machinery the anchors exist to avoid (vercel/next.js#92187).
-  const [view, setView] = useState(
-    VIEWS.includes(initialView) ? initialView : JOURNEY_ENABLED && hasSpan ? 'journey' : 'month'
-  )
-  const persistView = (v) => {
-    setView(v)
-    try {
-      window.sessionStorage.setItem('calendarView', v)
-    } catch {
-      /* storage unavailable — the view just won't persist across toggles */
-    }
-  }
-  // The component is remounted (keyed by selection) on change, so the initial
-  // month is derived once here — jumping to the span start, or today otherwise.
+  // Trip toggles are plain state changes now — this component stays mounted,
+  // so the chosen view simply persists. No storage, no URL, no remounts.
+  const [view, setView] = useState('month')
+  const persistView = setView
   const [currentDate, setCurrentDate] = useState(() =>
     spanStart ? new Date(spanStart + 'T00:00:00') : new Date()
   )
+  // Jump to the selection's start when the selection changes (the one thing
+  // the old remount-per-selection behavior did that we want to keep).
+  const selKey = selectedTrips.join('+')
+  const prevSelKey = useRef(selKey)
+  useEffect(() => {
+    if (prevSelKey.current === selKey) return
+    prevSelKey.current = selKey
+    if (spanStart) setCurrentDate(new Date(spanStart + 'T00:00:00'))
+  }, [selKey, spanStart])
   const [calendarCollapsed, setCalendarCollapsed] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState(null)

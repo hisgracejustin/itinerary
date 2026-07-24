@@ -51,10 +51,25 @@ const pointerFirstCollision = (args) => {
 // JSX component's prop types from the signature, and `members = []` would
 // narrow the prop to never[] at the .tsx call site.
 export default function Todos({ initialTodos, members: membersProp, currentUserId }) {
-  const members = membersProp ?? []
-  const { selectedTrip, tripMeta, trips } = useTripContext()
+  const { selectedTrip, tripMeta, trips, selectedTrips, tripMetas } = useTripContext()
   const { toast } = useToast()
-  const { todos, add, edit, assign, move, setStatus, remove } = useTodoList(initialTodos, {
+
+  // Props carry the union (all trips' todos, everyone you share a trip with);
+  // the client-side selection filters both. Tripless todos only show on All
+  // Trips — same rule the server applied when it scoped by trip. The assignee
+  // roster narrows to the selected trips' members (from TripContext).
+  const selSet = new Set(selectedTrips)
+  const visibleTodos = selectedTrips.length
+    ? initialTodos.filter((t) => selSet.has(t.trip_id))
+    : initialTodos
+  const members = (() => {
+    const base = membersProp ?? []
+    if (!selectedTrips.length) return base
+    const allowed = new Set(tripMetas.flatMap((t) => (t.members ?? []).map((m) => m.id)))
+    return base.filter((m) => allowed.has(m.id))
+  })()
+
+  const { todos, add, edit, assign, move, setStatus, remove } = useTodoList(visibleTodos, {
     onError: (err) => toast.error(friendlyError(err)),
   })
   const [newTodo, setNewTodo] = useState('')

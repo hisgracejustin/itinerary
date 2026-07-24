@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOutAction } from "../actions/auth";
-import { hrefWithTrips } from "../lib/trip-params";
+import { useTripContext } from "../lib/trip-context";
 
 const BOOKING_TYPES = [
   { id: "flight", label: "Flights", color: "bg-flight", icon: "✈️" },
@@ -18,65 +17,17 @@ const BOOKING_TYPES = [
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0";
 
-export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp, onNavigate }) {
+export default function Sidebar({ user, trips, onNavigate }) {
   const pathname = usePathname();
-  // Trip toggles are full document navigations, which would reset the calendar
-  // to its default view — so carry the chosen view along as ?view=. The choice
-  // lives in sessionStorage (fallback: the current URL) and is read at CLICK
-  // time, because anything routed through Next's history/searchParams can be
-  // stale (vercel/next.js#88535, #92187). Modified clicks (new tab etc.) are
-  // left to the browser with the base href.
-  const goWithView = (onNavigateCb, optimisticUpdate) => (e) => {
-    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    e.preventDefault();
-    let href = e.currentTarget.getAttribute("href");
-    try {
-      const v =
-        window.sessionStorage.getItem("calendarView") ||
-        new URLSearchParams(window.location.search).get("view");
-      if (v) href += (href.includes("?") ? "&" : "?") + "view=" + encodeURIComponent(v);
-    } catch {
-      /* storage unavailable — navigate without the view param */
-    }
-    optimisticUpdate?.();
-    onNavigateCb?.();
-    // One frame's delay lets the optimistic checkbox flip actually paint
-    // before the document starts swapping; imperceptible otherwise.
-    requestAnimationFrame(() => window.location.assign(href));
-  };
-  // Default in the body, not the signature: a `= []` default narrows the prop to
-  // never[] at the .tsx call site (same reason as the Todos screen).
-  const selectedTrips = selectedTripsProp ?? [];
+  // Selection is pure client state (see TripContext): a tap toggles instantly,
+  // the already-loaded union of trip data re-filters, and nothing navigates —
+  // so the sidebar stays open for picking several trips in a row. Clicking
+  // anywhere on a row toggles it; the checkbox is a state indicator, not a
+  // separate control. "All Trips" clears the selection.
+  const { selectedTrips, toggleTrip, setSelectedTrips } = useTripContext();
   const selectedSet = new Set(selectedTrips);
 
-  // A toggle navigates a whole document, so the real checkbox state only
-  // arrives with the next page. Flip it optimistically at tap time — the row
-  // responds instantly and the incoming page (which agrees) just confirms it.
-  // Never cleared: this component dies with the document.
-  const [optimistic, setOptimistic] = useState({});
-  const isChecked = (tripId) => optimistic[tripId] ?? selectedSet.has(tripId);
-
-  // The other nav links carry the whole current selection along.
-  const navHref = (path) => hrefWithTrips(path, selectedTrips);
-
-  // Clicking anywhere on a trip row toggles it in/out of the selection — the
-  // checkbox is a state indicator, not a separate control. (Shipped first as
-  // row = "only this trip" + checkbox = toggle; the split behavior proved
-  // surprising in use.) "All Trips" clears the selection.
-  //
-  // Selection changes are plain <a> anchors, NOT next/link: Next 16's client
-  // router can commit a stale RSC payload when a navigation changes only the
-  // search params, and even router.refresh() then refetches with the stale
-  // params (vercel/next.js#88535, #92187). A full document navigation is the
-  // only path that reliably renders the new selection; these pages are
-  // force-dynamic anyway.
-  const toggledHref = (tripId) =>
-    hrefWithTrips(
-      pathname,
-      selectedSet.has(tripId)
-        ? selectedTrips.filter((id) => id !== tripId)
-        : trips.filter((t) => selectedSet.has(t.id) || t.id === tripId).map((t) => t.id),
-    );
+  const navHref = (path) => path;
 
   const tripRowClass = (active) =>
     `flex items-center rounded-full text-sm transition-all duration-150 ${
@@ -154,40 +105,32 @@ export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp,
         {selectedTrips.length > 0 && (
           <div className="flex items-center justify-between px-3 pb-1.5 text-[11px] text-on-surface-variant">
             <span>{selectedTrips.length} trip{selectedTrips.length === 1 ? "" : "s"} selected</span>
-            <a
-              href={hrefWithTrips(pathname, [])}
-              onClick={goWithView(onNavigate, () =>
-                setOptimistic(Object.fromEntries(trips.map((t) => [t.id, false]))),
-              )}
+            <button
+              onClick={() => setSelectedTrips([])}
               className="text-primary hover:text-primary/80 font-medium"
             >
               Clear
-            </a>
+            </button>
           </div>
         )}
         <ul className="space-y-0.5">
           <li>
-            <a
-              href={hrefWithTrips(pathname, [])}
-              onClick={goWithView(onNavigate, () =>
-                setOptimistic(Object.fromEntries(trips.map((t) => [t.id, false]))),
-              )}
+            <button
+              onClick={() => setSelectedTrips([])}
               className={`block w-full text-left px-3 py-2 ${tripRowClass(selectedTrips.length === 0)}`}
             >
               All Trips
-            </a>
+            </button>
           </li>
           {trips.map((trip) => {
-            const active = isChecked(trip.id);
+            const active = selectedSet.has(trip.id);
             return (
               <li key={trip.id}>
-                <a
-                  href={toggledHref(trip.id)}
-                  onClick={goWithView(onNavigate, () =>
-                    setOptimistic((o) => ({ ...o, [trip.id]: !isChecked(trip.id) })),
-                  )}
+                <button
+                  onClick={() => toggleTrip(trip.id)}
+                  aria-pressed={active}
                   aria-label={`${active ? "Remove" : "Add"} ${trip.name}`}
-                  className={tripRowClass(active)}
+                  className={`w-full text-left ${tripRowClass(active)}`}
                 >
                   <span className="shrink-0 w-10 h-10 flex items-center justify-center">
                     <span
@@ -201,7 +144,7 @@ export default function Sidebar({ user, trips, selectedTrips: selectedTripsProp,
                     </span>
                   </span>
                   <span className="flex-1 min-w-0 truncate pr-3 py-2">{trip.name}</span>
-                </a>
+                </button>
               </li>
             );
           })}

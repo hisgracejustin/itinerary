@@ -4,8 +4,14 @@ import { useTripContext } from '../lib/trip-context'
 import { toHKD, formatCurrency } from '../lib/currencies'
 import { TYPE_ICONS } from '../lib/calendar'
 
-export default function Costs({ bookings }) {
-  const { tripMeta } = useTripContext()
+export default function Costs({ bookings: allBookings }) {
+  const { tripMeta, selectedTrips } = useTripContext()
+
+  // Props carry the union of every trip; filter by the client-side selection.
+  const selSet = new Set(selectedTrips)
+  const bookings = selectedTrips.length
+    ? allBookings.filter((b) => selSet.has(b.trip_id))
+    : allBookings
 
   // Only bookings with costs
   const withCosts = bookings.filter((b) => b.cost_amount && b.cost_currency)

@@ -168,6 +168,15 @@ the trip".
 Bookmarkable and shareable. All five pages currently type it as
 `{ trip?: string }`; becomes `string | string[]`.
 
+> **Superseded (2026-07-24):** selection moved out of the URL entirely. Next
+> 16's router serves stale payloads on search-param-only navigations
+> (vercel/next.js#88535, #92187), and even hard-navigation workarounds felt
+> glitchy. Now every page loads the union of the user's trips (the All Trips
+> payload — same authorization, the `trip_members` JOIN) and screens filter it
+> by client-side selection state in `TripContext`: a toggle is one instant
+> render, no navigation. `?trip=` deep links still seed the initial selection,
+> which then persists in localStorage.
+
 ### Sidebar
 
 A checkbox per trip:
