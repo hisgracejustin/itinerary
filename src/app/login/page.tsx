@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth, signIn } from "@/auth";
 
 const ERRORS: Record<string, string> = {
-  AccessDenied: "This is a private app — that Google account isn't on the allowlist.",
+  AccessDenied: "Sign-in was denied for that account. Try a different one.",
   Configuration: "Sign-in isn't configured yet. Check the auth environment variables.",
   Default: "Something went wrong signing you in. Please try again.",
 };
@@ -99,7 +99,7 @@ export default async function LoginPage({
           )}
 
           <p className="mt-4 text-center text-xs text-on-surface-variant">
-            Private — sign-in is limited to the allowlist.
+            Trips are private — you only see what you&apos;re invited to.
           </p>
         </div>
       </div>

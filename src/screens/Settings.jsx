@@ -304,8 +304,8 @@ function TripCard({ trip, currentUserId, busy, run }) {
               </button>
             </div>
             <p className="text-[11px] text-on-surface-variant leading-relaxed">
-              They can be assigned to-dos right away. To actually sign in, their email must
-              also be on the app&apos;s allowlist.
+              They can be assigned to-dos and splits right away. When they sign in with
+              this email, they get this account automatically.
             </p>
           </form>
         ) : (
