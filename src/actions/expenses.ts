@@ -48,6 +48,8 @@ export async function createExpenseAction(input: unknown) {
         currency: data.currency,
         paid_by: data.paid_by ?? null,
         date: data.date ?? null,
+        charged_currency: data.charged_currency ?? null,
+        charged_rate: data.charged_rate ?? null,
       })
       .returning();
     await replaceExpenseSplits(row.id, data.splits);

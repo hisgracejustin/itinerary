@@ -49,6 +49,45 @@ function requirePayerWhenSplit(
   }
 }
 
+// An item's exact charged currency + rate must be set together or not at all,
+// and the charged currency must differ from the item's own native currency.
+// `nativeKey` names the field carrying the native currency (cost_currency for
+// bookings, currency for expenses). On updates that don't send the native
+// currency, the difference check is skipped — the server lacks the context, and
+// the form always sends both.
+function requireChargedRatePair(
+  data: {
+    charged_currency?: string | null;
+    charged_rate?: number | null;
+    cost_currency?: string | null;
+    currency?: string | null;
+  },
+  ctx: z.RefinementCtx,
+  nativeKey: "cost_currency" | "currency",
+) {
+  const cc = data.charged_currency;
+  const cr = data.charged_rate;
+  const hasCcy = cc != null && cc !== "";
+  const hasRate = cr != null;
+  if (hasCcy !== hasRate) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [hasCcy ? "charged_rate" : "charged_currency"],
+      message: "Set both a charged currency and rate, or neither",
+    });
+    return;
+  }
+  if (!hasCcy) return;
+  const native = data[nativeKey];
+  if (native != null && native !== "" && cc === native) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["charged_currency"],
+      message: "Charged currency must differ from the item's own currency",
+    });
+  }
+}
+
 const bookingBaseShape = {
   id: z.string().optional(),
   trip_id: z.string().uuid(),
@@ -67,6 +106,10 @@ const bookingBaseShape = {
   // Replace-all split set. `[]` un-splits; `undefined` leaves existing rows
   // untouched (see the booking action).
   splits: z.array(splitEntrySchema).optional(),
+  // Exact charged currency + rate (see requireChargedRatePair). Both null/absent
+  // clears; both set re-denominates the settlement at this rate.
+  charged_currency: currencySchema.nullish(),
+  charged_rate: z.number().positive().nullish(),
   source: z.enum(["manual", "parsed"]).nullish(),
   source_file: z.string().nullish(),
   raw_text: z.string().nullish(),
@@ -74,9 +117,14 @@ const bookingBaseShape = {
 
 const bookingBase = z.object(bookingBaseShape);
 
-export const bookingInsertSchema = bookingBase.superRefine(requirePayerWhenSplit);
+export const bookingInsertSchema = bookingBase
+  .superRefine(requirePayerWhenSplit)
+  .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "cost_currency"));
 
-export const bookingUpdateSchema = bookingBase.partial().superRefine(requirePayerWhenSplit);
+export const bookingUpdateSchema = bookingBase
+  .partial()
+  .superRefine(requirePayerWhenSplit)
+  .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "cost_currency"));
 
 // Ad-hoc shared cost. Splits are required and non-empty (an expense with nobody
 // to split is meaningless), so a payer is always required too.
@@ -89,8 +137,11 @@ export const expenseInsertSchema = z
     paid_by: z.string().min(1).nullish(),
     date: z.string().nullish(),
     splits: z.array(splitEntrySchema).min(1),
+    charged_currency: currencySchema.nullish(),
+    charged_rate: z.number().positive().nullish(),
   })
-  .superRefine(requirePayerWhenSplit);
+  .superRefine(requirePayerWhenSplit)
+  .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "currency"));
 
 export const expenseUpdateSchema = z
   .object({
@@ -102,8 +153,11 @@ export const expenseUpdateSchema = z
     date: z.string().nullish(),
     // Replace-all, like bookings: `[]` un-splits, `undefined` leaves rows alone.
     splits: z.array(splitEntrySchema).optional(),
+    charged_currency: currencySchema.nullish(),
+    charged_rate: z.number().positive().nullish(),
   })
-  .superRefine(requirePayerWhenSplit);
+  .superRefine(requirePayerWhenSplit)
+  .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "currency"));
 
 // A recorded pay-back, person-to-person. Same-person is nonsensical.
 export const settlementInsertSchema = z

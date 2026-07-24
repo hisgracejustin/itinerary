@@ -46,6 +46,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
         cost_share: b.cost_share,
         effective: b.cost_amount * (b.cost_share != null ? b.cost_share : 1),
         splits: Array.isArray(b.splits) ? b.splits : [],
+        charged: Number(b.charged_rate) > 0 && b.charged_currency ? { rate: Number(b.charged_rate), currency: b.charged_currency } : null,
         booking: b,
       })),
     ...expenses.map((e) => ({
@@ -59,8 +60,21 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
       cost_share: 1,
       effective: e.amount || 0,
       splits: Array.isArray(e.splits) ? e.splits : [],
+      charged: Number(e.charged_rate) > 0 && e.charged_currency ? { rate: Number(e.charged_rate), currency: e.charged_currency } : null,
     })),
   ]
+
+  // The approximate HKD value of a native `amount` for one item. A charged rate
+  // re-denominates it exactly: charged-in-HKD contributes its EXACT charged
+  // value (no approx FX); charged-in-other converts the charged value via live
+  // rates; otherwise convert the native amount.
+  const hkdOf = (it, amount) => {
+    if (it.charged) {
+      const v = amount * it.charged.rate
+      return it.charged.currency === 'HKD' ? v : toHKD(v, it.charged.currency, rates)
+    }
+    return toHKD(amount, it.currency, rates)
+  }
 
   // Trip chips sub-filter the sidebar selection (the same compose pattern as the
   // per-type booking lists). Cost math below runs on the chip-filtered set.
@@ -118,7 +132,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     .map((it) => ({ it, amount: contribution(it) }))
     .filter((s) => s.amount != null && (scope === 'everyone' || s.amount > 0))
 
-  const totalHKD = scoped.reduce((sum, s) => sum + toHKD(s.amount, s.it.currency, rates), 0)
+  const totalHKD = scoped.reduce((sum, s) => sum + hkdOf(s.it, s.amount), 0)
 
   // Breakdown by currency.
   const byCurrency = {}
@@ -132,14 +146,14 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   // By type (bookings by type + a single "Expenses" category), in HKD.
   const byType = {}
   scoped.forEach((s) => {
-    byType[s.it.type] = (byType[s.it.type] || 0) + toHKD(s.amount, s.it.currency, rates)
+    byType[s.it.type] = (byType[s.it.type] || 0) + hkdOf(s.it, s.amount)
   })
   const typeBreakdown = Object.entries(byType).sort((a, b) => b[1] - a[1])
   const typeLabel = (type) => (type === 'expense' ? 'Expenses' : `${type}s`)
   const typeIcon = (type) => (type === 'expense' ? EXPENSE_ICON : TYPE_ICONS[type] || '📌')
 
   const sorted = [...scoped].sort(
-    (a, b) => toHKD(b.amount, b.it.currency, rates) - toHKD(a.amount, a.it.currency, rates),
+    (a, b) => hkdOf(b.it, b.amount) - hkdOf(a.it, a.amount),
   )
 
   const headerLabel =
@@ -283,10 +297,16 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                         <span className="text-[10px] text-on-surface-variant ml-1">(×{parseFloat(it.cost_share.toFixed(2))})</span>
                       )}
                     </div>
-                    {it.currency !== 'HKD' && (
+                    {it.charged ? (
                       <div className="text-[11px] text-on-surface-variant">
-                        ~HK${toHKD(amount, it.currency, rates).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        @{parseFloat(it.charged.rate.toFixed(4))} → {formatCurrency(amount * it.charged.rate, it.charged.currency)}
                       </div>
+                    ) : (
+                      it.currency !== 'HKD' && (
+                        <div className="text-[11px] text-on-surface-variant">
+                          ~HK${toHKD(amount, it.currency, rates).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </div>
+                      )
                     )}
                   </div>
                 </div>

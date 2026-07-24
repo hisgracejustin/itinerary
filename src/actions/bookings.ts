@@ -66,6 +66,8 @@ export async function createBookingAction(input: unknown) {
         cost_currency: data.cost_currency ?? null,
         cost_share: data.cost_share ?? null,
         paid_by: data.paid_by ?? null,
+        charged_currency: data.charged_currency ?? null,
+        charged_rate: data.charged_rate ?? null,
         source: data.source ?? "manual",
         source_file: data.source_file ?? null,
         raw_text: data.raw_text ?? null,

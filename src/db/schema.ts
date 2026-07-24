@@ -153,6 +153,13 @@ export const bookings = pgTable(
     // from settlement balances and surfaced as "needs attention"). Set-null on
     // user delete so removing a member leaves the booking behind, just unpaid.
     paid_by: text("paid_by").references(() => users.id, { onDelete: "set null" }),
+    // The EXACT currency + rate this item was charged at (e.g. a USD fare billed
+    // to an HKD card at a known rate). Both null = settle in the native currency.
+    // When set, settlement re-denominates the whole item at this rate — exact,
+    // NOT approximate FX (see src/lib/split.js). charged_currency differs from
+    // the item's own cost_currency.
+    charged_currency: text("charged_currency"),
+    charged_rate: numeric("charged_rate", { mode: "number" }),
     source: bookingSource("source").default("manual"),
     source_file: text("source_file"),
     raw_text: text("raw_text"),
@@ -310,6 +317,9 @@ export const expenses = pgTable(
     currency: text("currency").notNull(),
     paid_by: text("paid_by").references(() => users.id, { onDelete: "set null" }),
     date: text("date"), // optional "YYYY-MM-DD", matching trips' text dates
+    // Exact charged currency + rate — mirrors bookings.charged_currency/rate.
+    charged_currency: text("charged_currency"),
+    charged_rate: numeric("charged_rate", { mode: "number" }),
     created_at: createdAt(),
   },
   (t) => [index("idx_expenses_trip_id").on(t.trip_id)],

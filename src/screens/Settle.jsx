@@ -9,6 +9,7 @@ import { formatCurrency, CURRENCIES, FX_RATES_TO_HKD, toHKD } from '../lib/curre
 import { TYPE_ICONS } from '../lib/calendar'
 import AssigneePicker, { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
 import SplitEditor from '../components/SplitEditor'
+import ChargedRateEditor from '../components/ChargedRateEditor'
 import BookingModal from '../components/BookingModal'
 import { useToast } from '../components/Toast'
 import { friendlyError } from '../lib/friendlyError'
@@ -89,6 +90,28 @@ export default function Settle({
     return rows.filter((m) => m.party_id === me.party_id).map((m) => m.id)
   }
   const effectiveOf = (b) => (b.cost_amount || 0) * (b.cost_share != null ? b.cost_share : 1)
+
+  // An item's charged currency + rate (booking or expense), or null. When set,
+  // the whole settlement contribution re-denominates at this exact rate.
+  const chargedOf = (row) =>
+    Number(row.charged_rate) > 0 && row.charged_currency
+      ? { rate: Number(row.charged_rate), currency: row.charged_currency }
+      : null
+  // The viewer net (computed native) shown in the item's settle currency: the
+  // charged currency when set, else native.
+  const displayNet = (net, row) => {
+    const ch = chargedOf(row)
+    if (ch) return { net: net == null ? null : net * ch.rate, currency: ch.currency }
+    return { net, currency: row.cost_currency ?? row.currency }
+  }
+  // The HKD magnitude of a net for the split-costs sort/column: a charged-in-HKD
+  // item is EXACT (used directly); others convert the charged/native value with
+  // live rates.
+  const netHkdOf = (net, row) => {
+    if (net == null) return null
+    const d = displayNet(net, row)
+    return d.currency === 'HKD' ? d.net : toHKD(d.net, d.currency, rates)
+  }
   const viewerNetOfExpense = (e) =>
     itemViewerNet({
       amount: e.amount || 0,
@@ -267,7 +290,7 @@ export default function Settle({
                 <tbody>
                   {[...splitCostRows]
                     .sort((a, b) => {
-                      const key = (r) => (r.net == null ? 0 : toHKD(r.net, r.b.cost_currency, rates))
+                      const key = (r) => netHkdOf(r.net, r.b) ?? 0
                       return key(b) - key(a)
                     })
                     .map(({ b, net }) => {
@@ -275,8 +298,9 @@ export default function Settle({
                       const splitters = (b.splits || []).map(
                         (s) => memberByUserId.get(s.user_id) ?? { id: s.user_id },
                       )
-                      const eps = epsFor(b.cost_currency)
-                      const netHKD = net == null ? null : toHKD(net, b.cost_currency, rates)
+                      const disp = displayNet(net, b)
+                      const eps = epsFor(disp.currency)
+                      const netHKD = netHkdOf(net, b)
                       return (
                         <tr
                           key={b.id}
@@ -315,10 +339,10 @@ export default function Settle({
                             </span>
                           </td>
                           <td className="py-2 px-2 text-right">
-                            <NetPill net={net} currency={b.cost_currency} />
+                            <NetPill net={disp.net} currency={disp.currency} />
                           </td>
                           <td className="py-2 pl-2 text-right whitespace-nowrap">
-                            {netHKD == null || Math.abs(net) < eps ? (
+                            {netHKD == null || Math.abs(disp.net) < eps ? (
                               <span className="text-xs text-on-surface-variant">—</span>
                             ) : (
                               <span className={`text-xs font-medium ${netHKD > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
@@ -697,7 +721,7 @@ function TripSelect({ trips, value, onChange }) {
 }
 
 function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNetOf, busy, run, toast }) {
-  const blank = () => ({ id: null, trip_id: selectedTrip ?? '', title: '', amount: '', currency: 'HKD', date: '', paid_by: null, splits: [] })
+  const blank = () => ({ id: null, trip_id: selectedTrip ?? '', title: '', amount: '', currency: 'HKD', date: '', paid_by: null, splits: [], charged_currency: '', charged_rate: '' })
   const [form, setForm] = useState(null) // null = closed
 
   const roster = form ? ((trips.find((t) => t.id === form.trip_id)?.members) ?? []) : []
@@ -717,6 +741,8 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNet
       weight: Number(s.weight) || 1,
       extra_amount: Number(s.extra_amount) || 0,
     })),
+    charged_currency: e.charged_currency || '',
+    charged_rate: e.charged_rate != null ? String(e.charged_rate) : '',
   })
 
   // Changing trip prunes split entries / payer to the new trip's roster.
@@ -741,6 +767,11 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNet
     if (!form.paid_by) return toast.error('Pick who paid')
     const sumExtras = form.splits.reduce((s, r) => s + (Number(r.extra_amount) || 0), 0)
     if (sumExtras > amount + 0.01) return toast.error('Extras exceed the total cost')
+    if (form.charged_currency) {
+      if (!(toNumber(form.charged_rate) > 0)) return toast.error('Enter the rate it was charged at')
+      if (form.charged_currency === form.currency) return toast.error('Charged currency must differ from the expense currency')
+    }
+    const hasCharged = !!form.charged_currency && toNumber(form.charged_rate) > 0
     const payload = {
       trip_id: form.trip_id,
       title: form.title.trim(),
@@ -749,6 +780,8 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNet
       date: form.date || null,
       paid_by: form.paid_by,
       splits: form.splits,
+      charged_currency: hasCharged ? form.charged_currency : null,
+      charged_rate: hasCharged ? toNumber(form.charged_rate) : null,
     }
     const ok = await run(
       () => (form.id ? updateExpense(form.id, payload) : createExpense(payload)),
@@ -822,6 +855,19 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNet
           ) : (
             <p className="text-[11px] text-on-surface-variant/70">Pick a trip to split this expense.</p>
           )}
+          <ChargedRateEditor
+            nativeCurrency={form.currency}
+            effective={toNumber(form.amount) || 0}
+            chargedCurrency={form.charged_currency}
+            chargedRate={form.charged_rate}
+            onChange={({ charged_currency, charged_rate }) =>
+              setForm((f) => ({
+                ...f,
+                charged_currency: charged_currency ?? '',
+                charged_rate: charged_rate ?? '',
+              }))
+            }
+          />
           <div className="flex justify-end gap-2">
             {form.id && (
               <button type="button" onClick={() => setForm(null)} className="mat-btn-outlined text-xs">
@@ -849,7 +895,13 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNet
                   {e.date ? ` · ${e.date}` : ''}
                 </div>
               </div>
-              <NetPill net={viewerNetOf ? viewerNetOf(e) : null} currency={e.currency} />
+              {(() => {
+                const raw = viewerNetOf ? viewerNetOf(e) : null
+                const ch = Number(e.charged_rate) > 0 && e.charged_currency
+                const dn = raw == null ? null : ch ? raw * Number(e.charged_rate) : raw
+                const dc = ch ? e.charged_currency : e.currency
+                return <NetPill net={dn} currency={dc} />
+              })()}
               <span className="text-sm font-medium text-on-surface shrink-0">
                 {formatCurrency(Number(e.amount) || 0, e.currency)}
               </span>

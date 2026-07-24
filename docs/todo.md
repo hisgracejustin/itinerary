@@ -1,5 +1,5 @@
-1. check ../nav for how it gets latest fx rates and come up with a plan for what we can do to have latest rates for the approx hkd calculations. no need to store a lot of historical fx rates unless you see a reason to? so we store a week's worth in db table or what?
-10. sometimes a usd transaction once charged has a known fx rate it was charged at. i may want to edit and add that and then i would expect that be paid off in hkd at that rate. how could we support that? plan with me.
+1. check ../nav for how it gets latest fx rates and come up with a plan for what we can do to have latest rates for the approx hkd calculations. no need to store a lot of historical fx rates unless you see a reason to? so we store a week's worth in db table or what? — ✅ done 2026-07-24
+10. sometimes a usd transaction once charged has a known fx rate it was charged at. i may want to edit and add that and then i would expect that be paid off in hkd at that rate. how could we support that? plan with me. — ✅ done 2026-07-24
 2. the pages like costs, settle up, settings, on desktop look really weird, they're wasting a lot of horizontal space as they take like a fixed width and have their own scrollbar where ive to be in the section. fix up 
 6. in the side bar, version number is 0.1.0, use the git short commit sha instead
 7. allow users, when they log in to change their avatar. options are in public/icons/, frogs of different varieties. can be user specific, same for all trips if they set one.

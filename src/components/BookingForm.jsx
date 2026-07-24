@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { CURRENCIES, formatCurrency } from '../lib/currencies'
 import { useTripContext } from '../lib/trip-context'
 import SplitEditor from './SplitEditor'
+import ChargedRateEditor from './ChargedRateEditor'
 
 const BOOKING_TYPES = ['flight', 'train', 'bus', 'rental', 'cruise', 'hotel', 'activity']
 
@@ -94,6 +95,8 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
     cost_share: '1',
     paid_by: '',
     splits: [],
+    charged_currency: '',
+    charged_rate: '',
     details: {},
   })
 
@@ -120,6 +123,8 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
               extra_amount: Number(s.extra_amount) || 0,
             }))
           : [],
+        charged_currency: booking.charged_currency || '',
+        charged_rate: booking.charged_rate != null ? String(booking.charged_rate) : '',
         details: booking.details || {},
       })
     }
@@ -181,6 +186,12 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
       const sumExtras = form.splits.reduce((s, r) => s + (Number(r.extra_amount) || 0), 0)
       if (sumExtras > splittable + 0.01) errs.paid_by = 'Extras exceed the total cost'
     }
+    // Charged rate (mirrors the Zod refine): a chosen charged currency needs a
+    // rate > 0, and it must differ from the cost's own currency.
+    if (form.cost_amount && form.charged_currency) {
+      if (!(parseFloat(form.charged_rate) > 0)) errs.charged_rate = 'Enter the rate it was charged at'
+      else if (form.charged_currency === form.cost_currency) errs.charged_rate = 'Charged currency must differ from the cost currency'
+    }
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -215,6 +226,16 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
       // booking (replace-all delete); no cost clears both.
       paid_by: form.cost_amount ? form.paid_by || null : null,
       splits: form.cost_amount ? form.splits || [] : [],
+      // Charged currency + rate only make sense with a cost, and are sent as a
+      // pair (both null when absent — clears the columns).
+      charged_currency:
+        form.cost_amount && form.charged_currency && parseFloat(form.charged_rate) > 0
+          ? form.charged_currency
+          : null,
+      charged_rate:
+        form.cost_amount && form.charged_currency && parseFloat(form.charged_rate) > 0
+          ? parseFloat(form.charged_rate)
+          : null,
       details: Object.keys(form.details).length > 0 ? form.details : null,
     })
   }
@@ -406,6 +427,21 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
               }}
             />
             {errors.paid_by && <p className="text-xs text-red-500 mt-1">{errors.paid_by}</p>}
+            <ChargedRateEditor
+              nativeCurrency={form.cost_currency}
+              effective={(parseFloat(form.cost_amount) || 0) * (parseFloat(form.cost_share) || 1)}
+              chargedCurrency={form.charged_currency}
+              chargedRate={form.charged_rate}
+              onChange={({ charged_currency, charged_rate }) => {
+                setForm((prev) => ({
+                  ...prev,
+                  charged_currency: charged_currency ?? '',
+                  charged_rate: charged_rate ?? '',
+                }))
+                setErrors((prev) => ({ ...prev, charged_rate: undefined }))
+              }}
+            />
+            {errors.charged_rate && <p className="text-xs text-red-500 mt-1">{errors.charged_rate}</p>}
           </div>
         )}
       </div>

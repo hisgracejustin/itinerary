@@ -42,6 +42,15 @@
  *  - The payer needn't be in the split (paying on behalf of others is fine).
  *  - With `cost_share < 1` the payer is assumed to have fronted only the trip's
  *    effective portion; the external remainder is out of scope.
+ *  - CHARGED RATE: an item may carry `charged_currency` + `charged_rate` — the
+ *    exact currency and rate its card was billed at (e.g. a USD fare charged to
+ *    an HKD card at a known rate). When present, the item's ENTIRE settlement
+ *    contribution — the paid amount and every share, extras included — is
+ *    re-denominated at that rate into `charged_currency`. This is a user-entered
+ *    charged rate that re-denominates the item exactly — it is NOT approximate
+ *    FX; the no-toHKD rule still holds. itemShares stays native; scaling the
+ *    paid amount and shares by the same factor afterwards preserves proportions
+ *    and extras exactly.
  */
 
 // Same zero-decimal set formatCurrency special-cases. ε is the settle threshold:
@@ -136,6 +145,16 @@ export function itemViewerNet({ amount, paidBy, splits, unitMemberIds }) {
   return net
 }
 
+/**
+ * The settle currency + scaling rate for an item: its charged currency/rate when
+ * both are present and valid, else the native currency at rate 1.
+ */
+function settleDenomination(nativeCurrency, chargedCurrency, chargedRate) {
+  const rate = Number(chargedRate)
+  if (chargedCurrency && rate > 0) return { settleCurrency: chargedCurrency, settleRate: rate }
+  return { settleCurrency: nativeCurrency, settleRate: 1 }
+}
+
 /** Normalize a cost-bearing booking into a settle item, or null if not priced. */
 function bookingItem(b) {
   if (b.cost_amount == null || !b.cost_currency) return null
@@ -147,6 +166,7 @@ function bookingItem(b) {
     currency: b.cost_currency,
     paid_by: b.paid_by ?? null,
     splits: Array.isArray(b.splits) ? b.splits : [],
+    ...settleDenomination(b.cost_currency, b.charged_currency, b.charged_rate),
   }
 }
 
@@ -159,6 +179,7 @@ function expenseItem(e) {
     currency: e.currency,
     paid_by: e.paid_by ?? null,
     splits: Array.isArray(e.splits) ? e.splits : [],
+    ...settleDenomination(e.currency, e.charged_currency, e.charged_rate),
   }
 }
 
@@ -223,9 +244,14 @@ export function computeBalances({
     const shares = itemShares(item.amount, item.splits)
     if (!shares) continue
 
-    add(totals(paid, item.paid_by), item.currency, item.amount)
+    // Re-denominate at the charged rate (1 / native currency when none): shares
+    // stay native above, so scaling the paid amount and every share by the same
+    // factor here preserves proportions and extras exactly.
+    const cur = item.settleCurrency ?? item.currency
+    const rate = item.settleRate ?? 1
+    add(totals(paid, item.paid_by), cur, item.amount * rate)
     for (const [userId, share] of shares) {
-      add(totals(owed, userId), item.currency, share)
+      add(totals(owed, userId), cur, share * rate)
     }
   }
 
