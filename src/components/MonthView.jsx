@@ -252,9 +252,6 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
           {seg.isStart ? (b.type === 'cruise' ? '🚢' : '🔑') : stayIcon(b)}
         </span>
         <span className="truncate min-w-0">{b.title}</span>
-        {seg.isEnd && (
-          <span className="ml-auto shrink-0 text-[8px] font-semibold uppercase tracking-wide opacity-70">out</span>
-        )}
       </button>
     )
   }
