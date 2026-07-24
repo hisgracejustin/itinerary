@@ -1,18 +1,19 @@
 "use client";
 
 import { useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
 import { useTripContext } from '../lib/trip-context'
 import { computeBalances, suggestTransfers } from '../lib/split'
 import { formatCurrency, CURRENCIES } from '../lib/currencies'
 import { TYPE_ICONS } from '../lib/calendar'
 import AssigneePicker, { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
 import SplitEditor from '../components/SplitEditor'
+import BookingModal from '../components/BookingModal'
 import { useToast } from '../components/Toast'
 import { friendlyError } from '../lib/friendlyError'
 import {
   createExpense, updateExpense, deleteExpense,
   recordSettlement, deleteSettlement,
+  updateBooking, deleteBooking,
 } from '../lib/client-actions'
 
 // Same zero-decimal set the settle math special-cases; used here only to hide
@@ -42,6 +43,13 @@ export default function Settle({
   const { selectedTrips, selectedTrip, tripMeta, trips } = useTripContext()
   const { toast } = useToast()
   const [busy, setBusy] = useState(false)
+  // Booking modal for "Needs attention" rows — same local wiring as Costs.jsx.
+  const [bookingModalOpen, setBookingModalOpen] = useState(false)
+  const [editingBooking, setEditingBooking] = useState(null)
+  const openBooking = (booking) => {
+    setEditingBooking(booking)
+    setBookingModalOpen(true)
+  }
 
   // Props carry the union of every accessible trip; filter to the selection
   // (empty selection = all trips) and recompute balances client-side.
@@ -222,10 +230,10 @@ export default function Settle({
             <SectionTitle>Needs attention</SectionTitle>
             <div className="space-y-1.5">
               {unallocated.map((ref, i) => (
-                <NeedsAttentionRow key={`u-${i}`} item={ref} reason="Not split yet" />
+                <NeedsAttentionRow key={`u-${i}`} item={ref} reason="Not split yet" onOpen={openBooking} />
               ))}
               {missingPayer.map((ref, i) => (
-                <NeedsAttentionRow key={`p-${i}`} item={ref} reason="No payer set" />
+                <NeedsAttentionRow key={`p-${i}`} item={ref} reason="No payer set" onOpen={openBooking} />
               ))}
             </div>
           </section>
@@ -336,6 +344,22 @@ export default function Settle({
           )}
         </section>
       </div>
+
+      {bookingModalOpen && (
+        <BookingModal
+          booking={editingBooking}
+          selectedTrip={selectedTrip}
+          tripName={tripMeta?.name}
+          onClose={() => setBookingModalOpen(false)}
+          onSave={async (data, existingId) => {
+            const id = existingId ?? editingBooking?.id
+            if (id) return await updateBooking(id, data)
+          }}
+          onDelete={async (id) => {
+            await deleteBooking(id)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -420,8 +444,8 @@ function BalanceRow({ unit, memberByUserId }) {
   )
 }
 
-/** Booking → link to its type page (the shell exposes no edit-in-place hook). */
-function NeedsAttentionRow({ item, reason }) {
+/** Booking → opens the booking modal in place (same wiring as Costs). */
+function NeedsAttentionRow({ item, reason, onOpen }) {
   const isBooking = !!item.type
   const title = item.title || 'Untitled'
   const icon = isBooking ? (TYPE_ICONS[item.type] || '🗂️') : '🧾'
@@ -434,12 +458,12 @@ function NeedsAttentionRow({ item, reason }) {
   )
   if (isBooking) {
     return (
-      <Link
-        href={`/bookings/${item.type}`}
-        className="block py-2 border-b border-outline/20 last:border-0 hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors"
+      <div
+        onClick={() => onOpen(item)}
+        className="py-2 border-b border-outline/20 last:border-0 cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors"
       >
         {inner}
-      </Link>
+      </div>
     )
   }
   return <div className="py-2 border-b border-outline/20 last:border-0">{inner}</div>
