@@ -73,7 +73,13 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   const journeyStart = spanStart ? new Date(spanStart + 'T00:00:00') : null
   const journeyEnd = spanEnd ? new Date(spanEnd + 'T00:00:00') : null
   const hasSpan = !!(journeyStart && journeyEnd)
-  const VIEWS = hasSpan ? ['journey', 'month', 'week', 'day'] : ['month', 'week', 'day']
+  // Journey view disabled 2026-07-24 — Justin prefers Month (its day-select
+  // detail panel) as the trip default, and switching defaults between views
+  // caused a visible flash on trip toggles. Flip to re-enable: the timeline,
+  // trip rails, collapsed gap runs, and gap-day "add to trip" actions all live
+  // in JourneyView and come back with this flag.
+  const JOURNEY_ENABLED = false
+  const VIEWS = JOURNEY_ENABLED && hasSpan ? ['journey', 'month', 'week', 'day'] : ['month', 'week', 'day']
 
   // An explicitly chosen view must survive trip toggles, which are full
   // document navigations (see Sidebar): the choice is kept in sessionStorage,
@@ -83,7 +89,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   // history.replaceState — Next's patched history triggers the same stale
   // router machinery the anchors exist to avoid (vercel/next.js#92187).
   const [view, setView] = useState(
-    VIEWS.includes(initialView) ? initialView : hasSpan ? 'journey' : 'month'
+    VIEWS.includes(initialView) ? initialView : JOURNEY_ENABLED && hasSpan ? 'journey' : 'month'
   )
   const persistView = (v) => {
     setView(v)
@@ -324,7 +330,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
       </div>
 
       <div className="flex-1 mat-surface overflow-hidden">
-        {view === 'journey' && hasSpan && (
+        {JOURNEY_ENABLED && view === 'journey' && hasSpan && (
           <JourneyView
             bookings={bookings}
             todos={todos}

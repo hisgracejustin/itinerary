@@ -1,6 +1,11 @@
 # Journey view — a calendar across multiple trips
 
-**Status:** plan / not implemented.
+**Status:** shipped July 2026, then the Journey *view* was disabled (2026-07-24)
+— Justin prefers Month (its day-select detail panel) as the trip default. Still
+live: multi-trip selection, union queries, and the span-based no-stay warning in
+Month/Week/Day. Dormant behind `JOURNEY_ENABLED` in `src/screens/Calendar.jsx`:
+the timeline view, trip rails, collapsed gap runs, and gap-day "add to trip"
+actions.
 
 Today the calendar shows exactly one trip (`?trip=<id>`) or "All Trips". Real
 travel doesn't split that cleanly: a single run of travel is often filed as two
