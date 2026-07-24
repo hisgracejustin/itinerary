@@ -41,9 +41,17 @@ export const FX_RATES_TO_HKD = {
 }
 
 /**
- * Convert an amount in a given currency to HKD.
+ * Convert an amount in a given currency to HKD (approximate — for cost
+ * exploration only, never settlement math).
+ *
+ * `rates` (optional) is a live rate map (currency → "1 ccy = Y HKD"), e.g. from
+ * getLatestFxRates() threaded through TripContext.fx. When it carries a positive
+ * rate for `currency`, that live rate wins; otherwise we fall back to the static
+ * built-in table. HKD is always 1. Existing 2-arg callers are unchanged.
  */
-export function toHKD(amount, currency) {
+export function toHKD(amount, currency, rates) {
+  if (currency === 'HKD') return amount
+  if (rates && rates[currency] > 0) return amount * rates[currency]
   const rate = FX_RATES_TO_HKD[currency]
   if (!rate) return amount
   return amount * rate

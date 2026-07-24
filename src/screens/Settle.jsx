@@ -5,7 +5,7 @@ import { useTripContext } from '../lib/trip-context'
 import { computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
 // toHKD is for the Split-costs SORT ORDER only — every displayed amount on this
 // page stays exact per-currency (no ~ conversions).
-import { formatCurrency, CURRENCIES, toHKD } from '../lib/currencies'
+import { formatCurrency, CURRENCIES, FX_RATES_TO_HKD, toHKD } from '../lib/currencies'
 import { TYPE_ICONS } from '../lib/calendar'
 import AssigneePicker, { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
 import SplitEditor from '../components/SplitEditor'
@@ -42,7 +42,8 @@ export default function Settle({
   settlements: allSettlements,
   currentUserId,
 }) {
-  const { selectedTrips, selectedTrip, tripMeta, trips } = useTripContext()
+  const { selectedTrips, selectedTrip, tripMeta, trips, fx } = useTripContext()
+  const rates = fx?.rates
   const { toast } = useToast()
   const [busy, setBusy] = useState(false)
   // Booking modal for "Needs attention" rows — same local wiring as Costs.jsx.
@@ -266,7 +267,7 @@ export default function Settle({
                 <tbody>
                   {[...splitCostRows]
                     .sort((a, b) => {
-                      const key = (r) => (r.net == null ? 0 : toHKD(r.net, r.b.cost_currency))
+                      const key = (r) => (r.net == null ? 0 : toHKD(r.net, r.b.cost_currency, rates))
                       return key(b) - key(a)
                     })
                     .map(({ b, net }) => {
@@ -275,7 +276,7 @@ export default function Settle({
                         (s) => memberByUserId.get(s.user_id) ?? { id: s.user_id },
                       )
                       const eps = epsFor(b.cost_currency)
-                      const netHKD = net == null ? null : toHKD(net, b.cost_currency)
+                      const netHKD = net == null ? null : toHKD(net, b.cost_currency, rates)
                       return (
                         <tr
                           key={b.id}
@@ -332,11 +333,10 @@ export default function Settle({
                 </tbody>
               </table>
             </div>
-            {splitCostRows.some(({ b }) => b.cost_currency !== 'HKD') && (
-              <p className="text-[11px] text-on-surface-variant/70 mt-2">
-                Non-HKD amounts converted at approximate rates.
-              </p>
-            )}
+            <RatesDisclosure
+              currencies={[...new Set(splitCostRows.map(({ b }) => b.cost_currency).filter((c) => c && c !== 'HKD'))]}
+              fx={fx}
+            />
           </section>
         )}
 
@@ -502,6 +502,58 @@ function SectionTitle({ children, className = '' }) {
 
 function EmptyLine({ children }) {
   return <p className="text-sm text-on-surface-variant/80 py-2">{children}</p>
+}
+
+/**
+ * The split-costs footnote + an inline "Rates" disclosure. When every row is
+ * HKD (no non-HKD currencies) it renders nothing. Otherwise it names the rate
+ * date (or the built-in fallback) and, on toggle, lists each non-HKD currency's
+ * rate to HKD — live (with its fetch time) or the built-in approximate rate.
+ */
+function RatesDisclosure({ currencies, fx }) {
+  const [open, setOpen] = useState(false)
+  if (!currencies || currencies.length === 0) return null
+  const rates = fx?.rates
+  const rateDate = fx?.rateDate ?? null
+  const fetchedLabel = fx?.fetchedAt
+    ? new Date(fx.fetchedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    : null
+  return (
+    <div className="mt-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <p className="text-[11px] text-on-surface-variant/70 min-w-0 truncate">
+          {rateDate
+            ? `Non-HKD amounts converted at rates as of ${rateDate}`
+            : 'Non-HKD amounts converted at approximate built-in rates'}
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="text-[11px] text-primary shrink-0"
+        >
+          {open ? 'Hide' : 'Rates'}
+        </button>
+      </div>
+      {open && (
+        <div className="mt-1.5 space-y-0.5">
+          {currencies.map((c) => {
+            const live = rates && rates[c] > 0
+            const rate = live ? rates[c] : FX_RATES_TO_HKD[c]
+            return (
+              <div key={c} className="text-[11px] text-on-surface-variant truncate">
+                1 {c} = {formatCurrency(rate ?? 0, 'HKD')}
+                {live
+                  ? fetchedLabel
+                    ? ` · fetched ${fetchedLabel}`
+                    : ''
+                  : ' · built-in approximate rate'}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 /**

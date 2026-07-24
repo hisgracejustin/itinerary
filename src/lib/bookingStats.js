@@ -276,7 +276,7 @@ function activityStats(bookings) {
  * deliberately mirrors its semantics (cost_share, static FX) and shows a single
  * number — anything richer belongs there, not here.
  */
-function spendStat(bookings) {
+function spendStat(bookings, rates) {
   const priced = bookings.filter((b) => b.cost_amount && b.cost_currency)
   if (priced.length === 0) return null
   const effective = (b) => b.cost_amount * (b.cost_share != null ? b.cost_share : 1)
@@ -290,8 +290,9 @@ function spendStat(bookings) {
     const total = priced.reduce((sum, b) => sum + effective(b), 0)
     return { key: 'spend', label: 'Spend', value: formatCurrency(total, currencies[0]), hint }
   }
-  // Mixed currencies: convert, and flag it — the rates are static.
-  const total = priced.reduce((sum, b) => sum + toHKD(effective(b), b.cost_currency), 0)
+  // Mixed currencies: convert, and flag it — approximate even with live rates.
+  // `rates` (optional) prefers live FX; without it toHKD uses the static table.
+  const total = priced.reduce((sum, b) => sum + toHKD(effective(b), b.cost_currency, rates), 0)
   return { key: 'spend', label: 'Spend', value: formatCurrency(total, 'HKD'), approx: true, hint }
 }
 
@@ -309,12 +310,12 @@ const BY_TYPE = {
  * Stats for one booking type. `bookings` must already be filtered to that type.
  * Returns [] when there is nothing worth showing, so the caller can skip the strip.
  */
-export function getBookingStats(type, bookings) {
+export function getBookingStats(type, bookings, rates) {
   if (!Array.isArray(bookings) || bookings.length === 0) return []
   const build = BY_TYPE[type]
   if (!build) return []
   const stats = build(bookings)
-  const spend = spendStat(bookings)
+  const spend = spendStat(bookings, rates)
   if (spend) stats.push(spend)
   return stats
 }

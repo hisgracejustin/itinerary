@@ -21,7 +21,7 @@ const TYPE_LABELS = {
 }
 
 export default function BookingsByType({ type, bookings: allBookings }) {
-  const { selectedTrip, tripMeta, trips, selectedTrips } = useTripContext()
+  const { selectedTrip, tripMeta, trips, selectedTrips, fx } = useTripContext()
   const [modalOpen, setModalOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState(null)
   // 'all' | <tripId>. Only offered on the All Trips view — with a sidebar
@@ -43,7 +43,7 @@ export default function BookingsByType({ type, bookings: allBookings }) {
   // `bookings` is already trip-scoped by the RSC when a trip is selected in the
   // sidebar; the chips above only sub-filter the All Trips view. Stats follow
   // whichever filter is active.
-  const stats = useMemo(() => getBookingStats(type, filtered), [type, filtered])
+  const stats = useMemo(() => getBookingStats(type, filtered, fx?.rates), [type, filtered, fx])
 
   const openEditModal = (booking) => {
     setEditingBooking(booking)

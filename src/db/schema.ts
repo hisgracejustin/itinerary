@@ -357,6 +357,24 @@ export const settlements = pgTable(
   (t) => [index("idx_settlements_trip_id").on(t.trip_id)],
 );
 
+// Rolling cache of live FX rates (Frankfurter/ECB), used ONLY to sharpen the
+// approximate ~HKD conversions on the Costs/Settle pages — never settlement
+// math. `rate_to_hkd` is our semantic "1 currency = Y HKD" (matching the static
+// FX_RATES_TO_HKD table), NOT the Frankfurter base=HKD inverse; src/lib/fx.ts
+// stores Y = 1/X. Refreshed lazily after the response when stale and pruned to a
+// rolling ~30-day window; toHKD prefers the newest row, falling back to the
+// static table when the cache is empty.
+export const fxRates = pgTable(
+  "fx_rates",
+  {
+    rate_date: text("rate_date").notNull(), // "YYYY-MM-DD" — the ECB publication date
+    currency: text("currency").notNull(),
+    rate_to_hkd: numeric("rate_to_hkd", { mode: "number" }).notNull(),
+    fetched_at: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.rate_date, t.currency] })],
+);
+
 /* -------------------------------- relations -------------------------------- */
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -463,3 +481,5 @@ export type ExpenseSplit = typeof expenseSplits.$inferSelect;
 export type NewExpenseSplit = typeof expenseSplits.$inferInsert;
 export type Settlement = typeof settlements.$inferSelect;
 export type NewSettlement = typeof settlements.$inferInsert;
+export type FxRate = typeof fxRates.$inferSelect;
+export type NewFxRate = typeof fxRates.$inferInsert;

@@ -12,6 +12,7 @@ import { parseTripParam } from "@/lib/trip-params";
 type Props = {
   user: { email: string; name: string | null };
   trips: TripSummary[];
+  fx: { rates: Record<string, number>; rateDate: string | null; fetchedAt: string | Date | null };
   children: React.ReactNode;
 };
 
@@ -19,7 +20,7 @@ const MIN_SIDEBAR_WIDTH = 208;
 const MAX_SIDEBAR_WIDTH = 480;
 const DEFAULT_SIDEBAR_WIDTH = 288; // matches the old w-72
 
-export function AppShell({ user, trips, children }: Props) {
+export function AppShell({ user, trips, fx, children }: Props) {
   // Trip selection is pure client state: pages always load the union of every
   // accessible trip's data and screens filter it by this selection, so a
   // toggle is one instant React render — no navigation, no refetch. (Also the
@@ -202,7 +203,7 @@ export function AppShell({ user, trips, children }: Props) {
     // below is rendered by the shell itself, and BookingForm calls
     // useTripContext() (which throws when there is no provider above it).
     <TripContext.Provider
-      value={{ selectedTrips, tripMetas, spanStart, spanEnd, selectedTrip, tripMeta, trips, toggleTrip, setSelectedTrips }}
+      value={{ selectedTrips, tripMetas, spanStart, spanEnd, selectedTrip, tripMeta, trips, fx, toggleTrip, setSelectedTrips }}
     >
     <div className="fixed inset-0 flex flex-row bg-surface-dim pb-[env(safe-area-inset-bottom)]">
       {/* Mobile overlay */}

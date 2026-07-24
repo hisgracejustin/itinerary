@@ -50,6 +50,15 @@ export type TripContextValue = {
   /** All the user's trips (from the layout) — for pickers that need the full list. */
   trips: TripSummary[];
 
+  /**
+   * Live FX rates for the approximate ~HKD conversions (Costs/Settle only —
+   * never settlement math). Fetched by the layout; `rates` maps currency →
+   * "1 <ccy> = Y HKD". Empty `rates`/null `rateDate` means the cache is empty
+   * and callers fall back to the static built-in table. `fetchedAt` may arrive
+   * as a Date (server) — stringify/reparse at the display site.
+   */
+  fx: { rates: Record<string, number>; rateDate: string | null; fetchedAt: string | Date | null };
+
   /** Toggle one trip in/out of the selection. */
   toggleTrip: (tripId: string) => void;
   /** Replace the selection ([] = All Trips). Unknown ids are dropped. */

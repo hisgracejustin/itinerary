@@ -12,7 +12,8 @@ import { memberFirstName } from '../components/AssigneePicker'
 const EXPENSE_ICON = '🧾'
 
 export default function Costs({ bookings: allBookings, expenses: allExpenses, currentUserId }) {
-  const { tripMeta, selectedTrip, selectedTrips, trips } = useTripContext()
+  const { tripMeta, selectedTrip, selectedTrips, trips, fx } = useTripContext()
+  const rates = fx?.rates
   const [scope, setScope] = useState('everyone') // 'everyone' | 'me' | 'us'
   const [modalOpen, setModalOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState(null)
@@ -117,7 +118,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     .map((it) => ({ it, amount: contribution(it) }))
     .filter((s) => s.amount != null && (scope === 'everyone' || s.amount > 0))
 
-  const totalHKD = scoped.reduce((sum, s) => sum + toHKD(s.amount, s.it.currency), 0)
+  const totalHKD = scoped.reduce((sum, s) => sum + toHKD(s.amount, s.it.currency, rates), 0)
 
   // Breakdown by currency.
   const byCurrency = {}
@@ -125,20 +126,20 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     byCurrency[s.it.currency] = (byCurrency[s.it.currency] || 0) + s.amount
   })
   const currencyBreakdown = Object.entries(byCurrency).sort(
-    (a, b) => toHKD(b[1], b[0]) - toHKD(a[1], a[0]),
+    (a, b) => toHKD(b[1], b[0], rates) - toHKD(a[1], a[0], rates),
   )
 
   // By type (bookings by type + a single "Expenses" category), in HKD.
   const byType = {}
   scoped.forEach((s) => {
-    byType[s.it.type] = (byType[s.it.type] || 0) + toHKD(s.amount, s.it.currency)
+    byType[s.it.type] = (byType[s.it.type] || 0) + toHKD(s.amount, s.it.currency, rates)
   })
   const typeBreakdown = Object.entries(byType).sort((a, b) => b[1] - a[1])
   const typeLabel = (type) => (type === 'expense' ? 'Expenses' : `${type}s`)
   const typeIcon = (type) => (type === 'expense' ? EXPENSE_ICON : TYPE_ICONS[type] || '📌')
 
   const sorted = [...scoped].sort(
-    (a, b) => toHKD(b.amount, b.it.currency) - toHKD(a.amount, a.it.currency),
+    (a, b) => toHKD(b.amount, b.it.currency, rates) - toHKD(a.amount, a.it.currency, rates),
   )
 
   const headerLabel =
@@ -284,7 +285,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                     </div>
                     {it.currency !== 'HKD' && (
                       <div className="text-[11px] text-on-surface-variant">
-                        ~HK${toHKD(amount, it.currency).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        ~HK${toHKD(amount, it.currency, rates).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </div>
                     )}
                   </div>
