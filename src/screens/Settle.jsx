@@ -565,7 +565,8 @@ function RatesDisclosure({ currencies, fx }) {
             const rate = live ? rates[c] : FX_RATES_TO_HKD[c]
             return (
               <div key={c} className="text-[11px] text-on-surface-variant truncate">
-                1 {c} = {formatCurrency(rate ?? 0, 'HKD')}
+                {/* Significant digits, not cents — ¥→HKD is 0.0480, not 0.05. */}
+                1 {c} = HK${(rate ?? 0).toLocaleString(undefined, { maximumSignificantDigits: 4 })}
                 {live
                   ? fetchedLabel
                     ? ` · fetched ${fetchedLabel}`
