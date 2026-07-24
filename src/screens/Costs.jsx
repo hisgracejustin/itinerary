@@ -2,16 +2,24 @@
 
 import { useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
+import { updateBooking, deleteBooking } from '@/lib/client-actions'
 import { toHKD, formatCurrency } from '../lib/currencies'
 import { TYPE_ICONS } from '../lib/calendar'
 import FilterChip from '../components/FilterChip'
+import BookingModal from '../components/BookingModal'
 import { memberFirstName } from '../components/AssigneePicker'
 
 const EXPENSE_ICON = '🧾'
 
 export default function Costs({ bookings: allBookings, expenses: allExpenses, currentUserId }) {
-  const { tripMeta, selectedTrips, trips } = useTripContext()
+  const { tripMeta, selectedTrip, selectedTrips, trips } = useTripContext()
   const [scope, setScope] = useState('everyone') // 'everyone' | 'me' | 'us'
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingBooking, setEditingBooking] = useState(null)
+  // 'all' | <tripId>. Only offered on the All Trips view — with a sidebar
+  // selection the list is already scoped by it, so chips would be dead.
+  const [tripFilter, setTripFilter] = useState('all')
+  const showTripChips = selectedTrips.length === 0 && trips.length > 1
 
   // Props carry the union of every trip; filter by the client-side selection.
   const selSet = new Set(selectedTrips)
@@ -37,6 +45,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
         cost_share: b.cost_share,
         effective: b.cost_amount * (b.cost_share != null ? b.cost_share : 1),
         splits: Array.isArray(b.splits) ? b.splits : [],
+        booking: b,
       })),
     ...expenses.map((e) => ({
       id: `ex-${e.id}`,
@@ -51,6 +60,10 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
       splits: Array.isArray(e.splits) ? e.splits : [],
     })),
   ]
+
+  // Trip chips sub-filter the sidebar selection (the same compose pattern as the
+  // per-type booking lists). Cost math below runs on the chip-filtered set.
+  const filteredItems = tripFilter === 'all' ? items : items.filter((it) => it.trip_id === tripFilter)
 
   // Whether the viewer belongs to a party in any relevant (filtered) trip — the
   // "Us" chip only appears then. The label is that party's name.
@@ -92,9 +105,9 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   }
 
   // Items with a cost but no split rows: excluded from Me/Us, surfaced as a note.
-  const unsplitCount = scope === 'everyone' ? 0 : items.filter((it) => it.splits.length === 0).length
+  const unsplitCount = scope === 'everyone' ? 0 : filteredItems.filter((it) => it.splits.length === 0).length
 
-  const scoped = items
+  const scoped = filteredItems
     .map((it) => ({ it, amount: contribution(it) }))
     .filter((s) => s.amount != null && (scope === 'everyone' || s.amount > 0))
 
@@ -125,6 +138,11 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   const headerLabel =
     scope === 'everyone' ? 'Trip total' : scope === 'me' ? 'Your share' : `${usParty?.name || 'Our'}'s share`
 
+  const openEditModal = (booking) => {
+    setEditingBooking(booking)
+    setModalOpen(true)
+  }
+
   return (
     <div className="h-full flex flex-col w-full max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-4">
@@ -137,13 +155,36 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
       </div>
 
       {/* Scope toggle */}
-      <div className="flex flex-wrap gap-1.5 mb-5">
+      <div className={`flex flex-wrap gap-1.5 ${showTripChips ? 'mb-3' : 'mb-5'}`}>
         <FilterChip active={scope === 'everyone'} onClick={() => setScope('everyone')} label="Everyone" />
         <FilterChip active={scope === 'me'} onClick={() => setScope('me')} label={meLabel} />
         {showUs && (
           <FilterChip active={scope === 'us'} onClick={() => setScope('us')} label={usParty.name} />
         )}
       </div>
+
+      {/* Trip filter — same chip row as the per-type booking lists. */}
+      {showTripChips && (
+        <div className="flex items-center gap-1.5 mb-5 overflow-x-auto pb-1 shrink-0">
+          <FilterChip
+            active={tripFilter === 'all'}
+            onClick={() => setTripFilter('all')}
+            label="All trips"
+          />
+          {trips.map((trip) => {
+            const count = items.filter((it) => it.trip_id === trip.id).length
+            return (
+              <FilterChip
+                key={trip.id}
+                active={tripFilter === trip.id}
+                onClick={() => setTripFilter(tripFilter === trip.id ? 'all' : trip.id)}
+                label={trip.name}
+                count={count}
+              />
+            )
+          })}
+        </div>
+      )}
 
       {items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant">
@@ -211,8 +252,16 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
           <div className="mat-surface p-6">
             <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-4">All Costs (by amount)</div>
             <div className="space-y-1">
-              {sorted.map(({ it, amount }) => (
-                <div key={it.id} className="flex items-center justify-between py-3 border-b border-outline/20 last:border-0">
+              {sorted.map(({ it, amount }) => {
+                const clickable = it.kind === 'booking' && it.booking
+                return (
+                <div
+                  key={it.id}
+                  onClick={clickable ? () => openEditModal(it.booking) : undefined}
+                  className={`flex items-center justify-between py-3 border-b border-outline/20 last:border-0 ${
+                    clickable ? 'cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors' : ''
+                  }`}
+                >
                   <div className="flex items-center gap-3 min-w-0">
                     <span className="text-base">{typeIcon(it.type)}</span>
                     <div className="min-w-0">
@@ -234,10 +283,27 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                     )}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </div>
+      )}
+
+      {modalOpen && (
+        <BookingModal
+          booking={editingBooking}
+          selectedTrip={selectedTrip}
+          tripName={tripMeta?.name}
+          onClose={() => setModalOpen(false)}
+          onSave={async (data, existingId) => {
+            const id = existingId ?? editingBooking?.id
+            if (id) return await updateBooking(id, data)
+          }}
+          onDelete={async (id) => {
+            await deleteBooking(id)
+          }}
+        />
       )}
     </div>
   )

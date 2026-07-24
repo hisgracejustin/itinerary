@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useTripContext } from '../lib/trip-context'
 import { computeBalances, suggestTransfers } from '../lib/split'
 import { formatCurrency, CURRENCIES } from '../lib/currencies'
+import { TYPE_ICONS } from '../lib/calendar'
 import AssigneePicker, { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
 import SplitEditor from '../components/SplitEditor'
 import { useToast } from '../components/Toast'
@@ -423,9 +424,10 @@ function BalanceRow({ unit, memberByUserId }) {
 function NeedsAttentionRow({ item, reason }) {
   const isBooking = !!item.type
   const title = item.title || 'Untitled'
+  const icon = isBooking ? (TYPE_ICONS[item.type] || '🗂️') : '🧾'
   const inner = (
     <div className="flex items-center gap-2 min-w-0">
-      <span className="text-base shrink-0">{isBooking ? '📌' : '🧾'}</span>
+      <span className="text-base shrink-0">{icon}</span>
       <span className="text-sm text-on-surface truncate min-w-0 flex-1">{title}</span>
       <span className="text-[11px] text-amber-600 shrink-0">{reason}</span>
     </div>
