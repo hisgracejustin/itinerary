@@ -1,6 +1,20 @@
+import { execSync } from "node:child_process";
 import type { NextConfig } from "next";
 
+// Bake the git short sha into the client bundle at build time; fall back to an
+// env-provided version (or "dev") when git isn't available (e.g. shallow-less
+// deploy environments without a .git directory).
+let appVersion: string;
+try {
+  appVersion = execSync("git rev-parse --short HEAD").toString().trim();
+} catch {
+  appVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? "dev";
+}
+
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_APP_VERSION: appVersion,
+  },
   // Native / wasm packages that must be loaded by Node directly, not bundled:
   //  - PGlite (local-dev embedded Postgres) ships wasm assets.
   //  - pg (node-postgres) is the production driver.

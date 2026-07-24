@@ -210,7 +210,7 @@ export default function Sidebar({ user, trips, onNavigate }) {
           </div>
         )}
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-on-surface-variant/50">v{APP_VERSION}</span>
+          <span className="text-[10px] text-on-surface-variant/50">{APP_VERSION}</span>
           <button
             onClick={async () => {
               const regs = await navigator.serviceWorker?.getRegistrations();
