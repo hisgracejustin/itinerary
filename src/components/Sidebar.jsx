@@ -102,17 +102,23 @@ export default function Sidebar({ user, trips, onNavigate }) {
             Manage
           </Link>
         </div>
-        {selectedTrips.length > 0 && (
-          <div className="flex items-center justify-between px-3 pb-1.5 text-[11px] text-on-surface-variant">
-            <span>{selectedTrips.length} trip{selectedTrips.length === 1 ? "" : "s"} selected</span>
-            <button
-              onClick={() => setSelectedTrips([])}
-              className="text-primary hover:text-primary/80 font-medium"
-            >
-              Clear
-            </button>
-          </div>
-        )}
+        {/* Always in the layout — fading instead of unmounting keeps the trips
+            list from jumping when the selection empties. */}
+        <div
+          aria-hidden={selectedTrips.length === 0}
+          className={`flex items-center justify-between px-3 pb-1.5 text-[11px] text-on-surface-variant transition-opacity duration-150 ${
+            selectedTrips.length > 0 ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
+        >
+          <span>{selectedTrips.length || 1} trip{selectedTrips.length === 1 ? "" : "s"} selected</span>
+          <button
+            onClick={() => setSelectedTrips([])}
+            tabIndex={selectedTrips.length > 0 ? 0 : -1}
+            className="text-primary hover:text-primary/80 font-medium"
+          >
+            Clear
+          </button>
+        </div>
         <ul className="space-y-0.5">
           <li>
             <button
