@@ -260,7 +260,7 @@ export default function Settle({
                     <th className="text-center font-semibold pb-2 px-2">Paid by</th>
                     <th className="text-left font-semibold pb-2 px-2">Split by</th>
                     <th className="text-right font-semibold pb-2 px-2 whitespace-nowrap">Net result</th>
-                    <th className="text-right font-semibold pb-2 pl-2 whitespace-nowrap">Net result (HKD)</th>
+                    <th className="text-right font-semibold pb-2 pl-2 whitespace-nowrap">~Net result (HKD)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -322,7 +322,6 @@ export default function Settle({
                             ) : (
                               <span className={`text-xs font-medium ${netHKD > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
                                 {netHKD > 0 ? '+' : '−'}
-                                {b.cost_currency === 'HKD' ? '' : '~'}
                                 HK${Math.abs(netHKD).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                               </span>
                             )}
