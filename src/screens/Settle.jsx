@@ -117,6 +117,16 @@ export default function Settle({
   }
   const effectiveOf = (b) => (b.cost_amount || 0) * (b.cost_share != null ? b.cost_share : 1)
 
+  // How many WAYS an item is split — settlement units, not people: a couple in
+  // the split counts once (4 people in 2 couples = ÷2).
+  const unitCountOf = (b) => {
+    const rows = members.filter((m) => m.trip_id === b.trip_id)
+    const partyOf = new Map(rows.map((m) => [m.id, m.party_id]))
+    const keys = new Set()
+    for (const s of b.splits || []) keys.add(partyOf.get(s.user_id) || `solo-${s.user_id}`)
+    return keys.size
+  }
+
   // An item's charged currency + rate (booking or expense), or null. When set,
   // the whole settlement contribution re-denominates at this exact rate.
   const chargedOf = (row) =>
@@ -329,31 +339,29 @@ export default function Settle({
           )}
         </section>
 
-        {/* 2 — Transfers, grouped by currency, one actionable card each. */}
+        {/* 2 — Transfers, grouped by currency, straight under the hero (no
+            wrapping card — each transfer is its own card, splitter-style). */}
         {transfers.length > 0 && (
-          <section className="mat-surface p-5">
-            <SectionTitle>Transfers</SectionTitle>
-            <div className="space-y-4">
-              {transferGroups.map(({ currency, list }) => (
-                <div key={currency}>
-                  <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
-                    {currency}
-                  </div>
-                  <div className="space-y-2">
-                    {list.map((t, i) => (
-                      <TransferCard
-                        key={i}
-                        t={t}
-                        memberByUserId={memberByUserId}
-                        currentUserId={currentUserId}
-                        onSettle={() => markPaid(t)}
-                      />
-                    ))}
-                  </div>
+          <div className="space-y-3">
+            {transferGroups.map(({ currency, list }) => (
+              <div key={currency}>
+                <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1.5 px-1">
+                  {currency}
                 </div>
-              ))}
-            </div>
-          </section>
+                <div className="space-y-2">
+                  {list.map((t, i) => (
+                    <TransferCard
+                      key={i}
+                      t={t}
+                      memberByUserId={memberByUserId}
+                      currentUserId={currentUserId}
+                      onSettle={() => markPaid(t)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
 
         {/* 3 — Balances */}
@@ -433,6 +441,7 @@ export default function Settle({
                           <Avatar member={payer} size="xs" />
                           <span className="truncate min-w-0 flex-1">
                             {memberFirstName(payer)} paid {formatCurrency(effectiveOf(b), b.cost_currency)}
+                            <span className="text-on-surface-variant/70"> · ÷{unitCountOf(b)}</span>
                           </span>
                           {disp.currency !== 'HKD' && netHKD != null && Math.abs(disp.net) >= eps && (
                             <span className="text-[11px] shrink-0">
@@ -482,6 +491,7 @@ export default function Settle({
                                 <div className="text-sm text-on-surface font-medium truncate">{b.title}</div>
                                 <div className="text-xs text-on-surface-variant truncate">
                                   paid {formatCurrency(effectiveOf(b), b.cost_currency)}
+                                  <span className="text-on-surface-variant/70"> · ÷{unitCountOf(b)}</span>
                                 </div>
                               </div>
                             </div>
@@ -818,7 +828,7 @@ function TransferCard({ t, memberByUserId, currentUserId, onSettle }) {
     sentence = `${t.fromUnit.name} pay ${t.toUnit.name}`
   }
   return (
-    <div className="rounded-xl border border-outline/30 bg-white p-4">
+    <div className="mat-surface p-4">
       <div className="flex items-center gap-2 min-w-0">
         <UnitAvatars unit={t.fromUnit} memberByUserId={memberByUserId} />
         <svg className="w-3.5 h-3.5 text-on-surface-variant shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
