@@ -649,7 +649,7 @@ function BalanceRow({ unit, memberByUserId }) {
       >
         <UnitAvatars unit={unit} memberByUserId={memberByUserId} />
         <span className="text-sm text-on-surface font-medium truncate min-w-0 flex-1">{unit.name}</span>
-        <span className="flex flex-wrap justify-end gap-1 shrink-0">
+        <span className="flex flex-wrap justify-end gap-1 min-w-0">
           {settled ? (
             <span className="text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">settled up</span>
           ) : (

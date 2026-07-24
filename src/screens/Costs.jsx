@@ -218,7 +218,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto grid gap-4 lg:grid-cols-2 auto-rows-min content-start">
           {/* Total */}
-          <div className="mat-surface p-6 lg:col-span-2">
+          <div className="mat-surface p-6 lg:col-span-2 min-w-0">
             <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1">
               {headerLabel} (approx. HKD)
             </div>
@@ -241,7 +241,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
           </div>
 
           {/* By type summary */}
-          <div className="mat-surface p-6">
+          <div className="mat-surface p-6 min-w-0">
             <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-4">By Type</div>
             <div className="space-y-3">
               {typeBreakdown.map(([type, hkdAmount]) => {
@@ -270,7 +270,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
           </div>
 
           {/* Individual items */}
-          <div className="mat-surface p-6">
+          <div className="mat-surface p-6 min-w-0">
             <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-4">All Costs (by amount)</div>
             <div className="space-y-1">
               {sorted.map(({ it, amount }) => {
