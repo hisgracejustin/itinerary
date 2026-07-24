@@ -24,13 +24,18 @@ const revalidateApp = () => revalidatePath("/", "layout");
  */
 async function replaceBookingSplits(
   bookingId: string,
-  splits: { user_id: string; weight: number }[] | undefined,
+  splits: { user_id: string; weight: number; extra_amount?: number }[] | undefined,
 ) {
   if (splits === undefined) return;
   await db.delete(tables.bookingSplits).where(eq(tables.bookingSplits.booking_id, bookingId));
   if (splits.length > 0) {
     await db.insert(tables.bookingSplits).values(
-      splits.map((s) => ({ booking_id: bookingId, user_id: s.user_id, weight: s.weight })),
+      splits.map((s) => ({
+        booking_id: bookingId,
+        user_id: s.user_id,
+        weight: s.weight,
+        extra_amount: s.extra_amount ?? 0,
+      })),
     );
   }
 }

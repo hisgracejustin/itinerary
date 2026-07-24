@@ -13,8 +13,14 @@ import { formatCurrency } from '../lib/currencies'
  * the members of `form.trip_id`), NOT the sidebar selection.
  *
  * Auto-enable (decision 4): when a payer is picked while there are no splits yet,
- * pre-fill every member at weight 1. Clearing the payer keeps the splits (they
- * surface as "needs a payer" until one is picked — validation blocks save).
+ * pre-fill every member at weight 1 (extra 0). Clearing the payer keeps the
+ * splits (they surface as "needs a payer" until one is picked — validation
+ * blocks save).
+ *
+ * Extras: each person can carry an itemized `extra_amount` attributed off the
+ * top (e.g. their baggage on a shared flight). The live share is
+ *   share_i = extra_i + weight_i/Σweights × (amount − Σextras)
+ * matching src/lib/split.js. With every extra 0 this is the old weight split.
  *
  * @param {object} props
  * @param {Array}  props.members  trip roster rows ({ id, name, email, image, party_id })
@@ -22,7 +28,7 @@ import { formatCurrency } from '../lib/currencies'
  * @param {number} props.amount   splittable amount, for the live share preview
  * @param {string} props.currency currency code for the preview
  * @param {string|null} props.paidBy  user id who paid, or null
- * @param {Array}  props.splits   [{ user_id, weight }]
+ * @param {Array}  props.splits   [{ user_id, weight, extra_amount }]
  * @param {(next: { paid_by: string|null, splits: Array }) => void} props.onChange
  */
 export default function SplitEditor({
@@ -35,16 +41,25 @@ export default function SplitEditor({
   onChange,
 }) {
   const [showShares, setShowShares] = useState(false)
-  // Local text drafts so a half-typed weight ("1.", "") doesn't get clobbered by
-  // the numeric round-trip; the parent still only ever sees valid positive numbers.
+  // Local text drafts so a half-typed weight/extra ("1.", "44.", "") doesn't get
+  // clobbered by the numeric round-trip; the parent still only ever sees valid
+  // non-negative numbers. Separate maps keyed by user id.
   const [drafts, setDrafts] = useState({})
+  const [extraDrafts, setExtraDrafts] = useState({})
 
   const includedIds = new Set(splits.map((s) => s.user_id))
   const weightOf = (id) => {
     const s = splits.find((x) => x.user_id === id)
     return s ? s.weight : 1
   }
+  const extraOf = (id) => {
+    const s = splits.find((x) => x.user_id === id)
+    return s && s.extra_amount != null ? s.extra_amount : 0
+  }
   const sumW = splits.reduce((acc, r) => acc + (Number(r.weight) || 0), 0)
+  const sumExtras = splits.reduce((acc, r) => acc + (Number(r.extra_amount) || 0), 0)
+  const remainder = amount - sumExtras
+  const extrasExceed = amount > 0 && sumExtras > amount + 0.01
 
   const emit = (next) =>
     onChange?.({
@@ -76,8 +91,8 @@ export default function SplitEditor({
   const handlePaidBy = (member) => {
     const newPaid = member?.id ?? null
     if (newPaid && !paidBy && splits.length === 0) {
-      // Auto-enable: pre-fill everyone equal.
-      emit({ paid_by: newPaid, splits: members.map((m) => ({ user_id: m.id, weight: 1 })) })
+      // Auto-enable: pre-fill everyone equal, no extras.
+      emit({ paid_by: newPaid, splits: members.map((m) => ({ user_id: m.id, weight: 1, extra_amount: 0 })) })
     } else {
       emit({ paid_by: newPaid })
     }
@@ -90,7 +105,7 @@ export default function SplitEditor({
     } else {
       const toAdd = unit.memberIds
         .filter((id) => !includedIds.has(id))
-        .map((id) => ({ user_id: id, weight: 1 }))
+        .map((id) => ({ user_id: id, weight: 1, extra_amount: 0 }))
       emit({ splits: [...splits, ...toAdd] })
     }
   }
@@ -99,8 +114,21 @@ export default function SplitEditor({
     const clean = raw.replace(/[^0-9.]/g, '')
     setDrafts((d) => ({ ...d, [id]: clean }))
     const num = parseFloat(clean)
-    if (!Number.isFinite(num) || num <= 0) return
+    // weight ≥ 0 now (an extras-only participant sits at 0); empty/invalid keeps
+    // the last good weight rather than emitting NaN.
+    if (!Number.isFinite(num) || num < 0) return
     emit({ splits: splits.map((s) => (s.user_id === id ? { ...s, weight: num } : s)) })
+  }
+
+  const setExtra = (id, raw) => {
+    const clean = raw.replace(/[^0-9.]/g, '')
+    setExtraDrafts((d) => ({ ...d, [id]: clean }))
+    const num = parseFloat(clean)
+    // empty/invalid extra = 0.
+    const extra = Number.isFinite(num) && num >= 0 ? num : 0
+    emit({
+      splits: splits.map((s) => (s.user_id === id ? { ...s, extra_amount: extra } : s)),
+    })
   }
 
   const includedMembers = members.filter((m) => includedIds.has(m.id))
@@ -173,10 +201,14 @@ export default function SplitEditor({
             <div className="mt-2 space-y-2">
               {includedMembers.map((m) => {
                 const w = weightOf(m.id)
-                const share = sumW > 0 ? amount * (w / sumW) : 0
+                const extra = extraOf(m.id)
+                // share = extra + weight/Σweights × (amount − Σextras); mirrors split.js.
+                const share = extra + (sumW > 0 ? (remainder * w) / sumW : 0)
                 const value = drafts[m.id] !== undefined ? drafts[m.id] : String(w)
+                const extraValue =
+                  extraDrafts[m.id] !== undefined ? extraDrafts[m.id] : extra ? String(extra) : ''
                 return (
-                  <div key={m.id} className="flex items-center gap-2 min-w-0">
+                  <div key={m.id} className="flex items-center gap-1.5 min-w-0">
                     <Avatar member={m} size="xs" />
                     <span className="text-xs text-on-surface truncate min-w-0 flex-1">
                       {memberFirstName(m)}
@@ -186,15 +218,27 @@ export default function SplitEditor({
                       inputMode="decimal"
                       value={value}
                       onChange={(e) => setWeight(m.id, e.target.value)}
-                      className="mat-input w-16 text-center shrink-0"
+                      className="mat-input w-14 text-center shrink-0"
                       aria-label={`Weight for ${memberFirstName(m)}`}
                     />
-                    <span className="text-xs text-on-surface-variant w-24 text-right shrink-0 truncate">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={extraValue}
+                      onChange={(e) => setExtra(m.id, e.target.value)}
+                      placeholder="+ extra"
+                      className="mat-input w-20 text-center shrink-0"
+                      aria-label={`Extra for ${memberFirstName(m)}`}
+                    />
+                    <span className="text-xs text-on-surface-variant w-20 text-right shrink-0 truncate">
                       {formatCurrency(share, currency)}
                     </span>
                   </div>
                 )
               })}
+              {extrasExceed && (
+                <p className="text-[11px] text-amber-600">Extras exceed the total cost.</p>
+              )}
             </div>
           )}
         </div>

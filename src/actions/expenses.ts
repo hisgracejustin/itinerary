@@ -15,13 +15,18 @@ const revalidateApp = () => revalidatePath("/", "layout");
  */
 async function replaceExpenseSplits(
   expenseId: string,
-  splits: { user_id: string; weight: number }[] | undefined,
+  splits: { user_id: string; weight: number; extra_amount?: number }[] | undefined,
 ) {
   if (splits === undefined) return;
   await db.delete(tables.expenseSplits).where(eq(tables.expenseSplits.expense_id, expenseId));
   if (splits.length > 0) {
     await db.insert(tables.expenseSplits).values(
-      splits.map((s) => ({ expense_id: expenseId, user_id: s.user_id, weight: s.weight })),
+      splits.map((s) => ({
+        expense_id: expenseId,
+        user_id: s.user_id,
+        weight: s.weight,
+        extra_amount: s.extra_amount ?? 0,
+      })),
     );
   }
 }

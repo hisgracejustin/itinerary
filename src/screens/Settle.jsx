@@ -505,7 +505,11 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, busy, run
     currency: e.currency || 'HKD',
     date: e.date || '',
     paid_by: e.paid_by ?? null,
-    splits: (e.splits || []).map((s) => ({ user_id: s.user_id, weight: Number(s.weight) || 1 })),
+    splits: (e.splits || []).map((s) => ({
+      user_id: s.user_id,
+      weight: Number(s.weight) || 1,
+      extra_amount: Number(s.extra_amount) || 0,
+    })),
   })
 
   // Changing trip prunes split entries / payer to the new trip's roster.
@@ -528,6 +532,8 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, busy, run
     if (!(amount > 0)) return toast.error('Enter an amount')
     if (form.splits.length === 0) return toast.error('Split the expense between at least one person')
     if (!form.paid_by) return toast.error('Pick who paid')
+    const sumExtras = form.splits.reduce((s, r) => s + (Number(r.extra_amount) || 0), 0)
+    if (sumExtras > amount + 0.01) return toast.error('Extras exceed the total cost')
     const payload = {
       trip_id: form.trip_id,
       title: form.title.trim(),

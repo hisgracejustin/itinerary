@@ -288,6 +288,10 @@ export const bookingSplits = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     weight: numeric("weight", { mode: "number" }).notNull().default(1),
+    // Itemized amount attributed to this person off the top (e.g. their baggage
+    // on a shared flight). Their share = extra + weight/Σweights × (splittable −
+    // Σextras). 0 for everyone reproduces the pure weight split byte-for-byte.
+    extra_amount: numeric("extra_amount", { mode: "number" }).notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.booking_id, t.user_id] })],
 );
@@ -322,6 +326,9 @@ export const expenseSplits = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     weight: numeric("weight", { mode: "number" }).notNull().default(1),
+    // Itemized amount attributed to this person off the top — mirrors
+    // booking_splits.extra_amount.
+    extra_amount: numeric("extra_amount", { mode: "number" }).notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.expense_id, t.user_id] })],
 );

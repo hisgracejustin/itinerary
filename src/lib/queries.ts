@@ -20,19 +20,20 @@ const settlementCols = getTableColumns(tables.settlements);
 
 /** Load booking_splits for a set of booking ids, grouped `booking_id → rows[]`. */
 async function bookingSplitsByBooking(bookingIds: string[]) {
-  const byBooking = new Map<string, { user_id: string; weight: number }[]>();
+  const byBooking = new Map<string, { user_id: string; weight: number; extra_amount: number }[]>();
   if (bookingIds.length === 0) return byBooking;
   const rows = await db
     .select({
       booking_id: tables.bookingSplits.booking_id,
       user_id: tables.bookingSplits.user_id,
       weight: tables.bookingSplits.weight,
+      extra_amount: tables.bookingSplits.extra_amount,
     })
     .from(tables.bookingSplits)
     .where(inArray(tables.bookingSplits.booking_id, bookingIds));
   for (const r of rows) {
     const list = byBooking.get(r.booking_id) ?? [];
-    list.push({ user_id: r.user_id, weight: r.weight });
+    list.push({ user_id: r.user_id, weight: r.weight, extra_amount: r.extra_amount });
     byBooking.set(r.booking_id, list);
   }
   return byBooking;
@@ -40,19 +41,20 @@ async function bookingSplitsByBooking(bookingIds: string[]) {
 
 /** Load expense_splits for a set of expense ids, grouped `expense_id → rows[]`. */
 async function expenseSplitsByExpense(expenseIds: string[]) {
-  const byExpense = new Map<string, { user_id: string; weight: number }[]>();
+  const byExpense = new Map<string, { user_id: string; weight: number; extra_amount: number }[]>();
   if (expenseIds.length === 0) return byExpense;
   const rows = await db
     .select({
       expense_id: tables.expenseSplits.expense_id,
       user_id: tables.expenseSplits.user_id,
       weight: tables.expenseSplits.weight,
+      extra_amount: tables.expenseSplits.extra_amount,
     })
     .from(tables.expenseSplits)
     .where(inArray(tables.expenseSplits.expense_id, expenseIds));
   for (const r of rows) {
     const list = byExpense.get(r.expense_id) ?? [];
-    list.push({ user_id: r.user_id, weight: r.weight });
+    list.push({ user_id: r.user_id, weight: r.weight, extra_amount: r.extra_amount });
     byExpense.set(r.expense_id, list);
   }
   return byExpense;

@@ -97,11 +97,17 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   const contribution = (item) => {
     if (scope === 'everyone') return item.effective
     if (item.splits.length === 0) return null
+    // Same extras-off-the-top formula as split.js: scope share =
+    //   Σ_{scope} extra + (Σ_{scope} weight / Σweight) × (effective − Σextras)
     const sumW = item.splits.reduce((s, r) => s + (Number(r.weight) || 0), 0)
-    if (sumW <= 0) return null
+    const sumExtras = item.splits.reduce((s, r) => s + (Number(r.extra_amount) || 0), 0)
+    if (sumExtras > item.effective + 0.01) return null // extras exceed the cost
+    const remainder = item.effective - sumExtras
+    if (remainder > 0.01 && sumW <= 0) return null // nothing to divide by
     const users = scopeUsersFor(item)
+    const scopeExtras = item.splits.reduce((s, r) => s + (users.has(r.user_id) ? Number(r.extra_amount) || 0 : 0), 0)
     const scopeW = item.splits.reduce((s, r) => s + (users.has(r.user_id) ? Number(r.weight) || 0 : 0), 0)
-    return item.effective * (scopeW / sumW)
+    return scopeExtras + (sumW > 0 ? (scopeW / sumW) * remainder : 0)
   }
 
   // Items with a cost but no split rows: excluded from Me/Us, surfaced as a note.

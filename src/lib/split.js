@@ -13,10 +13,27 @@
  *    `cost_share` keeps its meaning ("the trip's portion of an externally shared
  *    cost"); the per-person split divides what's left. An expense's splittable
  *    amount is simply `amount`.
- *  - A person's share of an item = `weight / Σweights` over that item's split
- *    rows. Equal split = everyone at weight 1. A couple included "as a couple" =
- *    both members present at weight 1 each (they consume 2 of N shares). Parties
- *    never appear in split rows — they only aggregate at settlement/display time.
+ *  - A person's share of an item, with itemized EXTRAS attributed to specific
+ *    people (e.g. one traveller's baggage on a shared flight):
+ *        sumExtras = Σ extra_amount over the item's rows
+ *        remainder = splittable − sumExtras
+ *        share_i   = extra_i + (weight_i / Σweights) × remainder
+ *    Extras come off the top; the remainder divides by weight exactly as before.
+ *    With every extra_amount = 0 this is identical to the old pure-weight split,
+ *    so historical rows behave byte-for-byte the same. Zero-sum holds:
+ *    Σ share_i = sumExtras + remainder = splittable = what the payer fronted.
+ *    Example: a HK$15,061 flight split 4 ways at weight 1, where one person has
+ *    a 447 baggage extra → that person owes 447 + 14,614/4 = 4,100.50 and each
+ *    of the other three owes 3,653.50. An extras-only participant sits at
+ *    weight 0 (they owe just their extra). Equal split = everyone at weight 1,
+ *    no extras. A couple included "as a couple" = both members present at
+ *    weight 1 each (they consume 2 of N shares). Parties never appear in split
+ *    rows — they only aggregate at settlement/display time.
+ *  - Guard: if Σextras exceeds the splittable amount (beyond a 0.01 tolerance)
+ *    the item is skipped rather than dividing a negative remainder (which would
+ *    poison balances). Likewise, a positive remainder with Σweights ≤ 0 has
+ *    nothing to divide by, so that item is skipped too; but Σweights = 0 with
+ *    extras that cover ≈ the whole amount is fine — the extras just apply.
  *  - No split rows ⇒ the item is UNALLOCATED: excluded from balances and
  *    surfaced under "Needs attention". We never silently default to
  *    everyone-equal.
@@ -122,13 +139,21 @@ export function computeBalances({
       continue
     }
     const sumW = item.splits.reduce((s, r) => s + (Number(r.weight) || 0), 0)
-    if (sumW <= 0) continue // guard: nothing to divide by
+    const sumExtras = item.splits.reduce((s, r) => s + (Number(r.extra_amount) || 0), 0)
+    // Extras beyond the amount would leave a negative remainder to divide — skip
+    // the item entirely rather than poison balances.
+    if (sumExtras > item.amount + 0.01) continue
+    const remainder = item.amount - sumExtras
+    // A positive remainder with no weights has nothing to divide by. (Σweights = 0
+    // with extras covering ≈ the whole amount falls through fine — remainder ≈ 0.)
+    if (remainder > 0.01 && sumW <= 0) continue
 
     add(totals(paid, item.paid_by), item.currency, item.amount)
     for (const row of item.splits) {
       const w = Number(row.weight) || 0
-      if (w <= 0) continue
-      add(totals(owed, row.user_id), item.currency, item.amount * (w / sumW))
+      const extra = Number(row.extra_amount) || 0
+      const share = extra + (sumW > 0 ? (w / sumW) * remainder : 0)
+      add(totals(owed, row.user_id), item.currency, share)
     }
   }
 

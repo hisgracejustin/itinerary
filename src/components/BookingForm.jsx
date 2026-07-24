@@ -114,7 +114,11 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         cost_share: booking.cost_share != null ? String(booking.cost_share) : '1',
         paid_by: booking.paid_by || '',
         splits: Array.isArray(booking.splits)
-          ? booking.splits.map((s) => ({ user_id: s.user_id, weight: Number(s.weight) || 1 }))
+          ? booking.splits.map((s) => ({
+              user_id: s.user_id,
+              weight: Number(s.weight) || 1,
+              extra_amount: Number(s.extra_amount) || 0,
+            }))
           : [],
         details: booking.details || {},
       })
@@ -165,6 +169,13 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
     // here so the user fixes it before submit rather than seeing a save error.
     if (form.cost_amount && (form.splits || []).length > 0 && !form.paid_by) {
       errs.paid_by = 'Pick who paid before splitting this cost'
+    }
+    // Itemized extras can't sum past the splittable amount (extras come off the
+    // top; a negative remainder is nonsensical and split.js would skip the item).
+    if (form.cost_amount && (form.splits || []).length > 0 && !errs.paid_by) {
+      const splittable = (parseFloat(form.cost_amount) || 0) * (parseFloat(form.cost_share) || 1)
+      const sumExtras = form.splits.reduce((s, r) => s + (Number(r.extra_amount) || 0), 0)
+      if (sumExtras > splittable + 0.01) errs.paid_by = 'Extras exceed the total cost'
     }
     setErrors(errs)
     return Object.keys(errs).length === 0

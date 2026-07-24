@@ -17,16 +17,27 @@ const CURRENCY_CODES = CURRENCIES.map((c) => c.code) as [string, ...string[]];
 const currencySchema = z.enum(CURRENCY_CODES);
 
 // One person's share of a split. user_id is a text user id (cuid2 / preserved
-// Supabase UUID), so no .uuid(). weight must be strictly positive.
-export const splitEntrySchema = z.object({
-  user_id: z.string().min(1),
-  weight: z.number().positive(),
-});
+// Supabase UUID), so no .uuid(). `weight` must be ≥ 0 and `extra_amount` ≥ 0,
+// with each entry carrying weight > 0 OR extra_amount > 0 — an extras-only
+// participant (someone who only owes their itemized extra) sits at weight 0.
+export const splitEntrySchema = z
+  .object({
+    user_id: z.string().min(1),
+    weight: z.number().min(0),
+    extra_amount: z.number().min(0).default(0),
+  })
+  .refine((s) => s.weight > 0 || s.extra_amount > 0, {
+    path: ["weight"],
+    message: "Each person needs a weight or an extra amount",
+  });
 
 // Splits without a payer break the zero-sum invariant, so any non-empty split
 // set requires a payer (client + this Zod rule both enforce it).
 function requirePayerWhenSplit(
-  data: { paid_by?: string | null; splits?: { user_id: string; weight: number }[] },
+  data: {
+    paid_by?: string | null;
+    splits?: { user_id: string; weight: number; extra_amount?: number }[];
+  },
   ctx: z.RefinementCtx,
 ) {
   if (data.splits && data.splits.length > 0 && !data.paid_by) {
