@@ -21,9 +21,12 @@ const SECTION_TITLES = {
 };
 
 export default function Header({ onToggleSidebar, onAddBooking }) {
-  const { tripMeta } = useTripContext();
+  const { tripMetas } = useTripContext();
   const pathname = usePathname();
   const sectionTitle = SECTION_TITLES[pathname];
+  // 0 selected = the All Trips view; 1 = its name; 2+ = the joined names.
+  const tripLabel =
+    tripMetas.length === 0 ? "All trips" : tripMetas.map((t) => t.name).join(" + ");
   return (
     <header className="relative px-4 sm:px-6 h-14 flex items-center justify-between shrink-0">
       {sectionTitle && (
@@ -44,11 +47,9 @@ export default function Header({ onToggleSidebar, onAddBooking }) {
         </svg>
       </button>
       <div className="flex items-center gap-2 min-w-0">
-        {tripMeta && (
-          <span className="text-xs font-medium bg-primary-light text-accent-ink px-3 py-1 rounded-full truncate max-w-[55vw]">
-            {tripMeta.name}
-          </span>
-        )}
+        <span className="text-xs font-medium bg-primary-light text-accent-ink px-3 py-1 rounded-full truncate max-w-[55vw]">
+          {tripLabel}
+        </span>
         <button
           onClick={onAddBooking}
           aria-label="Add booking"
