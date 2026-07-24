@@ -165,7 +165,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   }
 
   return (
-    <div className="h-full flex flex-col w-full max-w-5xl mx-auto">
+    <div className="w-full max-w-5xl lg:max-w-6xl mx-auto">
       {/* Scope toggle */}
       <div className={`flex flex-wrap gap-1.5 ${showTripChips ? 'mb-3' : 'mb-5'}`}>
         <FilterChip active={scope === 'everyone'} onClick={() => setScope('everyone')} label="Everyone" />
@@ -207,7 +207,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
           <p className="text-xs mt-1 text-on-surface-variant/70">Add costs to your bookings to see the breakdown here</p>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 overflow-y-auto grid gap-4 lg:grid-cols-2 auto-rows-min content-start">
+        <div className="grid gap-4 lg:grid-cols-2 auto-rows-min content-start pb-10">
           {/* Total */}
           <div className="mat-surface p-6 lg:col-span-2 min-w-0">
             <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1">

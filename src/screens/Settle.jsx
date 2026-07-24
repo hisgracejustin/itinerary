@@ -316,8 +316,8 @@ export default function Settle({
   }
 
   return (
-    <div className="h-full flex flex-col w-full max-w-3xl mx-auto">
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-10">
+    <div className="w-full max-w-3xl lg:max-w-5xl mx-auto">
+      <div className="space-y-4 pb-10">
         {/* 1 — Hero: your position. */}
         <section className="rounded-2xl bg-gradient-to-br from-primary to-primary-dark text-white p-6">
           {heroNets.length === 0 ? (

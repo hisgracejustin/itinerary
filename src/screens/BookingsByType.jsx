@@ -51,7 +51,7 @@ export default function BookingsByType({ type, bookings: allBookings }) {
   }
 
   return (
-    <div className="h-full flex flex-col w-full max-w-5xl mx-auto">
+    <div className="w-full max-w-5xl lg:max-w-6xl mx-auto">
       {/* Trip filter — same chip row as the To-dos board. */}
       {showTripChips && (
         <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 shrink-0">
@@ -77,7 +77,7 @@ export default function BookingsByType({ type, bookings: allBookings }) {
 
       <StatsStrip stats={stats} />
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="pb-10">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant">
             <div className="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center mb-4">

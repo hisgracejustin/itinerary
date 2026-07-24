@@ -1,4 +1,4 @@
-2. the pages like costs, settle up, settings, on desktop look really weird, they're wasting a lot of horizontal space as they take like a fixed width and have their own scrollbar where ive to be in the section. fix up 
+2. the pages like costs, settle up, settings, on desktop look really weird, they're wasting a lot of horizontal space as they take like a fixed width and have their own scrollbar where ive to be in the section. fix up — ✅ done 2026-07-24
 6. in the side bar, version number is 0.1.0, use the git short commit sha instead — ✅ done 2026-07-24
 7. allow users, when they log in to change their avatar. options are in public/icons/, frogs of different varieties. can be user specific, same for all trips if they set one. — ✅ done 2026-07-24
 11. in settings page, maybe have a separate people card/section on top cause trips share people and each trip card should only be about adding/removing people from a trip. people section on top can be for their pin, rename, etc. and maybe then i could add people to trips from a dropdown list of already exisitng people also instead of just email — ✅ done 2026-07-24
