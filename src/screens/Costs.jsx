@@ -166,10 +166,6 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
 
   return (
     <div className="h-full flex flex-col w-full max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-semibold tracking-tight text-on-surface">Costs</h2>
-      </div>
-
       {/* Scope toggle */}
       <div className={`flex flex-wrap gap-1.5 ${showTripChips ? 'mb-3' : 'mb-5'}`}>
         <FilterChip active={scope === 'everyone'} onClick={() => setScope('everyone')} label="Everyone" />

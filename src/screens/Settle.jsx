@@ -300,10 +300,6 @@ export default function Settle({
 
   return (
     <div className="h-full flex flex-col w-full max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-semibold tracking-tight text-on-surface">Settle up</h2>
-      </div>
-
       <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-10">
         {/* 1 — Hero: your position. */}
         <section className="rounded-2xl bg-gradient-to-br from-primary to-primary-dark text-white p-6">

@@ -52,13 +52,6 @@ export default function BookingsByType({ type, bookings: allBookings }) {
 
   return (
     <div className="h-full flex flex-col w-full max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2.5">
-          <span className="text-2xl">{icon}</span>
-          <h2 className="text-2xl font-semibold tracking-tight text-on-surface">{label}</h2>
-        </div>
-      </div>
-
       {/* Trip filter — same chip row as the To-dos board. */}
       {showTripChips && (
         <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 shrink-0">

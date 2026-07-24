@@ -254,10 +254,6 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
     // remaining viewport height via flex-basis — the percentage chain broke in
     // Safari and let columns grow past the bottom of the window.
     <div className="flex-1 min-h-0 flex flex-col w-full max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-5 gap-3">
-        <h2 className="text-2xl font-semibold tracking-tight text-on-surface">To-dos</h2>
-      </div>
-
       {/* Add form — needs at least one trip to attach a to-do to. */}
       {trips.length === 0 ? (
         <div className="mat-surface p-5 mb-4 shrink-0 text-center">

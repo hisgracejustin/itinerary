@@ -1,11 +1,39 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useTripContext } from "../lib/trip-context";
+
+// Centered section title on phones — the screens hide their own title rows
+// below lg, saving a full row of vertical space.
+const SECTION_TITLES = {
+  "/": "Calendar",
+  "/todos": "To-dos",
+  "/costs": "Costs",
+  "/settle": "Settle up",
+  "/settings": "Settings",
+  "/bookings/flight": "Flights",
+  "/bookings/train": "Trains",
+  "/bookings/bus": "Buses",
+  "/bookings/rental": "Rentals",
+  "/bookings/cruise": "Cruises",
+  "/bookings/hotel": "Accommodation",
+  "/bookings/activity": "Activities",
+};
 
 export default function Header({ onToggleSidebar, onAddBooking }) {
   const { tripMeta } = useTripContext();
+  const pathname = usePathname();
+  const sectionTitle = SECTION_TITLES[pathname];
   return (
-    <header className="px-4 sm:px-6 h-14 flex items-center justify-between shrink-0">
+    <header className="relative px-4 sm:px-6 h-14 flex items-center justify-between shrink-0">
+      {sectionTitle && (
+        <h1
+          className="absolute inset-x-0 text-center text-base font-semibold text-on-surface
+                     pointer-events-none truncate px-24 m-0"
+        >
+          {sectionTitle}
+        </h1>
+      )}
       <button
         onClick={onToggleSidebar}
         className="mat-icon-btn"
