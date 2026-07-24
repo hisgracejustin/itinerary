@@ -38,6 +38,26 @@ async function bookingSplitsByBooking(bookingIds: string[]) {
   return byBooking;
 }
 
+/** Load expense_splits for a set of expense ids, grouped `expense_id → rows[]`. */
+async function expenseSplitsByExpense(expenseIds: string[]) {
+  const byExpense = new Map<string, { user_id: string; weight: number }[]>();
+  if (expenseIds.length === 0) return byExpense;
+  const rows = await db
+    .select({
+      expense_id: tables.expenseSplits.expense_id,
+      user_id: tables.expenseSplits.user_id,
+      weight: tables.expenseSplits.weight,
+    })
+    .from(tables.expenseSplits)
+    .where(inArray(tables.expenseSplits.expense_id, expenseIds));
+  for (const r of rows) {
+    const list = byExpense.get(r.expense_id) ?? [];
+    list.push({ user_id: r.user_id, weight: r.weight });
+    byExpense.set(r.expense_id, list);
+  }
+  return byExpense;
+}
+
 /**
  * Normalize the trip filter accepted across the read queries. `null`/`undefined`
  * (and an empty selection) mean "every accessible trip"; one or more ids narrow
@@ -104,6 +124,31 @@ export async function getBookingsForUser(userId: string, tripId?: TripFilter) {
     : await base.orderBy(asc(tables.bookings.start_date));
   const byBooking = await bookingSplitsByBooking(rows.map((b) => b.id));
   return rows.map((b) => ({ ...b, splits: byBooking.get(b.id) ?? [] }));
+}
+
+/**
+ * Ad-hoc expenses for the selected trip(s), or across every accessible trip when
+ * none given — mirrors `getBookingsForUser`. Each row carries its `splits`
+ * ([{user_id, weight}]); `paid_by` rides on the row already. The membership INNER
+ * JOIN is the authorization (a non-member sees nothing).
+ */
+export async function getExpensesForUser(userId: string, tripId?: TripFilter) {
+  const base = db
+    .select(expenseCols)
+    .from(tables.expenses)
+    .innerJoin(
+      tables.tripMembers,
+      and(
+        eq(tables.tripMembers.trip_id, tables.expenses.trip_id),
+        eq(tables.tripMembers.user_id, userId),
+      ),
+    );
+  const ids = toTripIds(tripId);
+  const rows = ids
+    ? await base.where(inArray(tables.expenses.trip_id, ids)).orderBy(asc(tables.expenses.created_at))
+    : await base.orderBy(asc(tables.expenses.created_at));
+  const byExpense = await expenseSplitsByExpense(rows.map((e) => e.id));
+  return rows.map((e) => ({ ...e, splits: byExpense.get(e.id) ?? [] }));
 }
 
 // Each todo carries its assignee's display fields (flattened, snake_case to
@@ -372,27 +417,7 @@ export async function getSettleData(userId: string) {
       ),
     )
     .orderBy(asc(tables.expenses.created_at));
-  const expenseSplitRows = expenseRows.length
-    ? await db
-        .select({
-          expense_id: tables.expenseSplits.expense_id,
-          user_id: tables.expenseSplits.user_id,
-          weight: tables.expenseSplits.weight,
-        })
-        .from(tables.expenseSplits)
-        .where(
-          inArray(
-            tables.expenseSplits.expense_id,
-            expenseRows.map((e) => e.id),
-          ),
-        )
-    : [];
-  const splitsByExpense = new Map<string, { user_id: string; weight: number }[]>();
-  for (const r of expenseSplitRows) {
-    const list = splitsByExpense.get(r.expense_id) ?? [];
-    list.push({ user_id: r.user_id, weight: r.weight });
-    splitsByExpense.set(r.expense_id, list);
-  }
+  const splitsByExpense = await expenseSplitsByExpense(expenseRows.map((e) => e.id));
   const expenses = expenseRows.map((e) => ({ ...e, splits: splitsByExpense.get(e.id) ?? [] }));
 
   const settlements = await db

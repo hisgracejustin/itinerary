@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { CURRENCIES, formatCurrency } from '../lib/currencies'
 import { useTripContext } from '../lib/trip-context'
+import SplitEditor from './SplitEditor'
 
 const BOOKING_TYPES = ['flight', 'train', 'bus', 'rental', 'cruise', 'hotel', 'activity']
 
@@ -91,6 +92,8 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
     cost_amount: '',
     cost_currency: 'USD',
     cost_share: '1',
+    paid_by: '',
+    splits: [],
     details: {},
   })
 
@@ -109,10 +112,34 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         cost_amount: booking.cost_amount != null ? String(booking.cost_amount) : '',
         cost_currency: booking.cost_currency || 'USD',
         cost_share: booking.cost_share != null ? String(booking.cost_share) : '1',
+        paid_by: booking.paid_by || '',
+        splits: Array.isArray(booking.splits)
+          ? booking.splits.map((s) => ({ user_id: s.user_id, weight: Number(s.weight) || 1 }))
+          : [],
         details: booking.details || {},
       })
     }
   }, [booking])
+
+  // The split roster follows the booking's own trip, not the sidebar selection.
+  const splitTrip = (trips || []).find((t) => t.id === form.trip_id) || null
+  const splitMembers = splitTrip?.members || []
+  const splitParties = splitTrip?.parties || []
+
+  // Moving a booking to another trip must not carry over people who don't belong
+  // there — prune split rows (and a now-foreign payer) to the new trip's roster.
+  useEffect(() => {
+    const memberIds = new Set(splitMembers.map((m) => m.id))
+    setForm((prev) => {
+      const prunedSplits = (prev.splits || []).filter((s) => memberIds.has(s.user_id))
+      const prunedPayer = prev.paid_by && !memberIds.has(prev.paid_by) ? '' : prev.paid_by
+      if (prunedSplits.length === (prev.splits || []).length && prunedPayer === prev.paid_by) {
+        return prev
+      }
+      return { ...prev, splits: prunedSplits, paid_by: prunedPayer }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.trip_id, splitMembers.length])
 
   const setField = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -133,6 +160,11 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
     const skipTimeCheck = form.type === 'flight' || form.type === 'train'
     if (form.end_date && !skipTimeCheck && form.end_date < form.start_date) {
       errs.end_date = 'End date must be after start date'
+    }
+    // The Zod schema rejects a non-empty split set without a payer — surface it
+    // here so the user fixes it before submit rather than seeing a save error.
+    if (form.cost_amount && (form.splits || []).length > 0 && !form.paid_by) {
+      errs.paid_by = 'Pick who paid before splitting this cost'
     }
     setErrors(errs)
     return Object.keys(errs).length === 0
@@ -164,6 +196,10 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
       cost_amount: form.cost_amount ? parseFloat(form.cost_amount) : null,
       cost_currency: form.cost_amount ? form.cost_currency : null,
       cost_share: form.cost_amount ? parseFloat(form.cost_share) || 1 : null,
+      // Splits/payer only make sense with a cost. `splits: []` un-splits the
+      // booking (replace-all delete); no cost clears both.
+      paid_by: form.cost_amount ? form.paid_by || null : null,
+      splits: form.cost_amount ? form.splits || [] : [],
       details: Object.keys(form.details).length > 0 ? form.details : null,
     })
   }
@@ -319,7 +355,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
 
         {form.cost_amount && (
           <div className="col-span-2">
-            <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Your Share</label>
+            <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Trip&apos;s portion</label>
             <div className="flex items-center gap-2 flex-wrap">
               <input
                 type="text"
@@ -335,7 +371,26 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                 × {formatCurrency(parseFloat(form.cost_amount) || 0, form.cost_currency)} = {formatCurrency((parseFloat(form.cost_amount) || 0) * (parseFloat(form.cost_share) || 1), form.cost_currency)}
               </span>
             </div>
-            <p className="text-xs text-on-surface-variant/60 mt-1">Multiplier: 1 = full cost, 0.25 = quarter, 4 = paying for 4 people</p>
+            <p className="text-xs text-on-surface-variant/60 mt-1">Portion of this cost that belongs to this trip</p>
+          </div>
+        )}
+
+        {form.cost_amount && (
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Split</label>
+            <SplitEditor
+              members={splitMembers}
+              parties={splitParties}
+              amount={(parseFloat(form.cost_amount) || 0) * (parseFloat(form.cost_share) || 1)}
+              currency={form.cost_currency}
+              paidBy={form.paid_by || null}
+              splits={form.splits}
+              onChange={({ paid_by, splits }) => {
+                setForm((prev) => ({ ...prev, paid_by: paid_by || '', splits }))
+                if (paid_by) setErrors((prev) => ({ ...prev, paid_by: undefined }))
+              }}
+            />
+            {errors.paid_by && <p className="text-xs text-red-500 mt-1">{errors.paid_by}</p>}
           </div>
         )}
       </div>
