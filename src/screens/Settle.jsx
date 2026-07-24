@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
 import { computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
 // toHKD is for the Split-costs SORT ORDER only — every displayed amount on this
@@ -75,11 +75,28 @@ export default function Settle({
   }, [members])
   const personLabel = (id) => memberLabel(memberByUserId.get(id) ?? { id })
 
-  const { units, unallocated, missingPayer } = useMemo(
+  const { units, unallocated, missingPayer, pairTransfers } = useMemo(
     () => computeBalances({ members, parties, bookings, expenses, settlements }),
     [members, parties, bookings, expenses, settlements],
   )
-  const transfers = useMemo(() => suggestTransfers(units), [units])
+  const simplified = useMemo(() => suggestTransfers(units), [units])
+
+  // "Simplify settlements" — ON: min-cash-flow across the group (fewest
+  // transfers); OFF: direct pairwise debts. Remembered per trip selection on
+  // this device, mirroring the sibling splitter app.
+  const [simplify, setSimplify] = useState(true)
+  const simplifyKey = `simplify-settlements-${selectedTrip ?? 'all'}`
+  useEffect(() => {
+    const saved = window.localStorage.getItem(simplifyKey)
+    setSimplify(saved === null ? true : saved === 'true')
+  }, [simplifyKey])
+  const toggleSimplify = () => {
+    setSimplify((v) => {
+      window.localStorage.setItem(simplifyKey, String(!v))
+      return !v
+    })
+  }
+  const transfers = simplify ? simplified : pairTransfers
 
   // ---- Hero: the viewer's own position -------------------------------------
   const viewerUnit = units.find((u) => u.memberIds.includes(currentUserId))
@@ -341,6 +358,42 @@ export default function Settle({
             </div>
           )}
         </section>
+
+        {/* Simplify toggle — mirrors the sibling splitter app. */}
+        {(simplified.length > 0 || pairTransfers.length > 0) && (
+          <div className="flex items-center justify-between gap-3 px-1">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <svg
+                  className={`w-4 h-4 shrink-0 ${simplify ? 'text-primary' : 'text-on-surface-variant/50'}`}
+                  fill="currentColor" viewBox="0 0 24 24"
+                >
+                  <path d="M13 2L4.09 12.11a.6.6 0 00.45 1h5.27l-1.72 8.13a.3.3 0 00.53.25L19.9 11.9a.6.6 0 00-.45-1h-5.27l1.35-8.65A.3.3 0 0015 2z" />
+                </svg>
+                <span className="text-sm font-semibold text-on-surface">Simplify settlements</span>
+              </div>
+              <p className="text-[11px] text-on-surface-variant ml-[22px] truncate">
+                {simplify ? 'Fewest transfers across the group' : 'Everyone settles their own debts'}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={simplify}
+              aria-label="Simplify settlements"
+              onClick={toggleSimplify}
+              className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${
+                simplify ? 'bg-primary' : 'bg-outline/40'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
+                  simplify ? 'left-[22px]' : 'left-0.5'
+                }`}
+              />
+            </button>
+          </div>
+        )}
 
         {/* 2 — Transfers, grouped by currency, straight under the hero (no
             wrapping card — each transfer is its own card, splitter-style). */}

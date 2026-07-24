@@ -229,6 +229,8 @@ export function computeBalances({
     ...expenses.map(expenseItem),
   ]
 
+  // Settleable items are also kept for the pairwise (un-simplified) pass below.
+  const settleable = []
   for (const item of items) {
     if (item.splits.length === 0) {
       unallocated.push(item.ref)
@@ -243,6 +245,7 @@ export function computeBalances({
     // poisoning balances.
     const shares = itemShares(item.amount, item.splits)
     if (!shares) continue
+    settleable.push({ item, shares })
 
     // Re-denominate at the charged rate (1 / native currency when none): shares
     // stay native above, so scaling the paid amount and every share by the same
@@ -364,7 +367,61 @@ export function computeBalances({
     if (toUnit) add(toUnit.net, s.currency, -amt)
   }
 
-  return { units, unallocated, missingPayer }
+  // ---- Direct (un-simplified) pairwise debts -------------------------------
+  // "Everyone settles their own debts": per item, each non-payer unit owes the
+  // payer's unit its share; reciprocal debts within a pair net out (A→B minus
+  // B→A per currency), but money is never rerouted through third parties the
+  // way suggestTransfers' min-cash-flow does. Recorded settlements reduce the
+  // payer pair's debt directly. Canonical pair key: sorted unit keys, positive
+  // net = first-owes-second.
+  const pairNets = new Map() // currency → Map("a||b" → signed net)
+  const addPair = (currency, fromKey, toKey, amount) => {
+    if (!currency || !amount || fromKey === toKey) return
+    const [a, b] = fromKey < toKey ? [fromKey, toKey] : [toKey, fromKey]
+    const sign = fromKey === a ? 1 : -1
+    let m = pairNets.get(currency)
+    if (!m) pairNets.set(currency, (m = new Map()))
+    const k = `${a}||${b}`
+    m.set(k, (m.get(k) || 0) + sign * amount)
+  }
+  for (const { item, shares } of settleable) {
+    const payerUnit = unitByUserId.get(item.paid_by)
+    if (!payerUnit) continue
+    const cur = item.settleCurrency ?? item.currency
+    const rate = item.settleRate ?? 1
+    for (const [userId, share] of shares) {
+      const unit = unitByUserId.get(userId)
+      if (!unit || unit === payerUnit) continue
+      addPair(cur, unit.key, payerUnit.key, share * rate)
+    }
+  }
+  for (const s of settlements) {
+    const fromUnit = unitByUserId.get(s.from_user)
+    const toUnit = unitByUserId.get(s.to_user)
+    const amt = Number(s.amount) || 0
+    if (!fromUnit || !toUnit || !s.currency || !amt) continue
+    // Paying back reduces the from-unit's debt to the to-unit.
+    addPair(s.currency, fromUnit.key, toUnit.key, -amt)
+  }
+  const unitByKey = new Map(units.map((u) => [u.key, u]))
+  const pairTransfers = []
+  for (const [currency, m] of pairNets) {
+    const eps = epsilonFor(currency)
+    const rows = []
+    for (const [k, net] of m) {
+      if (Math.abs(net) < eps) continue
+      const [a, b] = k.split('||')
+      rows.push(
+        net > 0
+          ? { fromUnit: unitByKey.get(a), toUnit: unitByKey.get(b), amount: net, currency }
+          : { fromUnit: unitByKey.get(b), toUnit: unitByKey.get(a), amount: -net, currency },
+      )
+    }
+    rows.sort((x, y) => y.amount - x.amount)
+    pairTransfers.push(...rows)
+  }
+
+  return { units, unallocated, missingPayer, pairTransfers }
 }
 
 /**
