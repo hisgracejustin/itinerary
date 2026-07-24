@@ -56,19 +56,34 @@ export async function updateExpenseAction(id: string, input: unknown) {
     const parsed = expenseUpdateSchema.parse(input);
     const { splits, ...updates } = parsed;
     const [existing] = await db
-      .select({ trip_id: tables.expenses.trip_id })
+      .select({ trip_id: tables.expenses.trip_id, paid_by: tables.expenses.paid_by })
       .from(tables.expenses)
       .where(eq(tables.expenses.id, id))
       .limit(1);
     if (!existing) throw new Error("Expense not found");
     await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
-    if (updates.trip_id && updates.trip_id !== existing.trip_id) {
-      await requireTripAccess(user.id, updates.trip_id, WRITE_ROLES);
+    const movingTrip = !!updates.trip_id && updates.trip_id !== existing.trip_id;
+    if (movingTrip) {
+      await requireTripAccess(user.id, updates.trip_id!, WRITE_ROLES);
     }
+    // Moving with `splits`/`paid_by` omitted carries the existing rows to the new
+    // trip, so validate those too — same rule as updateBookingAction.
     const targetTripId = updates.trip_id ?? existing.trip_id;
+    const carriedUserIds: (string | null | undefined)[] = [];
+    if (movingTrip) {
+      if (updates.paid_by === undefined) carriedUserIds.push(existing.paid_by);
+      if (splits === undefined) {
+        const rows = await db
+          .select({ user_id: tables.expenseSplits.user_id })
+          .from(tables.expenseSplits)
+          .where(eq(tables.expenseSplits.expense_id, id));
+        carriedUserIds.push(...rows.map((r) => r.user_id));
+      }
+    }
     await requireTripMembers(targetTripId, [
       updates.paid_by,
       ...(splits ?? []).map((s) => s.user_id),
+      ...carriedUserIds,
     ]);
     let row;
     if (Object.keys(updates).length > 0) {

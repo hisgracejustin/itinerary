@@ -78,22 +78,37 @@ export async function updateBookingAction(id: string, input: unknown) {
     // `splits` isn't a bookings column — pull it out of the DB update set.
     const { splits, ...updates } = parsed;
     const [existing] = await db
-      .select({ trip_id: tables.bookings.trip_id })
+      .select({ trip_id: tables.bookings.trip_id, paid_by: tables.bookings.paid_by })
       .from(tables.bookings)
       .where(eq(tables.bookings.id, id))
       .limit(1);
     if (!existing) throw new Error("Booking not found");
     await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     // If the booking is being reassigned to another trip, require write there too.
-    if (updates.trip_id && updates.trip_id !== existing.trip_id) {
-      await requireTripAccess(user.id, updates.trip_id, WRITE_ROLES);
+    const movingTrip = !!updates.trip_id && updates.trip_id !== existing.trip_id;
+    if (movingTrip) {
+      await requireTripAccess(user.id, updates.trip_id!, WRITE_ROLES);
     }
     // Validate payer + split participants against the booking's (possibly new)
-    // trip — moving a booking must not carry over members who don't belong.
+    // trip — moving a booking must not carry over members who don't belong. When
+    // moving with `splits`/`paid_by` omitted, the EXISTING rows survive the move,
+    // so they must pass the same check.
     const targetTripId = updates.trip_id ?? existing.trip_id;
+    const carriedUserIds: (string | null | undefined)[] = [];
+    if (movingTrip) {
+      if (updates.paid_by === undefined) carriedUserIds.push(existing.paid_by);
+      if (splits === undefined) {
+        const rows = await db
+          .select({ user_id: tables.bookingSplits.user_id })
+          .from(tables.bookingSplits)
+          .where(eq(tables.bookingSplits.booking_id, id));
+        carriedUserIds.push(...rows.map((r) => r.user_id));
+      }
+    }
     await requireTripMembers(targetTripId, [
       updates.paid_by,
       ...(splits ?? []).map((s) => s.user_id),
+      ...carriedUserIds,
     ]);
     let row;
     if (Object.keys(updates).length > 0) {
