@@ -126,7 +126,7 @@ export default function UploadBooking({ trip, onParsed }) {
         onDragLeave={handleDragLeave}
         className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer ${
           dragOver
-            ? 'border-blue-400 bg-blue-50'
+            ? 'border-primary bg-primary-light'
             : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
         }`}
         onClick={() => inputRef.current?.click()}
@@ -139,8 +139,8 @@ export default function UploadBooking({ trip, onParsed }) {
           className="hidden"
         />
         <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center">
-            <svg className="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-12 h-12 rounded-full bg-primary-light flex items-center justify-center">
+            <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           </div>
@@ -212,7 +212,7 @@ export default function UploadBooking({ trip, onParsed }) {
         <p className="text-xs text-gray-500 truncate">{file.name}</p>
         <button
           onClick={handleParse}
-          className="w-full py-2.5 px-4 rounded-full text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] transition-all shadow-md flex items-center justify-center gap-2"
+          className="w-full py-2.5 px-4 rounded-full text-sm font-medium bg-primary text-white hover:bg-primary-dark active:scale-[0.98] transition-all shadow-md flex items-center justify-center gap-2"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -227,7 +227,7 @@ export default function UploadBooking({ trip, onParsed }) {
   if (status === 'parsing') {
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-4">
-        <div className="w-10 h-10 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+        <div className="w-10 h-10 border-3 border-primary-light border-t-primary rounded-full animate-spin" />
         <div className="text-center">
           <p className="text-sm font-medium text-gray-700">AI is reading your booking...</p>
           <p className="text-xs text-gray-400 mt-1">This usually takes a few seconds</p>
@@ -260,7 +260,7 @@ export default function UploadBooking({ trip, onParsed }) {
           </button>
           <button
             onClick={handleParse}
-            className="flex-1 py-2 px-4 rounded-full text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-all"
+            className="flex-1 py-2 px-4 rounded-full text-sm font-medium bg-primary text-white hover:bg-primary-dark transition-all"
           >
             Retry
           </button>

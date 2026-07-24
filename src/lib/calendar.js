@@ -124,7 +124,7 @@ export function getHour(isoString) {
  * Color map for booking types.
  */
 export const TYPE_COLORS = {
-  flight: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-400', dot: 'bg-flight' },
+  flight: { bg: 'bg-primary-light', text: 'text-accent-ink', border: 'border-primary', dot: 'bg-flight' },
   train: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-400', dot: 'bg-train' },
   bus: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-400', dot: 'bg-bus' },
   cruise: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-400', dot: 'bg-cruise' },

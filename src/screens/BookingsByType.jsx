@@ -55,13 +55,8 @@ export default function BookingsByType({ type, bookings: allBookings }) {
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2.5">
           <span className="text-2xl">{icon}</span>
-          <h2 className="text-xl font-medium text-on-surface">{label}</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-on-surface">{label}</h2>
         </div>
-        {tripMeta && (
-          <span className="text-xs font-medium bg-primary-light text-primary px-3 py-1 rounded-full">
-            {tripMeta.name}
-          </span>
-        )}
       </div>
 
       {/* Trip filter — same chip row as the To-dos board. */}

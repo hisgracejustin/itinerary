@@ -256,7 +256,7 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
                   onClick={() => setMode('manual')}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                     mode === 'manual'
-                      ? 'bg-blue-100 text-blue-700'
+                      ? 'bg-primary-light text-accent-ink'
                       : 'text-on-surface-variant hover:bg-gray-100'
                   }`}
                 >
@@ -266,7 +266,7 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
                   onClick={() => setMode('upload')}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                     mode === 'upload'
-                      ? 'bg-blue-100 text-blue-700'
+                      ? 'bg-primary-light text-accent-ink'
                       : 'text-on-surface-variant hover:bg-gray-100'
                   }`}
                 >

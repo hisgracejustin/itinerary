@@ -345,7 +345,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
                     }).map((b) => {
                       const typeIcon = TYPE_ICONS[b.type] || '📌'
                       const chipColors = b.type === 'flight'
-                        ? 'bg-blue-100 text-blue-800'
+                        ? 'bg-primary-light text-accent-ink'
                         : 'bg-emerald-100 text-emerald-800'
                       return (
                         <span

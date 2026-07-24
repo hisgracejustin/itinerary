@@ -167,12 +167,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   return (
     <div className="h-full flex flex-col w-full max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-medium text-on-surface">Costs</h2>
-        {tripMeta && (
-          <span className="text-xs font-medium bg-primary-light text-primary px-3 py-1 rounded-full">
-            {tripMeta.name}
-          </span>
-        )}
+        <h2 className="text-2xl font-semibold tracking-tight text-on-surface">Costs</h2>
       </div>
 
       {/* Scope toggle */}
@@ -228,7 +223,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
             {/* Currency breakdown */}
             <div className="mt-4 flex flex-wrap gap-2">
               {currencyBreakdown.map(([currency, amount]) => (
-                <div key={currency} className="text-sm text-on-surface-variant bg-surface-container px-3 py-1.5 rounded-full font-medium">
+                <div key={currency} className="text-sm text-accent-ink bg-primary-light px-3 py-1.5 rounded-full font-medium">
                   {formatCurrency(amount, currency)}
                 </div>
               ))}

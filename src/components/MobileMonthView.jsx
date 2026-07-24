@@ -578,7 +578,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                   }).map((b) => {
                     const typeIcon = TYPE_ICONS[b.type] || '📌'
                     const chipColors = b.type === 'flight'
-                      ? 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+                      ? 'bg-primary-light text-accent-ink hover:bg-primary/20'
                       : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
                     return (
                       <span

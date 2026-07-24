@@ -68,7 +68,7 @@ export default function Settings({ trips: tripsProp, currentUserId }) {
 
   return (
     <div className="h-full overflow-y-auto w-full max-w-3xl mx-auto pb-10">
-      <h2 className="text-xl font-medium text-on-surface mb-1">Settings</h2>
+      <h2 className="text-2xl font-semibold tracking-tight text-on-surface mb-1">Settings</h2>
       <p className="text-sm text-on-surface-variant mb-6">
         Manage your trips and who has access to them.
       </p>

@@ -7,9 +7,12 @@
  * `--ease-material` → `ease-material`, etc.
  * ------------------------------------------------------------------------- */
 @theme {
-  --color-primary: #1a73e8;
-  --color-primary-dark: #1557b0;
-  --color-primary-light: #e8f0fe;
+  --color-primary: #33ab9f;
+  --color-primary-dark: #2b9488;
+  --color-primary-darker: #237a70;
+  --color-primary-light: #e6f6f4;
+  /* Text color for content sitting on the soft tint (primary-light). */
+  --color-accent-ink: #1b5e56;
 
   --color-surface: #ffffff;
   --color-surface-dim: #f8f9fa;
@@ -21,7 +24,7 @@
   --color-outline: #dadce0;
   --color-outline-variant: #e8eaed;
 
-  --color-flight: #1a73e8;
+  --color-flight: #33ab9f;
   --color-train: #0d652d;
   --color-bus: #0d9488;
   --color-cruise: #7627bb;
@@ -72,7 +75,7 @@
   }
 
   html {
-    background: #1a73e8;
+    background: #33ab9f;
   }
 
   body {

@@ -255,14 +255,7 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
     // Safari and let columns grow past the bottom of the window.
     <div className="flex-1 min-h-0 flex flex-col w-full max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-5 gap-3">
-        <h2 className="text-xl font-medium text-on-surface">To-dos</h2>
-        <div className="flex items-center gap-2 shrink-0">
-          {tripMeta && (
-            <span className="text-xs font-medium bg-primary-light text-primary px-3 py-1 rounded-full">
-              {tripMeta.name}
-            </span>
-          )}
-        </div>
+        <h2 className="text-2xl font-semibold tracking-tight text-on-surface">To-dos</h2>
       </div>
 
       {/* Add form — needs at least one trip to attach a to-do to. */}

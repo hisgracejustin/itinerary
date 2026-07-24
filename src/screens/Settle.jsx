@@ -301,17 +301,12 @@ export default function Settle({
   return (
     <div className="h-full flex flex-col w-full max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-medium text-on-surface">Settle up</h2>
-        {tripMeta && (
-          <span className="text-xs font-medium bg-primary-light text-primary px-3 py-1 rounded-full">
-            {tripMeta.name}
-          </span>
-        )}
+        <h2 className="text-2xl font-semibold tracking-tight text-on-surface">Settle up</h2>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-10">
-        {/* 1 — Hero: your position. Teal lives ONLY here + the Settle pills. */}
-        <section className="rounded-2xl bg-gradient-to-br from-[#33ab9f] to-[#2b9488] text-white p-6">
+        {/* 1 — Hero: your position. */}
+        <section className="rounded-2xl bg-gradient-to-br from-primary to-primary-dark text-white p-6">
           {heroNets.length === 0 ? (
             <>
               <p className="text-sm font-medium text-white/75">All settled</p>
@@ -840,7 +835,7 @@ function TransferCard({ t, memberByUserId, currentUserId, onSettle }) {
         <button
           type="button"
           onClick={onSettle}
-          className="rounded-full bg-[#33ab9f]/10 text-[#2b9488] font-semibold text-xs px-4 py-2 inline-flex items-center gap-1.5 shrink-0 hover:bg-[#33ab9f]/20 transition-colors"
+          className="rounded-full bg-primary/10 text-primary-dark font-semibold text-xs px-4 py-2 inline-flex items-center gap-1.5 shrink-0 hover:bg-primary/20 transition-colors"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />

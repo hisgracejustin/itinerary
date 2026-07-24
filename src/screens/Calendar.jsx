@@ -261,16 +261,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
     <div className="h-full flex flex-col">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 shrink-0 gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg sm:text-xl font-medium text-on-surface">{formatHeader()}</h2>
-          {tripMetas.length === 1 ? (
-            <span className="text-xs font-medium bg-primary-light text-primary px-3 py-1 rounded-full truncate max-w-[40vw]">
-              {tripMetas[0].name}
-            </span>
-          ) : tripMetas.length > 1 ? (
-            <span className="text-xs font-medium bg-primary-light text-primary px-3 py-1 rounded-full whitespace-nowrap">
-              {tripMetas.length} trips
-            </span>
-          ) : null}
+          <h2 className="text-2xl font-semibold tracking-tight text-on-surface">{formatHeader()}</h2>
         </div>
         <div className="flex items-center gap-1.5">
           {/* Journey view spans the whole selection, so month paging doesn't apply. */}
