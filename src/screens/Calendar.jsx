@@ -364,6 +364,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
                 spanStart={journeyStart}
                 spanEnd={journeyEnd}
                 railTripMetas={railTripMetas}
+                allTripIds={trips.map((t) => t.id)}
                 railSpanStart={railSpanStart}
                 railSpanEnd={railSpanEnd}
                 onSelectDate={handleSelectDate}

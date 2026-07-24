@@ -60,9 +60,12 @@ export default function JourneyView({
   onExtendTrip,
   scrollRequest,
   compact = false,
+  allTripIds,
 }) {
   const today = new Date()
-  const colorMap = tripColorMap(tripMetas.map((t) => t.id))
+  // Colors keyed on the FULL trip list (stable regardless of selection) so the
+  // sidebar's legend dots always match the rail stripes.
+  const colorMap = tripColorMap(allTripIds?.length ? allTripIds : tripMetas.map((t) => t.id))
   const tripNameById = Object.fromEntries(tripMetas.map((t) => [t.id, t.name]))
   const showTripName = tripMetas.length > 1
 
@@ -325,11 +328,6 @@ function DaySection({
                   card's own colored border). */}
               <span className={`w-1 rounded-full shrink-0 ${color?.rail || 'bg-outline/40'}`} aria-hidden />
               <div className="flex-1 min-w-0">
-                {showTripName && (
-                  <div className={`text-[10px] font-medium mb-0.5 truncate ${color?.text || 'text-on-surface-variant'}`}>
-                    {tripNameById[booking.trip_id] || ''}
-                  </div>
-                )}
                 {/* Phones get the one-line compact card — the full detail card
                     (check-in grid, address, notes) ate most of a small screen
                     per booking. Details stay one tap away in the modal. */}

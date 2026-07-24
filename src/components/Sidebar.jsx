@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOutAction } from "../actions/auth";
 import { useTripContext } from "../lib/trip-context";
+import { tripColorMap } from "../lib/calendar";
 
 const BOOKING_TYPES = [
   { id: "flight", label: "Flights", color: "bg-flight", icon: "✈️" },
@@ -25,6 +26,8 @@ export default function Sidebar({ user, trips, onNavigate }) {
   // anywhere on a row toggles it; the checkbox is a state indicator, not a
   // separate control. "All Trips" clears the selection.
   const { selectedTrips, toggleTrip, setSelectedTrips } = useTripContext();
+  // Same stable mapping the journey rail uses — the dot is the legend.
+  const tripDotColors = tripColorMap(trips.map((t) => t.id));
   const selectedSet = new Set(selectedTrips);
 
   const navHref = (path) => path;
@@ -160,7 +163,11 @@ export default function Sidebar({ user, trips, onNavigate }) {
                       </svg>
                     </span>
                   </span>
-                  <span className="flex-1 min-w-0 truncate pr-3 py-2">{trip.name}</span>
+                  <span className="flex-1 min-w-0 truncate pr-1 py-2">{trip.name}</span>
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 mr-3 ${tripDotColors[trip.id]?.rail || "bg-outline/40"}`}
+                    aria-hidden
+                  />
                 </button>
               </li>
             );

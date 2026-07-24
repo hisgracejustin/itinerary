@@ -100,7 +100,7 @@ function staySegmentsForWeek(stays, week) {
   return { segs, laneCount: laneEnds.length }
 }
 
-export default function MonthView({ currentDate, days: propDays, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, tripMetas = [], selectedTrip, spanStart, spanEnd, railTripMetas = [], railSpanStart, railSpanEnd, onSelectDate, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, onExtendTrip }) {
+export default function MonthView({ currentDate, days: propDays, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, tripMetas = [], selectedTrip, spanStart, spanEnd, railTripMetas = [], railSpanStart, railSpanEnd, allTripIds = [], onSelectDate, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, onExtendTrip }) {
   // Wide desktop → permanent journey rail; day clicks scroll it. Below that the
   // rail is hidden and clicking a day navigates to the Day view.
   const isWide = useMediaQuery('(min-width: 1024px)')
@@ -535,6 +535,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
                 onExtendTrip={onExtendTrip}
                 scrollRequest={scrollRequest}
                 compact
+                allTripIds={allTripIds}
               />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-on-surface-variant p-4">
