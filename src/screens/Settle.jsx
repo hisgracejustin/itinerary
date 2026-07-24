@@ -81,6 +81,32 @@ export default function Settle({
   )
   const transfers = useMemo(() => suggestTransfers(units), [units])
 
+  // ---- Hero: the viewer's own position -------------------------------------
+  const viewerUnit = units.find((u) => u.memberIds.includes(currentUserId))
+  const heroNets = viewerUnit ? netEntries(viewerUnit.net) : []
+  const heroLabel = heroNets.every(([, a]) => a > 0)
+    ? "You're owed"
+    : heroNets.every(([, a]) => a < 0)
+      ? 'You owe'
+      : 'Your balance'
+
+  // Transfers grouped by currency, order of first appearance.
+  const transferGroups = []
+  {
+    const idx = new Map()
+    for (const t of transfers) {
+      if (!idx.has(t.currency)) {
+        idx.set(t.currency, transferGroups.length)
+        transferGroups.push({ currency: t.currency, list: [] })
+      }
+      transferGroups[idx.get(t.currency)].list.push(t)
+    }
+  }
+
+  // Split-costs segmented filter: on the row's viewer net in its DISPLAY
+  // currency, dust-aware. "all" keeps even/null rows too.
+  const [splitFilter, setSplitFilter] = useState('all')
+
   // The viewer's settlement unit in a given trip: them plus anyone sharing
   // their party there. Feeds the per-item "+/− for you" pills.
   const viewerUnitIds = (tripId) => {
@@ -133,6 +159,56 @@ export default function Settle({
         unitMemberIds: viewerUnitIds(b.trip_id),
       }),
     }))
+
+  const matchesSplitFilter = ({ b, net }) => {
+    if (splitFilter === 'all') return true
+    const d = displayNet(net, b)
+    if (d.net == null) return false
+    const eps = epsFor(d.currency)
+    return splitFilter === 'owed' ? d.net >= eps : d.net <= -eps
+  }
+  // One filtered + sorted array feeds BOTH renderings (the existing |HKD|-desc
+  // order the table always had).
+  const sortedSplitRows = splitCostRows.filter(matchesSplitFilter).sort((a, b) => {
+    const key = (r) => netHkdOf(r.net, r.b) ?? 0
+    return key(b) - key(a)
+  })
+  // Mobile grouping: by DISPLAY currency, keeping the sorted order within each
+  // group; the group sum is the viewer's net over its rows.
+  const splitGroups = []
+  {
+    const idx = new Map()
+    for (const row of sortedSplitRows) {
+      const d = displayNet(row.net, row.b)
+      if (!idx.has(d.currency)) {
+        idx.set(d.currency, splitGroups.length)
+        splitGroups.push({ currency: d.currency, rows: [], sum: 0 })
+      }
+      const g = splitGroups[idx.get(d.currency)]
+      g.rows.push(row)
+      if (d.net != null) g.sum += d.net
+    }
+  }
+
+  // ---- Stats: Everyone-scope trip spend, mirroring Costs.jsx's hkdOf ---------
+  // (charged-in-HKD items contribute their EXACT charged value; everything else
+  // converts via live rates — approximations, hence the ~ prefix.)
+  const statHkdOf = (effective, currency, charged) => {
+    if (charged) {
+      const v = effective * charged.rate
+      return charged.currency === 'HKD' ? v : toHKD(v, charged.currency, rates)
+    }
+    return toHKD(effective, currency, rates)
+  }
+  const statItems = [
+    ...bookings
+      .filter((b) => b.cost_amount && b.cost_currency)
+      .map((b) => statHkdOf(effectiveOf(b), b.cost_currency, chargedOf(b))),
+    ...expenses.map((e) => statHkdOf(e.amount || 0, e.currency, chargedOf(e))),
+  ]
+  const totalSpendHKD = statItems.reduce((s, v) => s + v, 0)
+  const perPersonHKD = memberByUserId.size > 0 ? totalSpendHKD / memberByUserId.size : 0
+  const wholeHKD = (v) => `HK$${Math.round(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
 
   // Only surface units that actually took part (paid, owed, or settled).
   const activeUnits = units
@@ -224,7 +300,63 @@ export default function Settle({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-10">
-        {/* 1 — Balances */}
+        {/* 1 — Hero: your position. Teal lives ONLY here + the Settle pills. */}
+        <section className="rounded-2xl bg-gradient-to-br from-[#33ab9f] to-[#2b9488] text-white p-6">
+          {heroNets.length === 0 ? (
+            <>
+              <p className="text-sm font-medium text-white/75">All settled</p>
+              <p className="text-2xl font-bold tracking-tight mt-1">🎉 Nothing outstanding</p>
+              {transfers.length > 0 && (
+                <p className="text-sm text-white/75 mt-2">
+                  {transfers.length} transfer{transfers.length === 1 ? '' : 's'} pending between others
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-white/75">{heroLabel}</p>
+              <div className="mt-1 space-y-0.5">
+                {heroNets.map(([cur, amt]) => (
+                  <p key={cur} className="text-3xl font-bold tracking-tight">
+                    {amt > 0 ? '+' : '−'}{formatCurrency(Math.abs(amt), cur)}
+                  </p>
+                ))}
+              </div>
+              <p className="text-sm text-white/75 mt-2">
+                settles in {transfers.length} transfer{transfers.length === 1 ? '' : 's'}
+              </p>
+            </>
+          )}
+        </section>
+
+        {/* 2 — Transfers, grouped by currency, one actionable card each. */}
+        {transfers.length > 0 && (
+          <section className="mat-surface p-5">
+            <SectionTitle>Transfers</SectionTitle>
+            <div className="space-y-4">
+              {transferGroups.map(({ currency, list }) => (
+                <div key={currency}>
+                  <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
+                    {currency}
+                  </div>
+                  <div className="space-y-2">
+                    {list.map((t, i) => (
+                      <TransferCard
+                        key={i}
+                        t={t}
+                        memberByUserId={memberByUserId}
+                        currentUserId={currentUserId}
+                        onSettle={() => markPaid(t)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* 3 — Balances */}
         <section className="mat-surface p-5">
           <SectionTitle>Balances</SectionTitle>
           {activeUnits.length === 0 ? (
@@ -238,45 +370,85 @@ export default function Settle({
           )}
         </section>
 
-        {/* 2 — Suggested transfers */}
-        {transfers.length > 0 && (
-          <section className="mat-surface p-5">
-            <SectionTitle>Suggested transfers</SectionTitle>
-            <div className="space-y-2">
-              {transfers.map((t, i) => (
-                <div key={i} className="flex items-center gap-2 py-1.5">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <UnitAvatars unit={t.fromUnit} memberByUserId={memberByUserId} />
-                    <span className="text-sm text-on-surface truncate min-w-0">{t.fromUnit.name}</span>
-                    <svg className="w-4 h-4 text-on-surface-variant shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                    </svg>
-                    <UnitAvatars unit={t.toUnit} memberByUserId={memberByUserId} />
-                    <span className="text-sm text-on-surface truncate min-w-0">{t.toUnit.name}</span>
-                  </div>
-                  <span className="text-sm font-medium text-on-surface shrink-0">
-                    {formatCurrency(t.amount, t.currency)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => markPaid(t)}
-                    className="mat-btn-tonal text-xs shrink-0 !px-3 !py-1.5"
-                  >
-                    Mark paid
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* 2b — Per-item breakdown: each split booking + what it means for you,
+        {/* 4 — Per-item breakdown: each split booking + what it means for you,
             sorted most-receiving first. All HKD conversions route through
             toHKD — the single point the live-FX work (todo 1) will upgrade. */}
         {splitCostRows.length > 0 && (
           <section className="mat-surface p-5">
             <SectionTitle>Split costs</SectionTitle>
-            <div className="overflow-x-auto -mx-2 px-2">
+
+            {/* Segmented filter on the row's viewer net. */}
+            <div className="bg-surface-container rounded-full p-1 flex mb-3">
+              {[
+                ['owed', 'Owed to you'],
+                ['owe', 'You owe'],
+                ['all', 'All'],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSplitFilter(key)}
+                  className={`flex-1 text-center text-xs font-semibold rounded-full py-1.5 transition-colors ${
+                    splitFilter === key ? 'bg-white shadow-sm text-on-surface' : 'text-on-surface-variant'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {sortedSplitRows.length === 0 && (
+              <EmptyLine>Nothing in this view.</EmptyLine>
+            )}
+
+            {/* MOBILE — two-line rows grouped by display currency. */}
+            <div className="lg:hidden">
+              {splitGroups.map(({ currency, rows, sum }) => (
+                <div key={currency} className="mb-3 last:mb-0">
+                  <div className="flex items-baseline justify-between mb-1">
+                    <span className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">
+                      {currency}
+                    </span>
+                    <span className={`text-xs font-semibold ${sum >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                      {sum >= 0 ? '+' : '−'}{formatCurrency(Math.abs(sum), currency)}
+                    </span>
+                  </div>
+                  {rows.map(({ b, net }) => {
+                    const payer = memberByUserId.get(b.paid_by)
+                    const disp = displayNet(net, b)
+                    const eps = epsFor(disp.currency)
+                    const netHKD = netHkdOf(net, b)
+                    return (
+                      <div
+                        key={b.id}
+                        onClick={() => openBooking(b)}
+                        className="py-2 border-b border-outline/20 last:border-0 cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-base shrink-0">{TYPE_ICONS[b.type] || '🗂️'}</span>
+                          <span className="text-sm font-medium text-on-surface truncate min-w-0 flex-1">{b.title}</span>
+                          <NetPill net={disp.net} currency={disp.currency} />
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-on-surface-variant min-w-0">
+                          <Avatar member={payer} size="xs" />
+                          <span className="truncate min-w-0 flex-1">
+                            {memberFirstName(payer)} paid {formatCurrency(effectiveOf(b), b.cost_currency)}
+                          </span>
+                          {disp.currency !== 'HKD' && netHKD != null && Math.abs(disp.net) >= eps && (
+                            <span className="text-[11px] shrink-0">
+                              ≈ HK${Math.abs(netHKD).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+
+            {/* DESKTOP — the existing table, just filtered. */}
+            <div className="hidden lg:block overflow-x-auto -mx-2 px-2">
               <table className="w-full min-w-[540px] text-sm">
                 <thead>
                   <tr className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">
@@ -288,11 +460,7 @@ export default function Settle({
                   </tr>
                 </thead>
                 <tbody>
-                  {[...splitCostRows]
-                    .sort((a, b) => {
-                      const key = (r) => netHkdOf(r.net, r.b) ?? 0
-                      return key(b) - key(a)
-                    })
+                  {sortedSplitRows
                     .map(({ b, net }) => {
                       const payer = memberByUserId.get(b.paid_by)
                       const splitters = (b.splits || []).map(
@@ -364,7 +532,7 @@ export default function Settle({
           </section>
         )}
 
-        {/* 3 — Expenses */}
+        {/* 5 — Expenses */}
         <ExpensesSection
           expenses={expenses}
           personLabel={personLabel}
@@ -376,7 +544,7 @@ export default function Settle({
           toast={toast}
         />
 
-        {/* 4 — Needs attention */}
+        {/* 6 — Needs attention */}
         {(unallocated.length > 0 || missingPayer.length > 0) && (
           <section className="mat-surface p-5">
             <SectionTitle>Needs attention</SectionTitle>
@@ -391,7 +559,7 @@ export default function Settle({
           </section>
         )}
 
-        {/* 5 — Settlement history + record a payment */}
+        {/* 7 — Settlement history + record a payment */}
         <section ref={settleFormRef} className="mat-surface p-5">
           <div className="flex items-center justify-between mb-3">
             <SectionTitle className="mb-0">Payments</SectionTitle>
@@ -495,6 +663,18 @@ export default function Settle({
             </div>
           )}
         </section>
+
+        {/* 8 — Trip-spend stats (Everyone scope, approximate HKD). */}
+        {statItems.length > 0 && (
+          <section className="mat-surface p-5 text-sm text-on-surface space-y-1">
+            <p>
+              Total trip spend: <span className="font-bold">~{wholeHKD(totalSpendHKD)}</span>
+            </p>
+            <p>
+              Per person average: <span className="font-bold">~{wholeHKD(perPersonHKD)}</span>
+            </p>
+          </section>
+        )}
       </div>
 
       {bookingModalOpen && (
@@ -619,6 +799,51 @@ function NetPill({ net, currency }) {
     >
       {net > 0 ? '+' : '−'}{formatCurrency(Math.abs(net), currency)}
     </span>
+  )
+}
+
+/**
+ * One suggested transfer as an actionable card: avatar stacks + a teal Settle
+ * pill (prefills the record-payment form), then a viewer-aware sentence and the
+ * exact amount.
+ */
+function TransferCard({ t, memberByUserId, currentUserId, onSettle }) {
+  const viewerIn = (u) => u.memberIds.includes(currentUserId)
+  let sentence
+  if (viewerIn(t.toUnit)) {
+    sentence = `${t.fromUnit.name} ${t.fromUnit.memberIds.length === 1 ? 'pays' : 'pay'} you`
+  } else if (viewerIn(t.fromUnit)) {
+    sentence = `You pay ${t.toUnit.name}`
+  } else {
+    sentence = `${t.fromUnit.name} pay ${t.toUnit.name}`
+  }
+  return (
+    <div className="rounded-xl border border-outline/30 bg-white p-4">
+      <div className="flex items-center gap-2 min-w-0">
+        <UnitAvatars unit={t.fromUnit} memberByUserId={memberByUserId} />
+        <svg className="w-3.5 h-3.5 text-on-surface-variant shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+        </svg>
+        <UnitAvatars unit={t.toUnit} memberByUserId={memberByUserId} />
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={onSettle}
+          className="rounded-full bg-[#33ab9f]/10 text-[#2b9488] font-semibold text-xs px-4 py-2 inline-flex items-center gap-1.5 shrink-0 hover:bg-[#33ab9f]/20 transition-colors"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+          </svg>
+          Settle
+        </button>
+      </div>
+      <div className="mt-2 flex justify-between items-baseline gap-3">
+        <span className="text-sm text-on-surface truncate min-w-0">{sentence}</span>
+        <span className="text-xl font-bold tracking-tight text-on-surface shrink-0">
+          {formatCurrency(t.amount, t.currency)}
+        </span>
+      </div>
+    </div>
   )
 }
 
