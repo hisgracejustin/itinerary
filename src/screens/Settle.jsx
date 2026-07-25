@@ -81,6 +81,11 @@ export default function Settle({
   )
   const simplified = useMemo(() => suggestTransfers(units), [units])
 
+  // "Needs attention" — items silently dropped from totals (unsplit / no payer).
+  // The hero shows a tappable banner that scrolls down to this section.
+  const attentionRef = useRef(null)
+  const attentionCount = unallocated.length + missingPayer.length
+
   // "Simplify settlements" — ON: min-cash-flow across the group (fewest
   // transfers); OFF: direct pairwise debts. Remembered per trip selection on
   // this device, mirroring the sibling splitter app.
@@ -99,8 +104,14 @@ export default function Settle({
   const transfers = simplify ? simplified : pairTransfers
 
   // ---- Hero: the viewer's own position -------------------------------------
-  const viewerUnit = units.find((u) => u.memberIds.includes(currentUserId))
-  const heroNets = viewerUnit ? netEntries(viewerUnit.net) : []
+  // A user can now belong to MULTIPLE units (partied in one trip, solo in
+  // another), so aggregate the viewer's net across every unit that contains them.
+  const heroNet = {}
+  for (const u of units) {
+    if (!u.memberIds.includes(currentUserId)) continue
+    for (const [cur, amt] of Object.entries(u.net || {})) heroNet[cur] = (heroNet[cur] || 0) + amt
+  }
+  const heroNets = netEntries(heroNet)
   const heroLabel = heroNets.every(([, a]) => a > 0)
     ? "You're owed"
     : heroNets.every(([, a]) => a < 0)
@@ -359,6 +370,27 @@ export default function Settle({
           )}
         </section>
 
+        {/* Needs-attention banner — items dropped from the totals above. Taps
+            through to the Needs attention section (7). */}
+        {attentionCount > 0 && (
+          <button
+            type="button"
+            onClick={() => attentionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="w-full flex items-center gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left transition-colors hover:bg-amber-100"
+          >
+            <svg className="w-5 h-5 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.59 3z" />
+            </svg>
+            <span className="min-w-0 flex-1 text-sm font-semibold text-amber-700 truncate">
+              {attentionCount} item{attentionCount === 1 ? '' : 's'} need{attentionCount === 1 ? 's' : ''} attention
+            </span>
+            <span className="text-xs font-medium text-amber-600 shrink-0">Review</span>
+            <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        )}
+
         {/* Simplify toggle — mirrors the sibling splitter app. */}
         {(simplified.length > 0 || pairTransfers.length > 0) && (
           <div className="flex items-center justify-between gap-3 px-1">
@@ -612,7 +644,7 @@ export default function Settle({
 
         {/* 6 — Needs attention */}
         {(unallocated.length > 0 || missingPayer.length > 0) && (
-          <section className="mat-surface p-5">
+          <section ref={attentionRef} className="mat-surface p-5 scroll-mt-4">
             <SectionTitle>Needs attention</SectionTitle>
             <div className="space-y-1.5">
               {unallocated.map((ref, i) => (

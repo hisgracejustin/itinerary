@@ -43,7 +43,7 @@ npm run dev                  # http://localhost:3000
 | Var | Required | Purpose |
 |---|---|---|
 | `AUTH_SECRET` | yes | Signs the JWT session cookie (`openssl rand -base64 32`) |
-| `ALLOWED_EMAILS` | prod | Comma-separated sign-in allowlist (fails closed in prod if unset) |
+| `ADMIN_EMAILS` | prod | Comma-separated global admins. Required to manage another member's PIN/email/avatar — **unset ⇒ those actions refuse for everyone** |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | prod | Google OAuth client |
 | `AUTH_URL` | prod | Public `https://itinerary.pondlab.app` (correct OAuth callbacks on the custom domain) |
 | `DATABASE_URL` | prod | Neon Postgres connection string (use the pooled `-pooler` host); unset → PGlite dev DB |

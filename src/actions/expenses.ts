@@ -2,7 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { db, tables } from "@/db";
+import { db, tables, transaction, type Db } from "@/db";
 import { runAction } from "@/lib/action-utils";
 import { requireTripAccess, requireTripMembers, WRITE_ROLES } from "@/lib/authz";
 import { expenseInsertSchema, expenseUpdateSchema } from "@/lib/schemas";
@@ -14,13 +14,14 @@ const revalidateApp = () => revalidatePath("/", "layout");
  * rows untouched; `splits: []` un-splits; a non-empty set replaces wholesale.
  */
 async function replaceExpenseSplits(
+  client: Db,
   expenseId: string,
   splits: { user_id: string; weight: number; extra_amount?: number }[] | undefined,
 ) {
   if (splits === undefined) return;
-  await db.delete(tables.expenseSplits).where(eq(tables.expenseSplits.expense_id, expenseId));
+  await client.delete(tables.expenseSplits).where(eq(tables.expenseSplits.expense_id, expenseId));
   if (splits.length > 0) {
-    await db.insert(tables.expenseSplits).values(
+    await client.insert(tables.expenseSplits).values(
       splits.map((s) => ({
         expense_id: expenseId,
         user_id: s.user_id,
@@ -39,20 +40,25 @@ export async function createExpenseAction(input: unknown) {
       data.paid_by,
       ...data.splits.map((s) => s.user_id),
     ]);
-    const [row] = await db
-      .insert(tables.expenses)
-      .values({
-        trip_id: data.trip_id,
-        title: data.title,
-        amount: data.amount,
-        currency: data.currency,
-        paid_by: data.paid_by ?? null,
-        date: data.date ?? null,
-        charged_currency: data.charged_currency ?? null,
-        charged_rate: data.charged_rate ?? null,
-      })
-      .returning();
-    await replaceExpenseSplits(row.id, data.splits);
+    // Expense row + its split rows commit together (a partial write leaves a
+    // shared cost with no splits, silently dropping it from everyone's balances).
+    const row = await transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(tables.expenses)
+        .values({
+          trip_id: data.trip_id,
+          title: data.title,
+          amount: data.amount,
+          currency: data.currency,
+          paid_by: data.paid_by ?? null,
+          date: data.date ?? null,
+          charged_currency: data.charged_currency ?? null,
+          charged_rate: data.charged_rate ?? null,
+        })
+        .returning();
+      await replaceExpenseSplits(tx, inserted.id, data.splits);
+      return inserted;
+    });
     revalidateApp();
     return row;
   });
@@ -92,17 +98,20 @@ export async function updateExpenseAction(id: string, input: unknown) {
       ...(splits ?? []).map((s) => s.user_id),
       ...carriedUserIds,
     ]);
-    let row;
-    if (Object.keys(updates).length > 0) {
-      [row] = await db
-        .update(tables.expenses)
-        .set(updates)
-        .where(eq(tables.expenses.id, id))
-        .returning();
-    } else {
-      [row] = await db.select().from(tables.expenses).where(eq(tables.expenses.id, id)).limit(1);
-    }
-    await replaceExpenseSplits(id, splits);
+    const row = await transaction(async (tx) => {
+      let updated;
+      if (Object.keys(updates).length > 0) {
+        [updated] = await tx
+          .update(tables.expenses)
+          .set(updates)
+          .where(eq(tables.expenses.id, id))
+          .returning();
+      } else {
+        [updated] = await tx.select().from(tables.expenses).where(eq(tables.expenses.id, id)).limit(1);
+      }
+      await replaceExpenseSplits(tx, id, splits);
+      return updated;
+    });
     revalidateApp();
     return row;
   });

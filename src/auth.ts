@@ -96,6 +96,26 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
     ],
     // Open signup: anyone who can sign in gets an (empty) account. Access to
     // actual data stays gated per-trip via trip_members (see src/lib/authz.ts).
-    callbacks: authConfig.callbacks,
+    callbacks: {
+      ...authConfig.callbacks,
+      // JWT session revocation (H6). Sessions are stateless, so an admin changing
+      // a user's email/PIN can't otherwise reach their live cookie. Here we revoke
+      // any token issued before the user's `sessions_valid_after` cutoff. On the
+      // sign-in call `iat` isn't set yet (skipped); on later reads it is present.
+      async jwt({ token }) {
+        const sub = token.sub;
+        const iat = typeof token.iat === "number" ? token.iat : null;
+        if (sub && iat) {
+          await dbReady();
+          const row = await db.query.users.findFirst({
+            where: eq(tables.users.id, sub),
+            columns: { sessions_valid_after: true },
+          });
+          const cutoff = row?.sessions_valid_after;
+          if (cutoff && cutoff.getTime() > iat * 1000) return null;
+        }
+        return token;
+      },
+    },
   };
 });

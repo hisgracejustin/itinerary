@@ -1,11 +1,11 @@
 "use server";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { db, tables } from "@/db";
+import { db, tables, transaction } from "@/db";
 import { runAction } from "@/lib/action-utils";
-import { requireTripAccess, requireTripMembers } from "@/lib/authz";
+import { requireAdmin, requireTripAccess, requireTripMembers } from "@/lib/authz";
 import { partySchema } from "@/lib/schemas";
 import { hashPin } from "@/lib/pin";
 
@@ -155,29 +155,13 @@ export async function removeTripMemberAction(input: unknown) {
       if (owners.length <= 1) throw new Error("A trip needs at least one owner");
     }
 
-    await db
-      .delete(tables.tripMembers)
-      .where(
-        and(
-          eq(tables.tripMembers.trip_id, data.trip_id),
-          eq(tables.tripMembers.user_id, data.user_id),
-        ),
-      );
-    // Their to-dos on this trip fall back to unassigned rather than staying
-    // owned by someone who can no longer see the trip.
-    await db
-      .update(tables.todos)
-      .set({ assignee_id: null })
-      .where(
-        and(
-          eq(tables.todos.trip_id, data.trip_id),
-          eq(tables.todos.assignee_id, data.user_id),
-        ),
-      );
-
-    // Scrub their cost footprint on this trip: drop their split rows and null any
-    // payer pointers at them. Settlement history stays. Acceptable data loss —
-    // the balances no longer involve someone who left the trip.
+    // H2: never silently rewrite balances. A member's split rows aren't "their
+    // portion set aside" — a share is weight/Σweights of the amount, so deleting
+    // them re-divides every shared cost among the people who STAY, retroactively,
+    // and kept settlements would point at someone no longer here. So if the member
+    // has any cost footprint on this trip (a split, a payer row, or a settlement),
+    // refuse and make the owner resolve it first. Per-trip data access is revoked
+    // the moment the membership row is gone, so no session bump is needed.
     const tripBookingIds = db
       .select({ id: tables.bookings.id })
       .from(tables.bookings)
@@ -186,34 +170,80 @@ export async function removeTripMemberAction(input: unknown) {
       .select({ id: tables.expenses.id })
       .from(tables.expenses)
       .where(eq(tables.expenses.trip_id, data.trip_id));
-    await db
-      .delete(tables.bookingSplits)
+    const [bSplit] = await db
+      .select({ x: tables.bookingSplits.user_id })
+      .from(tables.bookingSplits)
       .where(
         and(
           eq(tables.bookingSplits.user_id, data.user_id),
           inArray(tables.bookingSplits.booking_id, tripBookingIds),
         ),
-      );
-    await db
-      .delete(tables.expenseSplits)
+      )
+      .limit(1);
+    const [eSplit] = await db
+      .select({ x: tables.expenseSplits.user_id })
+      .from(tables.expenseSplits)
       .where(
         and(
           eq(tables.expenseSplits.user_id, data.user_id),
           inArray(tables.expenseSplits.expense_id, tripExpenseIds),
         ),
-      );
-    await db
-      .update(tables.bookings)
-      .set({ paid_by: null })
+      )
+      .limit(1);
+    const [bPaid] = await db
+      .select({ id: tables.bookings.id })
+      .from(tables.bookings)
       .where(
         and(eq(tables.bookings.trip_id, data.trip_id), eq(tables.bookings.paid_by, data.user_id)),
-      );
-    await db
-      .update(tables.expenses)
-      .set({ paid_by: null })
+      )
+      .limit(1);
+    const [ePaid] = await db
+      .select({ id: tables.expenses.id })
+      .from(tables.expenses)
       .where(
         and(eq(tables.expenses.trip_id, data.trip_id), eq(tables.expenses.paid_by, data.user_id)),
+      )
+      .limit(1);
+    const [settled] = await db
+      .select({ id: tables.settlements.id })
+      .from(tables.settlements)
+      .where(
+        and(
+          eq(tables.settlements.trip_id, data.trip_id),
+          or(
+            eq(tables.settlements.from_user, data.user_id),
+            eq(tables.settlements.to_user, data.user_id),
+          ),
+        ),
+      )
+      .limit(1);
+    if (bSplit || eSplit || bPaid || ePaid || settled) {
+      throw new Error(
+        "This person still has shared costs or settlements on this trip. Remove or reassign their expenses and settlements first, then remove them.",
       );
+    }
+
+    await transaction(async (tx) => {
+      await tx
+        .delete(tables.tripMembers)
+        .where(
+          and(
+            eq(tables.tripMembers.trip_id, data.trip_id),
+            eq(tables.tripMembers.user_id, data.user_id),
+          ),
+        );
+      // Their to-dos on this trip fall back to unassigned rather than staying
+      // owned by someone who can no longer see the trip.
+      await tx
+        .update(tables.todos)
+        .set({ assignee_id: null })
+        .where(
+          and(
+            eq(tables.todos.trip_id, data.trip_id),
+            eq(tables.todos.assignee_id, data.user_id),
+          ),
+        );
+    });
     revalidateApp();
     return { user_id: data.user_id };
   });
@@ -323,7 +353,9 @@ const updateMemberProfileSchema = z
 export async function updateMemberProfileAction(input: unknown) {
   return runAction(async (user) => {
     const data = updateMemberProfileSchema.parse(input);
-    await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
+    // Admin-only: editing a person's email/identity must never be reachable via
+    // trip ownership (which anyone can self-grant), or it becomes account takeover.
+    requireAdmin(user);
     await requireTripMembers(data.trip_id, [data.user_id]);
 
     const [current] = await db
@@ -344,6 +376,7 @@ export async function updateMemberProfileAction(input: unknown) {
       password_hash?: null;
       failed_pin_attempts?: number;
       pin_locked_until?: null;
+      sessions_valid_after?: Date;
     } = {};
 
     if (data.name !== undefined) updates.name = data.name;
@@ -365,6 +398,9 @@ export async function updateMemberProfileAction(input: unknown) {
       updates.password_hash = null;
       updates.failed_pin_attempts = 0;
       updates.pin_locked_until = null;
+      // Invalidate any live JWT session for the old holder (deleting accounts
+      // rows only blocks future sign-ins; existing cookies stay valid ~30 days).
+      updates.sessions_valid_after = new Date();
     }
 
     if (updates.name !== undefined || updates.email !== undefined) {
@@ -402,7 +438,9 @@ const setMemberPinSchema = z.object({
 export async function setMemberPinAction(input: unknown) {
   return runAction(async (user) => {
     const data = setMemberPinSchema.parse(input);
-    await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
+    // Admin-only: writing another person's login credential is exactly the
+    // takeover primitive, so trip ownership must not grant it.
+    requireAdmin(user);
     await requireTripMembers(data.trip_id, [data.user_id]);
     await db
       .update(tables.users)
@@ -410,6 +448,8 @@ export async function setMemberPinAction(input: unknown) {
         password_hash: data.pin === null ? null : hashPin(data.pin),
         failed_pin_attempts: 0,
         pin_locked_until: null,
+        // Any PIN change (set or clear) invalidates the old holder's sessions.
+        sessions_valid_after: new Date(),
       })
       .where(eq(tables.users.id, data.user_id));
     revalidateApp();
@@ -453,7 +493,8 @@ const setMemberAvatarSchema = setMyAvatarSchema.extend({
 export async function setMemberAvatarAction(input: unknown) {
   return runAction(async (user) => {
     const data = setMemberAvatarSchema.parse(input);
-    await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
+    // Admin-only: writes another person's `users.image` (global, all trips).
+    requireAdmin(user);
     await requireTripMembers(data.trip_id, [data.user_id]);
     const image = data.icon === null ? null : `/icons/${data.icon}`;
     await db.update(tables.users).set({ image }).where(eq(tables.users.id, data.user_id));

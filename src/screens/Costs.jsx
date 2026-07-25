@@ -224,10 +224,15 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                 </div>
               ))}
             </div>
-            {unsplitCount > 0 && (
-              <p className="text-[11px] text-on-surface-variant/70 mt-3">
-                {unsplitCount} cost{unsplitCount === 1 ? '' : 's'} not split yet — shown under Everyone only.
-              </p>
+            {scope !== 'everyone' && unsplitCount > 0 && (
+              <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5">
+                <svg className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.59 3z" />
+                </svg>
+                <p className="text-xs text-amber-700 min-w-0">
+                  {unsplitCount} cost{unsplitCount === 1 ? " isn't" : "s aren't"} assigned to anyone yet, so {unsplitCount === 1 ? "it's" : "they're"} not in this figure.
+                </p>
+              </div>
             )}
           </div>
 

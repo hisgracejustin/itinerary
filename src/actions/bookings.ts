@@ -3,7 +3,7 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { db, tables } from "@/db";
+import { db, tables, transaction, type Db } from "@/db";
 import { runAction } from "@/lib/action-utils";
 import { requireTripAccess, requireTripMembers, WRITE_ROLES } from "@/lib/authz";
 import {
@@ -23,13 +23,14 @@ const revalidateApp = () => revalidatePath("/", "layout");
  * rows untouched; `splits: []` un-splits; a non-empty set replaces wholesale.
  */
 async function replaceBookingSplits(
+  client: Db,
   bookingId: string,
   splits: { user_id: string; weight: number; extra_amount?: number }[] | undefined,
 ) {
   if (splits === undefined) return;
-  await db.delete(tables.bookingSplits).where(eq(tables.bookingSplits.booking_id, bookingId));
+  await client.delete(tables.bookingSplits).where(eq(tables.bookingSplits.booking_id, bookingId));
   if (splits.length > 0) {
-    await db.insert(tables.bookingSplits).values(
+    await client.insert(tables.bookingSplits).values(
       splits.map((s) => ({
         booking_id: bookingId,
         user_id: s.user_id,
@@ -50,30 +51,35 @@ export async function createBookingAction(input: unknown) {
       ...(data.splits ?? []).map((s) => s.user_id),
     ]);
     const id = data.id || crypto.randomUUID();
-    const [row] = await db
-      .insert(tables.bookings)
-      .values({
-        id,
-        trip_id: data.trip_id,
-        type: data.type,
-        title: data.title,
-        start_date: data.start_date,
-        end_date: data.end_date ?? null,
-        confirmation_number: data.confirmation_number ?? null,
-        provider: data.provider ?? null,
-        details: data.details ?? null,
-        cost_amount: data.cost_amount ?? null,
-        cost_currency: data.cost_currency ?? null,
-        cost_share: data.cost_share ?? null,
-        paid_by: data.paid_by ?? null,
-        charged_currency: data.charged_currency ?? null,
-        charged_rate: data.charged_rate ?? null,
-        source: data.source ?? "manual",
-        source_file: data.source_file ?? null,
-        raw_text: data.raw_text ?? null,
-      })
-      .returning();
-    await replaceBookingSplits(id, data.splits);
+    // The booking row and its split rows must land together — a partial write
+    // leaves a cost with no/stale splits, which settle math reads as unallocated.
+    const row = await transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(tables.bookings)
+        .values({
+          id,
+          trip_id: data.trip_id,
+          type: data.type,
+          title: data.title,
+          start_date: data.start_date,
+          end_date: data.end_date ?? null,
+          confirmation_number: data.confirmation_number ?? null,
+          provider: data.provider ?? null,
+          details: data.details ?? null,
+          cost_amount: data.cost_amount ?? null,
+          cost_currency: data.cost_currency ?? null,
+          cost_share: data.cost_share ?? null,
+          paid_by: data.paid_by ?? null,
+          charged_currency: data.charged_currency ?? null,
+          charged_rate: data.charged_rate ?? null,
+          source: data.source ?? "manual",
+          source_file: data.source_file ?? null,
+          raw_text: data.raw_text ?? null,
+        })
+        .returning();
+      await replaceBookingSplits(tx, id, data.splits);
+      return inserted;
+    });
     revalidateApp();
     return row;
   });
@@ -117,17 +123,20 @@ export async function updateBookingAction(id: string, input: unknown) {
       ...(splits ?? []).map((s) => s.user_id),
       ...carriedUserIds,
     ]);
-    let row;
-    if (Object.keys(updates).length > 0) {
-      [row] = await db
-        .update(tables.bookings)
-        .set(updates)
-        .where(eq(tables.bookings.id, id))
-        .returning();
-    } else {
-      [row] = await db.select().from(tables.bookings).where(eq(tables.bookings.id, id)).limit(1);
-    }
-    await replaceBookingSplits(id, splits);
+    const row = await transaction(async (tx) => {
+      let updated;
+      if (Object.keys(updates).length > 0) {
+        [updated] = await tx
+          .update(tables.bookings)
+          .set(updates)
+          .where(eq(tables.bookings.id, id))
+          .returning();
+      } else {
+        [updated] = await tx.select().from(tables.bookings).where(eq(tables.bookings.id, id)).limit(1);
+      }
+      await replaceBookingSplits(tx, id, splits);
+      return updated;
+    });
     revalidateApp();
     return row;
   });

@@ -5,6 +5,26 @@ import type { TripRole } from "@/db/schema";
 const ALL_ROLES: TripRole[] = ["owner", "editor", "viewer"];
 export const WRITE_ROLES: TripRole[] = ["owner", "editor"];
 
+// Global admins, by email (comma-separated env var, case-insensitive). Trip
+// ownership is per-trip and self-granted (anyone can create a trip), so it must
+// NOT gate person-level identity writes (PIN, email, avatar) — otherwise any
+// user could add a victim to a trip they own and take over the account. Those
+// writes are admin-only. Unset ⇒ nobody is admin ⇒ those actions all refuse.
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "")
+  .split(",")
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
+
+/**
+ * Throw "Forbidden" unless the caller is a configured global admin. Gates writes
+ * to another person's account identity, which trip ownership must never confer.
+ */
+export function requireAdmin(user: { email?: string | null }) {
+  if (!user.email || !ADMIN_EMAILS.includes(user.email.toLowerCase())) {
+    throw new Error("Forbidden");
+  }
+}
+
 /**
  * Code replacement for the old Supabase RLS policies. Throws "Forbidden" unless
  * `userId` is a member of `tripId` with one of `roles`.

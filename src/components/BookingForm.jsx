@@ -215,10 +215,22 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
 
   const submitSave = () => {
     const isInformal = form.type === 'hotel' && form.details.informal
+    // Store the wall-clock time exactly as typed — a naive `YYYY-MM-DDTHH:mm[:ss]`
+    // string with NO timezone — so a booking renders on the same calendar day
+    // everywhere, regardless of the viewer's timezone (this app is used across
+    // timezones). `toISOString()` would bake in the entering device's offset and
+    // shift the day when viewed elsewhere. Informal stays are date-only, pinned to
+    // local midnight (a bare `YYYY-MM-DD` would parse as UTC and drift a day).
+    const wall = (s) => {
+      if (!s) return null
+      const str = String(s)
+      if (isInformal) return `${str.slice(0, 10)}T00:00:00`
+      return str.length <= 10 ? `${str}T00:00:00` : str
+    }
     onSave({
       ...form,
-      start_date: isInformal ? new Date(form.start_date + 'T00:00:00').toISOString() : new Date(form.start_date).toISOString(),
-      end_date: form.end_date ? (isInformal ? new Date(form.end_date + 'T00:00:00').toISOString() : new Date(form.end_date).toISOString()) : null,
+      start_date: wall(form.start_date),
+      end_date: form.end_date ? wall(form.end_date) : null,
       cost_amount: form.cost_amount ? parseFloat(form.cost_amount) : null,
       cost_currency: form.cost_amount ? form.cost_currency : null,
       cost_share: form.cost_amount ? parseFloat(form.cost_share) || 1 : null,

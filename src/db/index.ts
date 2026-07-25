@@ -50,18 +50,34 @@ export const db: Db = globalThis.__itinDb ?? (globalThis.__itinDb = createDb());
 export function dbReady(): Promise<void> {
   if (globalThis.__itinDbReady) return globalThis.__itinDbReady;
   const url = process.env.DATABASE_URL;
-  if (url && url.startsWith("postgres")) {
-    globalThis.__itinDbReady = (async () => {
+  const run = async () => {
+    if (url && url.startsWith("postgres")) {
       const { migrate } = await import("drizzle-orm/node-postgres/migrator");
       await migrate(db as NodePgDatabase<typeof schema>, { migrationsFolder: "./drizzle" });
-    })();
-  } else {
-    globalThis.__itinDbReady = (async () => {
+    } else {
       const { migrate } = await import("drizzle-orm/pglite/migrator");
       await migrate(db as PgliteDatabase<typeof schema>, { migrationsFolder: "./drizzle" });
-    })();
-  }
+    }
+  };
+  // Clear the memo if migration fails so the next request retries instead of
+  // re-awaiting a permanently-rejected promise (which would brick this warm
+  // serverless instance until it's recycled).
+  globalThis.__itinDbReady = run().catch((e) => {
+    globalThis.__itinDbReady = undefined;
+    throw e;
+  });
   return globalThis.__itinDbReady;
+}
+
+/**
+ * Run `fn` inside a single database transaction so multi-statement writes commit
+ * atomically (e.g. replacing split rows alongside their parent row). The cast
+ * localizes the union-type (`NodePgDatabase | PgliteDatabase`) transaction call;
+ * the `tx` handle exposes the same query builders as `db` at runtime.
+ */
+export function transaction<T>(fn: (tx: Db) => Promise<T>): Promise<T> {
+  const runner = db as NodePgDatabase<typeof schema>;
+  return runner.transaction((tx) => fn(tx as unknown as Db)) as Promise<T>;
 }
 
 export * as tables from "./schema";

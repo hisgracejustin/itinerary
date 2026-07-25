@@ -212,15 +212,6 @@ export function computeBalances({
   expenses = [],
   settlements = [],
 } = {}) {
-  // Per-user running totals, keyed by currency.
-  const paid = new Map() // userId → { [currency]: amount }
-  const owed = new Map()
-  const totals = (map, userId) => {
-    let t = map.get(userId)
-    if (!t) map.set(userId, (t = {}))
-    return t
-  }
-
   const unallocated = []
   const missingPayer = []
 
@@ -228,6 +219,61 @@ export function computeBalances({
     ...bookings.map(bookingItem).filter(Boolean),
     ...expenses.map(expenseItem),
   ]
+
+  // ---- Per-trip party index ------------------------------------------------
+  // `party_id` is PER-TRIP: a `trip_members` row carries (trip_id, party_id), so
+  // the SAME pair can be one unit in a couple-trip and two solo units in a
+  // solo-trip. We therefore compute each obligation WITHIN its trip using that
+  // trip's party structure, and only aggregate across trips by the global
+  // member-SET key. A user may consequently belong to several coexisting units
+  // (e.g. `{J,K}` from couple-trips AND `{J}`/`{K}` from a solo-trip) — that is
+  // intended, and they settle independently.
+  const memberByUserId = new Map()
+  const partyMembers = new Map() // `${trip_id}::${party_id}` → sorted [userIds]
+  const partyOfUserInTrip = new Map() // `${trip_id}::${userId}` → party_id
+  for (const m of members) {
+    const id = memberId(m)
+    if (!id) continue
+    if (!memberByUserId.has(id)) memberByUserId.set(id, m)
+    if (!m.party_id) continue
+    const k = `${m.trip_id}::${m.party_id}`
+    if (!partyMembers.has(k)) partyMembers.set(k, [])
+    partyMembers.get(k).push(id)
+    partyOfUserInTrip.set(`${m.trip_id}::${id}`, m.party_id)
+  }
+  for (const ids of partyMembers.values()) ids.sort()
+  const partyNameById = new Map(parties.map((p) => [p.id, p.name]))
+
+  // The user's settlement unit in ONE trip: everyone sharing their party in THAT
+  // trip (sorted), or just themselves when they have no party there / aren't a
+  // member row of it. `unitKey` keeps the existing sorted-ids-joined convention.
+  const tripUnitMembers = (tripId, userId) => {
+    const pid = partyOfUserInTrip.get(`${tripId}::${userId}`)
+    if (pid) {
+      const ids = partyMembers.get(`${tripId}::${pid}`)
+      if (ids && ids.length) return ids
+    }
+    return [userId]
+  }
+  const unitKey = (memberIds) => [...memberIds].sort().join('+')
+
+  // Obligations accumulate at TRIP-UNIT granularity but are keyed by the GLOBAL
+  // member-SET, so the same couple across two trips folds into one `{J,K}` unit
+  // while a solo-trip appearance stays its own `{J}`/`{K}` units.
+  const paidByUnit = new Map() // unitKey → { [currency]: amount }
+  const owedByUnit = new Map()
+  const memberIdsByKey = new Map() // unitKey → memberIds[] (the universe of units)
+  const registerUnit = (tripId, userId) => {
+    const ids = tripUnitMembers(tripId, userId)
+    const key = unitKey(ids)
+    if (!memberIdsByKey.has(key)) memberIdsByKey.set(key, [...ids].sort())
+    return key
+  }
+  const totals = (map, key) => {
+    let t = map.get(key)
+    if (!t) map.set(key, (t = {}))
+    return t
+  }
 
   // Settleable items are also kept for the pairwise (un-simplified) pass below.
   const settleable = []
@@ -245,135 +291,82 @@ export function computeBalances({
     // poisoning balances.
     const shares = itemShares(item.amount, item.splits)
     if (!shares) continue
-    settleable.push({ item, shares })
+    const tripId = item.ref.trip_id
+    settleable.push({ item, shares, tripId })
 
     // Re-denominate at the charged rate (1 / native currency when none): shares
     // stay native above, so scaling the paid amount and every share by the same
     // factor here preserves proportions and extras exactly.
     const cur = item.settleCurrency ?? item.currency
     const rate = item.settleRate ?? 1
-    add(totals(paid, item.paid_by), cur, item.amount * rate)
+    // The payer's trip-unit is credited; each share-holder's trip-unit is
+    // debited. A co-party share-holder maps to the SAME trip-unit key as the
+    // payer, so their within-party debt cancels in the net automatically — that
+    // is how within-trip-party suppression happens, without any union step.
+    add(totals(paidByUnit, registerUnit(tripId, item.paid_by)), cur, item.amount * rate)
     for (const [userId, share] of shares) {
-      add(totals(owed, userId), cur, share * rate)
+      add(totals(owedByUnit, registerUnit(tripId, userId)), cur, share * rate)
     }
   }
 
-  // ---- Aggregate users into units -----------------------------------------
-  // Members sharing a party form one unit; everyone else is solo. Units are
-  // keyed by the sorted member-id SET (not party_id) so the same couple across
-  // two trips — two party rows — merges into one unit. Union-find over party
-  // membership yields exactly that, and keeps every user in exactly one unit.
-  const memberByUserId = new Map()
-  for (const m of members) {
-    const id = memberId(m)
-    if (id && !memberByUserId.has(id)) memberByUserId.set(id, m)
-  }
-  const partyNameById = new Map(parties.map((p) => [p.id, p.name]))
-
-  // The universe of users: members + anyone touched by an item or settlement.
-  const universe = new Set(memberByUserId.keys())
-  for (const id of paid.keys()) universe.add(id)
-  for (const id of owed.keys()) universe.add(id)
+  // A settlement's participants form units even with no paid/owed activity of
+  // their own (mirrors the old `universe` seeding), each resolved in ITS trip.
   for (const s of settlements) {
-    if (s.from_user) universe.add(s.from_user)
-    if (s.to_user) universe.add(s.to_user)
+    if (s.from_user) registerUnit(s.trip_id, s.from_user)
+    if (s.to_user) registerUnit(s.trip_id, s.to_user)
   }
 
-  const parent = new Map()
-  const find = (x) => {
-    if (!parent.has(x)) parent.set(x, x)
-    let root = x
-    while (parent.get(root) !== root) root = parent.get(root)
-    while (parent.get(x) !== root) {
-      const next = parent.get(x)
-      parent.set(x, root)
-      x = next
+  // ---- Build units ---------------------------------------------------------
+  // A member-SET that exactly equals some party's roster (in any trip) borrows
+  // that party's name for display; otherwise a grouped unit joins member labels
+  // and a solo unit is just the member's label.
+  const partyNameBySet = new Map() // unitKey → party name
+  for (const [k, ids] of partyMembers) {
+    const pid = k.slice(k.indexOf('::') + 2)
+    const name = partyNameById.get(pid)
+    if (name) partyNameBySet.set(unitKey(ids), name)
+  }
+  const nameForSet = (memberIds) => {
+    const key = unitKey(memberIds)
+    if (memberIds.length > 1) {
+      return partyNameBySet.get(key) || memberIds.map((id) => label(memberByUserId.get(id))).join(' & ')
     }
-    return root
-  }
-  const union = (a, b) => {
-    const ra = find(a)
-    const rb = find(b)
-    if (ra !== rb) parent.set(ra, rb)
-  }
-
-  for (const id of universe) find(id) // seed
-
-  // Union members that share a party_id (party_id is globally unique per trip,
-  // so grouping by it alone is correct).
-  const byParty = new Map()
-  for (const m of members) {
-    const id = memberId(m)
-    if (!id || !m.party_id) continue
-    if (!byParty.has(m.party_id)) byParty.set(m.party_id, [])
-    byParty.get(m.party_id).push(id)
-  }
-  for (const [, ids] of byParty) {
-    for (let i = 1; i < ids.length; i++) union(ids[0], ids[i])
-  }
-
-  // Collect components.
-  const components = new Map() // root → Set(userIds)
-  for (const id of universe) {
-    const root = find(id)
-    if (!components.has(root)) components.set(root, new Set())
-    components.get(root).add(id)
+    return label(memberByUserId.get(memberIds[0]))
   }
 
   const units = []
-  const unitByUserId = new Map()
-  for (const [, idSet] of components) {
-    const memberIds = [...idSet].sort()
-    const key = memberIds.join('+')
-    const unitPaid = {}
-    const unitOwed = {}
+  const unitByKey = new Map()
+  for (const [key, memberIds] of memberIdsByKey) {
+    const unitPaid = paidByUnit.get(key) || {}
+    const unitOwed = owedByUnit.get(key) || {}
     const unitNet = {}
-    for (const id of memberIds) {
-      const p = paid.get(id) || {}
-      const o = owed.get(id) || {}
-      for (const [cur, amt] of Object.entries(p)) {
-        add(unitPaid, cur, amt)
-        add(unitNet, cur, amt)
-      }
-      for (const [cur, amt] of Object.entries(o)) {
-        add(unitOwed, cur, amt)
-        add(unitNet, cur, -amt)
-      }
-    }
-    // Name: a party name for grouped units (display-only), else the member label.
-    let name
-    if (memberIds.length > 1) {
-      const withParty = memberIds
-        .map((id) => memberByUserId.get(id))
-        .find((m) => m && m.party_id && partyNameById.has(m.party_id))
-      name = withParty ? partyNameById.get(withParty.party_id) : memberIds.map((id) => label(memberByUserId.get(id))).join(' & ')
-    } else {
-      name = label(memberByUserId.get(memberIds[0]))
-    }
-    const unit = { key, name, memberIds, paid: unitPaid, owed: unitOwed, net: unitNet }
+    for (const [cur, amt] of Object.entries(unitPaid)) add(unitNet, cur, amt)
+    for (const [cur, amt] of Object.entries(unitOwed)) add(unitNet, cur, -amt)
+    const unit = { key, name: nameForSet(memberIds), memberIds, paid: unitPaid, owed: unitOwed, net: unitNet }
     units.push(unit)
-    for (const id of memberIds) unitByUserId.set(id, unit)
+    unitByKey.set(key, unit)
   }
 
   // ---- Apply settlements, exactly in their recorded currency ---------------
-  // from→to of X CUR ⇒ net[fromUnit][CUR] += X, net[toUnit][CUR] −= X. A debtor
-  // (net < 0) who pays moves toward 0 from below; the creditor moves toward 0.
+  // from→to of X CUR ⇒ net[fromUnit][CUR] += X, net[toUnit][CUR] −= X, each unit
+  // resolved in the settlement's OWN trip. A debtor (net < 0) who pays moves
+  // toward 0 from below; the creditor moves toward 0.
   for (const s of settlements) {
-    const fromUnit = unitByUserId.get(s.from_user)
-    const toUnit = unitByUserId.get(s.to_user)
     const amt = Number(s.amount) || 0
     if (!s.currency || !amt) continue
+    const fromUnit = unitByKey.get(unitKey(tripUnitMembers(s.trip_id, s.from_user)))
+    const toUnit = unitByKey.get(unitKey(tripUnitMembers(s.trip_id, s.to_user)))
     if (fromUnit) add(fromUnit.net, s.currency, amt)
     if (toUnit) add(toUnit.net, s.currency, -amt)
   }
 
   // ---- Direct (un-simplified) pairwise debts -------------------------------
-  // "Everyone settles their own debts": per item, each non-payer unit owes the
-  // payer's unit its share; reciprocal debts within a pair net out (A→B minus
-  // B→A per currency), but money is never rerouted through third parties the
-  // way suggestTransfers' min-cash-flow does. Recorded settlements reduce the
-  // payer pair's debt directly. Canonical pair key: sorted unit keys, positive
-  // net = first-owes-second.
+  // "Everyone settles their own debts": per item, each non-payer trip-unit owes
+  // the payer's trip-unit its share; reciprocal debts within a pair net out
+  // (A→B minus B→A per currency), but money is never rerouted through third
+  // parties the way suggestTransfers' min-cash-flow does. Recorded settlements
+  // reduce the payer pair's debt directly. Canonical pair key: sorted unit keys,
+  // positive net = first-owes-second.
   const pairNets = new Map() // currency → Map("a||b" → signed net)
   const addPair = (currency, fromKey, toKey, amount) => {
     if (!currency || !amount || fromKey === toKey) return
@@ -384,26 +377,24 @@ export function computeBalances({
     const k = `${a}||${b}`
     m.set(k, (m.get(k) || 0) + sign * amount)
   }
-  for (const { item, shares } of settleable) {
-    const payerUnit = unitByUserId.get(item.paid_by)
-    if (!payerUnit) continue
+  for (const { item, shares, tripId } of settleable) {
+    const payerKey = unitKey(tripUnitMembers(tripId, item.paid_by))
     const cur = item.settleCurrency ?? item.currency
     const rate = item.settleRate ?? 1
     for (const [userId, share] of shares) {
-      const unit = unitByUserId.get(userId)
-      if (!unit || unit === payerUnit) continue
-      addPair(cur, unit.key, payerUnit.key, share * rate)
+      const shareKey = unitKey(tripUnitMembers(tripId, userId))
+      if (shareKey === payerKey) continue
+      addPair(cur, shareKey, payerKey, share * rate)
     }
   }
   for (const s of settlements) {
-    const fromUnit = unitByUserId.get(s.from_user)
-    const toUnit = unitByUserId.get(s.to_user)
     const amt = Number(s.amount) || 0
-    if (!fromUnit || !toUnit || !s.currency || !amt) continue
+    if (!s.currency || !amt) continue
+    const fromKey = unitKey(tripUnitMembers(s.trip_id, s.from_user))
+    const toKey = unitKey(tripUnitMembers(s.trip_id, s.to_user))
     // Paying back reduces the from-unit's debt to the to-unit.
-    addPair(s.currency, fromUnit.key, toUnit.key, -amt)
+    addPair(s.currency, fromKey, toKey, -amt)
   }
-  const unitByKey = new Map(units.map((u) => [u.key, u]))
   const pairTransfers = []
   for (const [currency, m] of pairNets) {
     const eps = epsilonFor(currency)

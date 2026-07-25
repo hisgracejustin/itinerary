@@ -1,8 +1,14 @@
+TODO:
+
+DONE:
+12. settlement units should be per-trip, not global — reworked `computeBalances` (src/lib/split.js) to resolve each obligation within its own trip's party structure and aggregate by member-SET, so `{J,K}` (paired trips) and `{J}`/`{K}` (a solo trip) coexist and settle independently; hero in Settle.jsx now sums the viewer's net across all their units. A within-couple cost in a paired trip no longer leaks into a solo-trip debt between the same two people. — ✅ done 2026-07-25
+13. mobile header trip label overlapped the section title — 2+ trips now show a compact "N trips" chip that opens a dropdown of the selected names (src/components/Header.jsx). — ✅ done 2026-07-25
+14. Needs-attention warnings — amber banner under the Settle-up hero that scrolls to the Needs attention section, and an amber banner on Costs in the me/party scopes noting N unassigned costs aren't in the figure (src/screens/Settle.jsx, src/screens/Costs.jsx). — ✅ done 2026-07-25
+15. multi-trip month greying — mobile month view now dims days outside EVERY selected trip (union), fixing the all-black month with 2+ trips selected; single-trip behavior unchanged (src/components/MobileMonthView.jsx, src/screens/Calendar.jsx). — ✅ done 2026-07-25
 2. the pages like costs, settle up, settings, on desktop look really weird, they're wasting a lot of horizontal space as they take like a fixed width and have their own scrollbar where ive to be in the section. fix up — ✅ done 2026-07-24
 6. in the side bar, version number is 0.1.0, use the git short commit sha instead — ✅ done 2026-07-24
 7. allow users, when they log in to change their avatar. options are in public/icons/, frogs of different varieties. can be user specific, same for all trips if they set one. — ✅ done 2026-07-24
 11. in settings page, maybe have a separate people card/section on top cause trips share people and each trip card should only be about adding/removing people from a trip. people section on top can be for their pin, rename, etc. and maybe then i could add people to trips from a dropdown list of already exisitng people also instead of just email — ✅ done 2026-07-24
-
 1. check ../nav for how it gets latest fx rates and come up with a plan for what we can do to have latest rates for the approx hkd calculations. no need to store a lot of historical fx rates unless you see a reason to? so we store a week's worth in db table or what? — ✅ done 2026-07-24
 10. sometimes a usd transaction once charged has a known fx rate it was charged at. i may want to edit and add that and then i would expect that be paid off in hkd at that rate. how could we support that? plan with me. — ✅ done 2026-07-24
 3. for placeholder people with no google email login, ive added them by their email, is there a way i can let them login with a pin/password of sorts? how would that work- one time or would it persist, etc. since its not oauth? — ✅ done 2026-07-24

@@ -43,6 +43,11 @@ export const users = pgTable("users", {
   password_hash: text("password_hash"),
   failed_pin_attempts: integer("failed_pin_attempts").notNull().default(0),
   pin_locked_until: timestamp("pin_locked_until", { withTimezone: true }),
+  // Session revocation cutoff. Sessions are stateless JWTs (the `sessions` table
+  // is unused with the Credentials provider), so deleting `accounts`/clearing a
+  // PIN can't reach a live cookie. Bumped to now() on an email/PIN change; the
+  // auth `jwt` callback treats any token issued before this instant as revoked.
+  sessions_valid_after: timestamp("sessions_valid_after", { withTimezone: true }),
 });
 
 export const authAccounts = pgTable(

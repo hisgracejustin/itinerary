@@ -13,7 +13,7 @@ function toLocalDateStr(date) {
   return `${y}-${m}-${d}`
 }
 
-export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, selectedTrip, spanStart, spanEnd, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, collapsed = false, onCollapsedChange }) {
+export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, tripMetas = [], selectedTrip, spanStart, spanEnd, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, collapsed = false, onCollapsedChange }) {
   // Default: if trip selected → first day of trip, else today
   const getDefaultDay = useCallback(() => {
     if (selectedTrip && tripMeta?.start_date) {
@@ -137,33 +137,35 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
   const allDays = getMonthGrid(year, month)
   const today = new Date()
 
-  // Trim trailing rows that are entirely outside the current month (and trip)
+  // True when a day falls inside ANY selected trip's [start, end] range (union).
+  // Mirrors the desktop MonthView range math (inclusive, end-of-day on end_date).
+  // With exactly one trip selected this reduces to the single-trip check.
+  const inAnyTrip = (day) =>
+    tripMetas.some((t) => {
+      if (!t?.start_date || !t?.end_date) return false
+      const s = new Date(t.start_date + 'T00:00:00')
+      const e = new Date(t.end_date + 'T23:59:59')
+      return day >= s && day <= e
+    })
+
+  // Trim trailing rows that are entirely outside the current month (and every
+  // selected trip). Keep a row if any day lands in-month or inside any trip so a
+  // multi-trip month doesn't drop rows that belong to a second trip.
   const trimmedDays = (() => {
     for (let row = 5; row >= 0; row--) {
       const rowDays = allDays.slice(row * 7, row * 7 + 7)
-      const hasRelevant = rowDays.some(d => {
-        if (d.getMonth() === month) return true
-        if (tripMeta?.start_date && tripMeta?.end_date) {
-          const tripStart = new Date(tripMeta.start_date + 'T00:00:00')
-          const tripEnd = new Date(tripMeta.end_date + 'T23:59:59')
-          return d >= tripStart && d <= tripEnd
-        }
-        return false
-      })
+      const hasRelevant = rowDays.some(d => d.getMonth() === month || inAnyTrip(d))
       if (hasRelevant) return allDays.slice(0, (row + 1) * 7)
     }
     return allDays
   })()
   const days = trimmedDays
 
-  // Trip date range (if a trip with dates is selected)
-  const tripStart = tripMeta?.start_date ? new Date(tripMeta.start_date + 'T00:00:00') : null
-  const tripEnd = tripMeta?.end_date ? new Date(tripMeta.end_date + 'T23:59:59') : null
-
+  // A day is "outside" (dimmed) when it is outside EVERY selected trip's range.
+  // No trip selected → tripMetas is empty → nothing is dimmed.
   const isOutsideTrip = (day) => {
-    if (!tripStart || !tripEnd) return false
-    const d = new Date(day.getFullYear(), day.getMonth(), day.getDate())
-    return d < tripStart || d > tripEnd
+    if (tripMetas.length === 0) return false
+    return !inAnyTrip(day)
   }
 
   // Get todos for a given date
@@ -386,7 +388,11 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
             const isToday = isSameDay(day, today)
             const outsideTrip = isOutsideTrip(day)
 
-            if (!isCurrentMonth && (!tripMeta || outsideTrip)) {
+            // Blank an adjacent-month day only when it's outside every selected
+            // trip. A trip that spills into the next month keeps its days visible
+            // (matches the desktop MonthView), and with no trip selected inAnyTrip
+            // is false so all spillover days blank as before.
+            if (!isCurrentMonth && !inAnyTrip(day)) {
               return <div key={i} className="py-1 w-7 h-7" />
             }
 

@@ -216,10 +216,17 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
     })
 
   const navigate = (direction) => {
-    const d = new Date(currentDate)
-    if (view === 'month') d.setMonth(d.getMonth() + direction)
-    else if (view === 'week') d.setDate(d.getDate() + 7 * direction)
-    else d.setDate(d.getDate() + direction)
+    let d
+    if (view === 'month') {
+      // Page from the FIRST of the month: `setMonth` on a day-29/30/31 (which
+      // `currentDate` often holds after tapping a grid cell) overflows into the
+      // month after next — e.g. Aug 31 → "next" → Oct 1, skipping September.
+      d = new Date(currentDate.getFullYear(), currentDate.getMonth() + direction, 1)
+    } else {
+      d = new Date(currentDate)
+      if (view === 'week') d.setDate(d.getDate() + 7 * direction)
+      else d.setDate(d.getDate() + direction)
+    }
     setCurrentDate(d)
   }
 
@@ -382,6 +389,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
                 todos={todos}
                 dayNotes={dayNotes}
                 tripMeta={tripMeta}
+                tripMetas={tripMetas}
                 selectedTrip={selectedTrip}
                 spanStart={journeyStart}
                 spanEnd={journeyEnd}

@@ -88,6 +88,22 @@ function requireChargedRatePair(
   }
 }
 
+// A booking's `details` is a free-form record, but `maps_url` is rendered as an
+// anchor href in the calendar/booking views. It can arrive from the AI parser,
+// which is instructed to *generate* a Maps URL from document content — a hostile
+// booking document could inject a `javascript:` scheme (stored XSS run in the app
+// origin for every trip member). Drop any non-http(s) maps_url rather than fail
+// the whole save, so a bad parser value doesn't block a legitimate booking. (H5)
+function stripUnsafeMapsUrl(details: Record<string, unknown>) {
+  const url = details.maps_url;
+  if (typeof url === "string" && !/^https?:\/\//i.test(url)) {
+    const rest = { ...details };
+    delete rest.maps_url;
+    return rest;
+  }
+  return details;
+}
+
 const bookingBaseShape = {
   id: z.string().optional(),
   trip_id: z.string().uuid(),
@@ -97,7 +113,7 @@ const bookingBaseShape = {
   end_date: z.string().nullish(),
   confirmation_number: z.string().nullish(),
   provider: z.string().nullish(),
-  details: z.record(z.string(), z.unknown()).nullish(),
+  details: z.record(z.string(), z.unknown()).transform(stripUnsafeMapsUrl).nullish(),
   cost_amount: z.number().nullish(),
   cost_currency: z.string().nullish(),
   cost_share: z.number().nullish(),

@@ -8,15 +8,17 @@ rewritten; this document describes the current state.
 
 ## Authentication
 
-NextAuth v5 (Auth.js), Google OAuth, JWT session strategy. Access is restricted to
-an email allowlist.
+NextAuth v5 (Auth.js), Google OAuth (open signup), JWT session strategy. Data
+access is gated per-trip via `trip_members`, not at sign-in; a small set of global
+admins (`ADMIN_EMAILS`) may edit another member's login identity.
 
 - [`src/auth.config.ts`](../src/auth.config.ts) — edge-safe config (no DB): JWT
   strategy, `pages`, `authorized` + `session` callbacks (`token.sub → session.user.id`).
 - [`src/auth.ts`](../src/auth.ts) — full instance: Drizzle adapter, Google provider
-  (`allowDangerousEmailAccountLinking`), the `signIn` allowlist gate
-  (`ALLOWED_EMAILS`, fails closed in prod), and a **dev credentials** provider that
-  is active only when `AUTH_GOOGLE_ID` is unset (passwordless local sign-in).
+  (`allowDangerousEmailAccountLinking`), a `jwt` callback that revokes tokens issued
+  before a user's `sessions_valid_after` cutoff (bumped on an admin email/PIN
+  change), and a **dev credentials** provider that is active only when
+  `AUTH_GOOGLE_ID` is unset (passwordless local sign-in).
 - [`src/proxy.ts`](../src/proxy.ts) — Next 16 middleware; the edge auth gate.
   Unauthenticated requests to app routes redirect to `/login`.
 - [`src/app/(app)/layout.tsx`](../src/app/(app)/layout.tsx) — second gate: server
