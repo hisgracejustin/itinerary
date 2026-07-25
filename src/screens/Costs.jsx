@@ -125,8 +125,11 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     return scopeExtras + (sumW > 0 ? (scopeW / sumW) * remainder : 0)
   }
 
-  // Items with a cost but no split rows: excluded from Me/Us, surfaced as a note.
-  const unsplitCount = scope === 'everyone' ? 0 : filteredItems.filter((it) => it.splits.length === 0).length
+  // Items with a cost but no split rows: excluded from Me/Us, surfaced as a note
+  // (with the total still-to-assign, so the low personal figure reads correctly).
+  const unsplitItems = scope === 'everyone' ? [] : filteredItems.filter((it) => it.splits.length === 0)
+  const unsplitCount = unsplitItems.length
+  const unsplitTotalHKD = unsplitItems.reduce((sum, it) => sum + hkdOf(it, it.effective), 0)
 
   const scoped = filteredItems
     .map((it) => ({ it, amount: contribution(it) }))
@@ -230,7 +233,8 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.59 3z" />
                 </svg>
                 <p className="text-xs text-amber-700 min-w-0">
-                  {unsplitCount} cost{unsplitCount === 1 ? " isn't" : "s aren't"} assigned to anyone yet, so {unsplitCount === 1 ? "it's" : "they're"} not in this figure.
+                  {unsplitCount} cost{unsplitCount === 1 ? " isn't" : "s aren't"} assigned to anyone yet, so {unsplitCount === 1 ? "it's" : "they're"} not in this figure.{' '}
+                  <span className="font-semibold whitespace-nowrap">~HK${unsplitTotalHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })} still to assign.</span>
                 </p>
               </div>
             )}
