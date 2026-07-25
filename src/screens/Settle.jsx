@@ -299,6 +299,33 @@ export default function Settle({
     }
   }
 
+  // Even-split quick help for "Needs attention" (not-split-yet) items: give every
+  // member of the item's trip an equal (weight 1) share, keeping any recorded
+  // payer or defaulting it to the current user. A couple nets to zero at
+  // settlement regardless of who's marked as payer, so this "just works" for a
+  // solo/couple trip; on a multi-person trip, fix the payer if it's wrong.
+  const evenSplitPayload = (item) => {
+    const roster = members.filter((m) => m.trip_id === item.trip_id)
+    if (roster.length === 0) return null
+    return {
+      splits: roster.map((m) => ({ user_id: m.id, weight: 1, extra_amount: 0 })),
+      paid_by: item.paid_by ?? currentUserId,
+    }
+  }
+  const saveEvenSplit = (item) => {
+    const payload = evenSplitPayload(item)
+    if (!payload) return Promise.resolve()
+    return item.type ? updateBooking(item.id, payload) : updateExpense(item.id, payload)
+  }
+  const splitItemEvenly = (item) => run(() => saveEvenSplit(item), 'Split evenly')
+  const splitAllEvenly = () => {
+    const targets = unallocated.filter((it) => members.some((m) => m.trip_id === it.trip_id))
+    if (targets.length === 0) return
+    return run(async () => {
+      for (const it of targets) await saveEvenSplit(it)
+    }, `Split ${targets.length} item${targets.length === 1 ? '' : 's'} evenly`)
+  }
+
   const submitSettlement = async (e) => {
     e.preventDefault()
     const amount = toNumber(settleForm.amount)
@@ -370,11 +397,23 @@ export default function Settle({
             Sits directly under the hero, styled as a warning so it can't be missed. */}
         {(unallocated.length > 0 || missingPayer.length > 0) && (
           <section className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
-            <div className="flex items-center gap-2 mb-1">
-              <svg className="w-5 h-5 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.59 3z" />
-              </svg>
-              <h2 className="text-sm font-semibold text-amber-800 m-0">Needs attention</h2>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="flex items-center gap-2 min-w-0">
+                <svg className="w-5 h-5 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.59 3z" />
+                </svg>
+                <h2 className="text-sm font-semibold text-amber-800 m-0">Needs attention</h2>
+              </div>
+              {unallocated.length > 0 && (
+                <button
+                  type="button"
+                  onClick={splitAllEvenly}
+                  disabled={busy}
+                  className="text-xs font-medium text-amber-800 border border-amber-400 rounded-full px-2.5 py-1 hover:bg-amber-100 disabled:opacity-40 shrink-0 transition-colors"
+                >
+                  Split all evenly
+                </button>
+              )}
             </div>
             <p className="text-xs text-amber-700 mb-3">
               {unallocated.length + missingPayer.length} item
@@ -383,7 +422,14 @@ export default function Settle({
             </p>
             <div className="space-y-1.5">
               {unallocated.map((ref, i) => (
-                <NeedsAttentionRow key={`u-${i}`} item={ref} reason="Not split yet" onOpen={openBooking} />
+                <NeedsAttentionRow
+                  key={`u-${i}`}
+                  item={ref}
+                  reason="Not split yet"
+                  onOpen={openBooking}
+                  onSplitEven={() => splitItemEvenly(ref)}
+                  busy={busy}
+                />
               ))}
               {missingPayer.map((ref, i) => (
                 <NeedsAttentionRow key={`p-${i}`} item={ref} reason="No payer set" onOpen={openBooking} />
@@ -989,7 +1035,7 @@ function BalanceRow({ unit, memberByUserId }) {
 }
 
 /** Booking → opens the booking modal in place (same wiring as Costs). */
-function NeedsAttentionRow({ item, reason, onOpen }) {
+function NeedsAttentionRow({ item, reason, onOpen, onSplitEven, busy }) {
   const isBooking = !!item.type
   const title = item.title || 'Untitled'
   const icon = isBooking ? (TYPE_ICONS[item.type] || '🗂️') : '🧾'
@@ -997,7 +1043,18 @@ function NeedsAttentionRow({ item, reason, onOpen }) {
     <div className="flex items-center gap-2 min-w-0">
       <span className="text-base shrink-0">{icon}</span>
       <span className="text-sm text-on-surface truncate min-w-0 flex-1">{title}</span>
-      <span className="text-[11px] text-amber-600 shrink-0">{reason}</span>
+      {onSplitEven ? (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onSplitEven() }}
+          disabled={busy}
+          className="text-[11px] font-medium text-amber-800 border border-amber-400 rounded-full px-2 py-0.5 hover:bg-amber-100 disabled:opacity-40 shrink-0 transition-colors"
+        >
+          Split evenly
+        </button>
+      ) : (
+        <span className="text-[11px] text-amber-600 shrink-0">{reason}</span>
+      )}
     </div>
   )
   if (isBooking) {
