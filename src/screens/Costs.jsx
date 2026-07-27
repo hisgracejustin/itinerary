@@ -11,6 +11,20 @@ import { memberFirstName } from '../components/AssigneePicker'
 
 const EXPENSE_ICON = '🧾'
 
+// Plural labels for the By Type bars — naive `${type}s` gave "Activitys"/"Buss".
+// Wording matches the rest of the app (Sidebar/Header/BookingsByType), with the
+// full "Accommodation" like the Header page title since there's room here.
+const TYPE_LABELS = {
+  flight: 'Flights',
+  train: 'Trains',
+  bus: 'Buses',
+  rental: 'Rentals',
+  cruise: 'Cruises',
+  hotel: 'Accommodation',
+  activity: 'Activities',
+  expense: 'Expenses',
+}
+
 export default function Costs({ bookings: allBookings, expenses: allExpenses, currentUserId }) {
   const { tripMeta, selectedTrip, selectedTrips, trips, fx } = useTripContext()
   const rates = fx?.rates
@@ -152,7 +166,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     byType[s.it.type] = (byType[s.it.type] || 0) + hkdOf(s.it, s.amount)
   })
   const typeBreakdown = Object.entries(byType).sort((a, b) => b[1] - a[1])
-  const typeLabel = (type) => (type === 'expense' ? 'Expenses' : `${type}s`)
+  const typeLabel = (type) => TYPE_LABELS[type] || type
   const typeIcon = (type) => (type === 'expense' ? EXPENSE_ICON : TYPE_ICONS[type] || '📌')
 
   const sorted = [...scoped].sort(
