@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   createTrip, updateTrip, deleteTrip,
-  addTripMember, removeTripMember, setTripMemberRole, updateMemberProfile, setMemberPin, setMyAvatar, setMemberAvatar,
+  addTripMember, removeTripMember, setTripMemberRole, updateMemberProfile, setMemberPin, setMyAvatar, setMemberAvatar, deleteUser,
   createParty, renameParty, deleteParty,
 } from '@/lib/client-actions'
 import { friendlyError } from '../lib/friendlyError'
@@ -214,7 +214,9 @@ function PeopleSection({ people, trips, currentUserId, isAdmin, showsEveryone, t
             <>
               Every account on this instance, not just your trips
               {tripless > 0 && ` — ${tripless} ${tripless === 1 ? 'person is' : 'people are'} on no trip yet`}
-              . Who&apos;s on which trip — and their role — is managed on each trip card below.
+              . Someone on no trip and with nothing to their name can be deleted here;
+              anyone else has to be taken off their trips first. Who&apos;s on which trip
+              — and their role — is managed on each trip card below.
             </>
           ) : (
             <>
@@ -254,6 +256,16 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
   const canManage = isAdmin
   const tripArgs = ownerTripId ? { trip_id: ownerTripId } : {}
   const close = () => { setMode(null); setPinDraft('') }
+
+  // Safe delete: an admin, someone else, and on no trip at all.
+  const canDelete = canManage && !isSelf && (p.trips?.length ?? 0) === 0
+  const deleteAccount = async () => {
+    const ok = window.confirm(
+      `Delete ${memberLabel(p)} (${p.email})? Their account and any sign-in are removed for good. Only possible while they're on no trip and have no costs, splits or to-dos — otherwise this refuses and nothing changes.`,
+    )
+    if (!ok) return
+    await run(() => deleteUser({ user_id: p.id }), `${memberLabel(p)} deleted`)
+  }
 
   if (mode === 'edit') {
     const save = async (e) => {
@@ -504,6 +516,23 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+          </svg>
+        </button>
+      )}
+      {/* Delete only shows for someone on no trip — the necessary condition, and
+          the only case an admin can act on from here. The server still re-checks
+          the full footprint (splits, payments, to-dos, attachments) and refuses
+          by name, so this is never a promise the row can't keep. */}
+      {canDelete && (
+        <button
+          onClick={deleteAccount}
+          disabled={busy}
+          aria-label={`Delete ${memberLabel(p)}'s account`}
+          title="Delete this account"
+          className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 disabled:hover:bg-transparent shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
           </svg>
         </button>
       )}

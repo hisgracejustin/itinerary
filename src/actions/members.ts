@@ -348,53 +348,92 @@ const updateMemberProfileSchema = z
   });
 
 /**
+ * Everything pointing at this `users` row, named for a human. One probe per
+ * table that references `users.id` with real content — the deliberate superset
+ * of "would deleting this row lose or orphan anything?". Empty ⇒ the row is
+ * hollow and can be absorbed or deleted outright.
+ */
+async function userFootprint(userId: string): Promise<string[]> {
+  const probes: [string, Promise<unknown[]>][] = [
+    [
+      "a trip membership",
+      db
+        .select({ x: tables.tripMembers.user_id })
+        .from(tables.tripMembers)
+        .where(eq(tables.tripMembers.user_id, userId))
+        .limit(1),
+    ],
+    [
+      "booking splits",
+      db
+        .select({ x: tables.bookingSplits.user_id })
+        .from(tables.bookingSplits)
+        .where(eq(tables.bookingSplits.user_id, userId))
+        .limit(1),
+    ],
+    [
+      "expense splits",
+      db
+        .select({ x: tables.expenseSplits.user_id })
+        .from(tables.expenseSplits)
+        .where(eq(tables.expenseSplits.user_id, userId))
+        .limit(1),
+    ],
+    [
+      "bookings they paid for",
+      db
+        .select({ x: tables.bookings.id })
+        .from(tables.bookings)
+        .where(eq(tables.bookings.paid_by, userId))
+        .limit(1),
+    ],
+    [
+      "expenses they paid for",
+      db
+        .select({ x: tables.expenses.id })
+        .from(tables.expenses)
+        .where(eq(tables.expenses.paid_by, userId))
+        .limit(1),
+    ],
+    [
+      "settlements",
+      db
+        .select({ x: tables.settlements.id })
+        .from(tables.settlements)
+        .where(
+          or(eq(tables.settlements.from_user, userId), eq(tables.settlements.to_user, userId)),
+        )
+        .limit(1),
+    ],
+    [
+      "to-dos assigned to them",
+      db
+        .select({ x: tables.todos.id })
+        .from(tables.todos)
+        .where(eq(tables.todos.assignee_id, userId))
+        .limit(1),
+    ],
+    [
+      "uploaded attachments",
+      db
+        .select({ x: tables.bookingAttachments.id })
+        .from(tables.bookingAttachments)
+        .where(eq(tables.bookingAttachments.uploaded_by, userId))
+        .limit(1),
+    ],
+  ];
+  const results = await Promise.all(probes.map(([, q]) => q));
+  return probes.filter((_, i) => results[i].length > 0).map(([label]) => label);
+}
+
+/**
  * Zero rows anywhere that would make this `users` row worth keeping? Signup is
  * open, so a person can sign in with their NEW address before an admin moves it
  * onto their real row, leaving a hollow duplicate that then blocks the edit.
- * Such a row is safe to absorb only if nothing at all points at it — checked
- * across every table that references `users.id` with real content.
+ * Such a row is safe to absorb only if nothing at all points at it.
  */
 async function userHasFootprint(userId: string) {
-  const [member, bSplit, eSplit, bPaid, ePaid, settled, todo] = await Promise.all([
-    db
-      .select({ x: tables.tripMembers.user_id })
-      .from(tables.tripMembers)
-      .where(eq(tables.tripMembers.user_id, userId))
-      .limit(1),
-    db
-      .select({ x: tables.bookingSplits.user_id })
-      .from(tables.bookingSplits)
-      .where(eq(tables.bookingSplits.user_id, userId))
-      .limit(1),
-    db
-      .select({ x: tables.expenseSplits.user_id })
-      .from(tables.expenseSplits)
-      .where(eq(tables.expenseSplits.user_id, userId))
-      .limit(1),
-    db
-      .select({ x: tables.bookings.id })
-      .from(tables.bookings)
-      .where(eq(tables.bookings.paid_by, userId))
-      .limit(1),
-    db
-      .select({ x: tables.expenses.id })
-      .from(tables.expenses)
-      .where(eq(tables.expenses.paid_by, userId))
-      .limit(1),
-    db
-      .select({ x: tables.settlements.id })
-      .from(tables.settlements)
-      .where(
-        or(eq(tables.settlements.from_user, userId), eq(tables.settlements.to_user, userId)),
-      )
-      .limit(1),
-    db
-      .select({ x: tables.todos.id })
-      .from(tables.todos)
-      .where(eq(tables.todos.assignee_id, userId))
-      .limit(1),
-  ]);
-  return !!(member[0] || bSplit[0] || eSplit[0] || bPaid[0] || ePaid[0] || settled[0] || todo[0]);
+  return (await userFootprint(userId)).length > 0;
 }
 
 /**
@@ -585,6 +624,47 @@ export async function setMemberAvatarAction(input: unknown) {
     await db.update(tables.users).set({ image }).where(eq(tables.users.id, data.user_id));
     revalidateApp();
     return { user_id: data.user_id, image };
+  });
+}
+
+const deleteUserSchema = z.object({ user_id: z.string().min(1) });
+
+/**
+ * ADMIN ONLY — delete an account outright. Strictly the SAFE case: the row must
+ * have no footprint at all (`userFootprint`), i.e. it's on no trip and nothing
+ * anywhere points at it. Anything else refuses by name rather than quietly
+ * shredding history — `paid_by`/`assignee_id`/`uploaded_by` are ON DELETE SET
+ * NULL, so a forced delete would silently orphan payers and assignees, and a
+ * settlement's FK has no ON DELETE at all and would fail mid-flight.
+ *
+ * The cascade that DOES run is the intended one: `accounts` and `sessions`, so
+ * the deleted person can't sign back into a ghost row.
+ */
+export async function deleteUserAction(input: unknown) {
+  return runAction(async (user) => {
+    const data = deleteUserSchema.parse(input);
+    requireAdmin(user);
+    // Deleting yourself would sign you out mid-request and orphan the admin
+    // seat; that's a DB-level operation, not a settings-screen one.
+    if (data.user_id === user.id) throw new Error("You can't delete your own account");
+
+    const [target] = await db
+      .select({ id: tables.users.id, name: tables.users.name, email: tables.users.email })
+      .from(tables.users)
+      .where(eq(tables.users.id, data.user_id))
+      .limit(1);
+    if (!target) throw new Error("That account no longer exists");
+
+    const blockers = await userFootprint(data.user_id);
+    if (blockers.length > 0) {
+      throw new Error(
+        `${target.name ?? target.email} still has ${blockers.join(", ")} — remove those first, or delete the row directly in the database`,
+      );
+    }
+
+    await db.delete(tables.users).where(eq(tables.users.id, data.user_id));
+    revalidateApp();
+    return { id: data.user_id, email: target.email };
   });
 }
 
