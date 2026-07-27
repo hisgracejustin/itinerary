@@ -113,6 +113,14 @@ export default function Settle({
     : heroNets.every(([, a]) => a < 0)
       ? 'You owe'
       : 'Your balance'
+  // Headline figure: the whole position rolled into ~HKD, with the exact
+  // per-currency amounts underneath. A pure-HKD balance is already exact, so it
+  // drops the tilde and the (identical) breakdown line.
+  const heroTotalHKD = heroNets.reduce(
+    (s, [cur, amt]) => s + (cur === 'HKD' ? amt : toHKD(amt, cur, rates)),
+    0,
+  )
+  const heroHkdOnly = heroNets.length === 1 && heroNets[0][0] === 'HKD'
 
   // Transfers grouped by currency, order of first appearance.
   const transferGroups = []
@@ -367,13 +375,20 @@ export default function Settle({
           ) : (
             <>
               <p className="text-sm font-medium text-white/75">{heroLabel}</p>
-              <div className="mt-1 space-y-0.5">
-                {heroNets.map(([cur, amt]) => (
-                  <p key={cur} className="text-3xl font-bold tracking-tight">
-                    {amt > 0 ? '+' : '−'}{formatCurrency(Math.abs(amt), cur)}
-                  </p>
-                ))}
-              </div>
+              <p className="text-3xl font-bold tracking-tight mt-1">
+                {heroHkdOnly ? '' : '~'}
+                {heroTotalHKD >= 0 ? '+' : '−'}
+                {wholeHKD(Math.abs(heroTotalHKD))}
+              </p>
+              {!heroHkdOnly && (
+                <div className="mt-1 space-y-0.5 text-white/85">
+                  {heroNets.map(([cur, amt]) => (
+                    <p key={cur} className="text-lg font-semibold tracking-tight">
+                      {amt > 0 ? '+' : '−'}{formatCurrency(Math.abs(amt), cur)}
+                    </p>
+                  ))}
+                </div>
+              )}
               <p className="text-sm text-white/75 mt-2">
                 settles in {transfers.length} transfer{transfers.length === 1 ? '' : 's'}
               </p>
@@ -829,24 +844,34 @@ function EmptyLine({ children }) {
 
 /**
  * The split-costs footnote + an inline "Rates" disclosure. When every row is
- * HKD (no non-HKD currencies) it renders nothing. Otherwise it names the rate
- * date (or the built-in fallback) and, on toggle, lists each non-HKD currency's
- * rate to HKD — live (with its fetch time) or the built-in approximate rate.
+ * HKD (no non-HKD currencies) it renders nothing. Otherwise it names when the
+ * rates were last updated (or the built-in fallback) and, on toggle, lists each
+ * non-HKD currency's rate to HKD — live (with its ECB publication date and
+ * fetch time) or the built-in approximate rate.
+ *
+ * The headline date is the FETCH date, not `rateDate`: the ECB publishes on
+ * business days only, so a Monday-morning refresh legitimately carries Friday's
+ * rate_date and "as of <Friday>" reads like the app stopped updating. The
+ * publication date still shows in the expanded table.
  */
 function RatesDisclosure({ currencies, fx }) {
   const [open, setOpen] = useState(false)
   if (!currencies || currencies.length === 0) return null
   const rates = fx?.rates
   const rateDate = fx?.rateDate ?? null
-  const fetchedLabel = fx?.fetchedAt
-    ? new Date(fx.fetchedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  const fetchedAt = fx?.fetchedAt ? new Date(fx.fetchedAt) : null
+  const fetchedLabel = fetchedAt
+    ? fetchedAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     : null
+  const updatedLabel = fetchedAt
+    ? fetchedAt.toLocaleDateString(undefined, { dateStyle: 'medium' })
+    : rateDate
   return (
     <div className="mt-2">
       <div className="flex items-center gap-2 flex-wrap">
         <p className="text-[11px] text-on-surface-variant/70 min-w-0 truncate">
-          {rateDate
-            ? `Non-HKD amounts converted at rates as of ${rateDate}`
+          {updatedLabel
+            ? `Non-HKD amounts converted at rates updated ${updatedLabel}`
             : 'Non-HKD amounts converted at approximate built-in rates'}
         </p>
         <button
@@ -865,6 +890,7 @@ function RatesDisclosure({ currencies, fx }) {
                 <th className="text-left font-semibold pr-4 pb-1">From</th>
                 <th className="text-left font-semibold pr-4 pb-1">To</th>
                 <th className="text-right font-semibold pr-4 pb-1">Rate</th>
+                <th className="text-left font-semibold pr-4 pb-1 whitespace-nowrap">Published</th>
                 <th className="text-left font-semibold pb-1 whitespace-nowrap">Last fetched</th>
               </tr>
             </thead>
@@ -879,6 +905,11 @@ function RatesDisclosure({ currencies, fx }) {
                     {/* Up to 4dp, trailing zeros trimmed — ¥ is 0.048, not 0.05. */}
                     <td className="pr-4 py-0.5 text-right tabular-nums">
                       {parseFloat((rate ?? 0).toFixed(4))}
+                    </td>
+                    {/* ECB publishes business days only, so this trails the
+                        fetch date over weekends and holidays. */}
+                    <td className="pr-4 py-0.5 whitespace-nowrap">
+                      {live ? (rateDate ?? '—') : '—'}
                     </td>
                     <td className="py-0.5 whitespace-nowrap">
                       {live ? (fetchedLabel ?? '—') : 'built-in approximate rate'}

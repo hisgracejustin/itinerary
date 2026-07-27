@@ -91,13 +91,16 @@ async function doRefresh(): Promise<void> {
   try {
     await dbReady();
 
-    // No-op when the newest stored rate_date is within 24h of now.
+    // No-op when we last CHECKED within 24h. Deliberately keyed on fetched_at,
+    // not rate_date: the ECB publishes on business days only, so over a weekend
+    // the newest rate_date stays Friday's and a rate_date check would re-hit
+    // Frankfurter on every single request until Monday's rate lands.
     const [newest] = await db
-      .select({ rateDate: tables.fxRates.rate_date })
+      .select({ fetchedAt: tables.fxRates.fetched_at })
       .from(tables.fxRates)
-      .orderBy(desc(tables.fxRates.rate_date))
+      .orderBy(desc(tables.fxRates.fetched_at))
       .limit(1);
-    if (newest && Date.now() - Date.parse(newest.rateDate) < STALE_AFTER_MS) return;
+    if (newest && Date.now() - newest.fetchedAt.getTime() < STALE_AFTER_MS) return;
 
     // base=HKD → the payload gives 1 HKD = X ccy; we store the inverse below.
     const url = `${FRANKFURTER_URL}?base=HKD&symbols=${SYMBOLS.join(",")}`;
