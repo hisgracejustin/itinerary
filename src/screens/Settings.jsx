@@ -231,10 +231,10 @@ function PeopleSection({ people, trips, currentUserId, isAdmin, showsEveryone, t
 const AVATAR_ICONS = Array.from({ length: 16 }, (_, i) => `icon${i + 1}.png`)
 
 /**
- * One person in the global People card. Owners (of a shared trip) and admins get
- * the pencil (name/email) and key (PIN) controls; the viewer's own row gets the
- * avatar picker. Changing an email always unlinks their old login (and may
- * absorb an unused account on the new address), so we confirm first.
+ * One person in the global People card. Admins get the pencil (name/email) and
+ * key (PIN) controls; the viewer's own row always gets the avatar picker.
+ * Changing an email always unlinks their old login (and may absorb an unused
+ * account on the new address), so we confirm first.
  *
  * `tripArgs` is spread into every person-level write: a trip that authorizes the
  * edit when there is one, and nothing at all for someone on no trip of the
@@ -246,7 +246,12 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
   const [draft, setDraft] = useState({ name: p.name || '', email: p.email || '' })
   const [pinDraft, setPinDraft] = useState('')
 
-  const canManage = isAdmin || !!ownerTripId
+  // Admin, not trip owner: every write behind these controls is `requireAdmin`
+  // server-side (trip ownership is self-granted, so it must never confer the
+  // right to rewrite someone's login identity). Gating the buttons on ownership
+  // instead just showed a trip owner three controls that always failed with a
+  // misleading "no permission to change this trip".
+  const canManage = isAdmin
   const tripArgs = ownerTripId ? { trip_id: ownerTripId } : {}
   const close = () => { setMode(null); setPinDraft('') }
 
