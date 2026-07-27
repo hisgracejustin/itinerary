@@ -18,7 +18,8 @@ const ROLES = [
 
 const blankTrip = { name: '', start_date: '', end_date: '' }
 
-export default function Settings({ trips: tripsProp, currentUserId }) {
+// `allPeople` is the admin-only full account list (null for everyone else).
+export default function Settings({ trips: tripsProp, currentUserId, isAdmin = false, allPeople: adminPeople }) {
   const trips = tripsProp ?? []
   const { toast } = useToast()
   const [busy, setBusy] = useState(false)
@@ -57,14 +58,27 @@ export default function Settings({ trips: tripsProp, currentUserId }) {
   const peopleById = new Map()
   for (const trip of trips) {
     for (const m of trip.members) {
-      if (!peopleById.has(m.id)) peopleById.set(m.id, m)
+      if (!peopleById.has(m.id)) {
+        peopleById.set(m.id, { ...m, trips: [] })
+      }
+      peopleById.get(m.id).trips.push(trip.name)
     }
   }
-  const allPeople = [...peopleById.values()].sort((a, b) => {
-    if (a.id === currentUserId) return -1
-    if (b.id === currentUserId) return 1
-    return memberLabel(a).localeCompare(memberLabel(b))
-  })
+  // Admins see every account instead — the trip-derived roster silently omits
+  // anyone who signed in but was never added to a trip, and those strays are
+  // exactly who an admin needs to find. The server list already carries each
+  // person's trips (across ALL trips, not just the viewer's).
+  const rosterPeople = [...peopleById.values()]
+  const allPeople = (isAdmin && adminPeople ? adminPeople : rosterPeople)
+    .map((p) => ({ ...p, trips: p.trips ?? [] }))
+    .sort((a, b) => {
+      if (a.id === currentUserId) return -1
+      if (b.id === currentUserId) return 1
+      // Strays sink to the bottom of the list, together.
+      if ((a.trips.length > 0) !== (b.trips.length > 0)) return a.trips.length > 0 ? -1 : 1
+      return memberLabel(a).localeCompare(memberLabel(b))
+    })
+  const tripless = allPeople.filter((p) => p.trips.length === 0).length
 
   return (
     <div className="w-full max-w-3xl lg:max-w-4xl mx-auto pb-10">
@@ -78,6 +92,9 @@ export default function Settings({ trips: tripsProp, currentUserId }) {
           people={allPeople}
           trips={trips}
           currentUserId={currentUserId}
+          isAdmin={isAdmin}
+          showsEveryone={isAdmin && !!adminPeople}
+          tripless={tripless}
           busy={busy}
           run={run}
         />
@@ -154,19 +171,29 @@ export default function Settings({ trips: tripsProp, currentUserId }) {
 }
 
 /**
- * Global People card: everyone across the viewer's trips, deduped. Person-level
- * management lives here — rename/email (pencil), sign-in PIN (key), and the
- * viewer's own avatar. The pencil/key actions are trip-authorized server-side,
- * so each row uses a trip where the viewer is owner and the person is a member;
- * rows without such a trip are read-only.
+ * Global People card: everyone across the viewer's trips, deduped — or, for an
+ * admin, every account on the instance (`showsEveryone`), so people who signed
+ * in but were never added to a trip are visible instead of silently missing.
+ * Person-level management lives here — rename/email (pencil), sign-in PIN (key),
+ * and the viewer's own avatar. Those writes are admin-gated server-side; a
+ * trip-scoped edit passes a trip where the viewer is owner and the person is a
+ * member, and an admin editing someone on no such trip passes none at all.
  */
-function PeopleSection({ people, trips, currentUserId, busy, run }) {
+function PeopleSection({ people, trips, currentUserId, isAdmin, showsEveryone, tripless, busy, run }) {
   const ownerTripIdFor = (personId) =>
     trips.find((t) => t.myRole === 'owner' && t.members.some((m) => m.id === personId))?.id ?? null
 
   return (
     <section className="mb-8">
-      <h3 className="text-sm font-semibold text-on-surface mb-3">People</h3>
+      <div className="flex items-center gap-2 mb-3">
+        <h3 className="text-sm font-semibold text-on-surface">People</h3>
+        <span className="text-[11px] text-on-surface-variant">({people.length})</span>
+        {showsEveryone && (
+          <span className="text-[10px] uppercase tracking-wide text-primary bg-primary-light px-2 py-0.5 rounded-full">
+            All accounts
+          </span>
+        )}
+      </div>
       <div className="mat-surface p-4">
         <ul className="space-y-1">
           {people.map((p) => (
@@ -175,14 +202,26 @@ function PeopleSection({ people, trips, currentUserId, busy, run }) {
               p={p}
               ownerTripId={ownerTripIdFor(p.id)}
               isSelf={p.id === currentUserId}
+              isAdmin={isAdmin}
+              showTrips={showsEveryone}
               busy={busy}
               run={run}
             />
           ))}
         </ul>
         <p className="text-[11px] text-on-surface-variant leading-relaxed mt-2">
-          Everyone across your trips. Who&apos;s on which trip — and their role — is
-          managed on each trip card below.
+          {showsEveryone ? (
+            <>
+              Every account on this instance, not just your trips
+              {tripless > 0 && ` — ${tripless} ${tripless === 1 ? 'person is' : 'people are'} on no trip yet`}
+              . Who&apos;s on which trip — and their role — is managed on each trip card below.
+            </>
+          ) : (
+            <>
+              Everyone across your trips. Who&apos;s on which trip — and their role — is
+              managed on each trip card below.
+            </>
+          )}
         </p>
       </div>
     </section>
@@ -192,18 +231,23 @@ function PeopleSection({ people, trips, currentUserId, busy, run }) {
 const AVATAR_ICONS = Array.from({ length: 16 }, (_, i) => `icon${i + 1}.png`)
 
 /**
- * One person in the global People card. Owners (of a shared trip) get the
- * pencil (name/email) and key (PIN) controls; the viewer's own row gets the
+ * One person in the global People card. Owners (of a shared trip) and admins get
+ * the pencil (name/email) and key (PIN) controls; the viewer's own row gets the
  * avatar picker. Changing an email always unlinks their old login (and may
  * absorb an unused account on the new address), so we confirm first.
+ *
+ * `tripArgs` is spread into every person-level write: a trip that authorizes the
+ * edit when there is one, and nothing at all for someone on no trip of the
+ * viewer's — which the server accepts from an admin (the real gate) alone.
  */
-function PersonRow({ p, ownerTripId, isSelf, busy, run }) {
+function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
   // 'edit' | 'pin' | 'avatar' | null — which inline panel is open.
   const [mode, setMode] = useState(null)
   const [draft, setDraft] = useState({ name: p.name || '', email: p.email || '' })
   const [pinDraft, setPinDraft] = useState('')
 
-  const canManage = !!ownerTripId
+  const canManage = isAdmin || !!ownerTripId
+  const tripArgs = ownerTripId ? { trip_id: ownerTripId } : {}
   const close = () => { setMode(null); setPinDraft('') }
 
   if (mode === 'edit') {
@@ -222,7 +266,7 @@ function PersonRow({ p, ownerTripId, isSelf, busy, run }) {
         if (!ok) return
       }
       const done = await run(
-        () => updateMemberProfile({ trip_id: ownerTripId, user_id: p.id, name, email }),
+        () => updateMemberProfile({ ...tripArgs, user_id: p.id, name, email }),
         `${name} updated`,
       )
       if (done) close()
@@ -269,14 +313,14 @@ function PersonRow({ p, ownerTripId, isSelf, busy, run }) {
       const pin = pinDraft.trim()
       if (pin.length < 6) return
       const done = await run(
-        () => setMemberPin({ trip_id: ownerTripId, user_id: p.id, pin }),
+        () => setMemberPin({ ...tripArgs, user_id: p.id, pin }),
         `PIN set for ${memberLabel(p)} — share it with them`,
       )
       if (done) close()
     }
     const clearPin = async () => {
       const done = await run(
-        () => setMemberPin({ trip_id: ownerTripId, user_id: p.id, pin: null }),
+        () => setMemberPin({ ...tripArgs, user_id: p.id, pin: null }),
         `PIN removed for ${memberLabel(p)}`,
       )
       if (done) close()
@@ -341,7 +385,7 @@ function PersonRow({ p, ownerTripId, isSelf, busy, run }) {
         () =>
           isSelf
             ? setMyAvatar({ icon })
-            : setMemberAvatar({ trip_id: ownerTripId, user_id: p.id, icon }),
+            : setMemberAvatar({ ...tripArgs, user_id: p.id, icon }),
         'Avatar updated',
       )
       if (done) close()
@@ -402,6 +446,17 @@ function PersonRow({ p, ownerTripId, isSelf, busy, run }) {
           {isSelf && <span className="text-on-surface-variant"> (you)</span>}
         </span>
         <span className="block text-[11px] text-on-surface-variant truncate">{p.email}</span>
+        {/* Admin view only: which trips they're on, or a flag when the answer is
+            "none" — the whole point of listing every account. Truncates rather
+            than wrapping, so a long trip list can't blow up the row on mobile. */}
+        {showTrips && (
+          <span
+            className={`block text-[10px] truncate ${p.trips.length === 0 ? 'text-amber-600' : 'text-on-surface-variant/70'}`}
+            title={p.trips.length > 0 ? p.trips.join(' · ') : undefined}
+          >
+            {p.trips.length > 0 ? p.trips.join(' · ') : 'Not on any trip'}
+          </span>
+        )}
       </span>
       {badges.length > 0 && (
         <span className="text-[10px] uppercase tracking-wide text-on-surface-variant shrink-0">

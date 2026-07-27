@@ -268,6 +268,54 @@ export async function getTripsWithMembers(userId: string) {
 }
 
 /**
+ * ADMIN ONLY — every account on the instance, whatever trips it's on (including
+ * none). The Settings People card is otherwise the union of the viewer's own
+ * trips, which hides anyone who signed in but was never added to a trip. The
+ * caller MUST gate this on `isAdmin`: it returns emails and account state for
+ * people the viewer shares nothing with.
+ *
+ * Each row carries the same person-level fields as a trip member plus the names
+ * of every trip they belong to (`trips`), so the UI can flag the strays.
+ */
+export async function getAllPeopleForAdmin() {
+  const users = await db
+    .select({
+      id: tables.users.id,
+      name: tables.users.name,
+      email: tables.users.email,
+      image: tables.users.image,
+      password_hash: tables.users.password_hash,
+    })
+    .from(tables.users)
+    .orderBy(asc(tables.users.name), asc(tables.users.email));
+  if (users.length === 0) return [];
+
+  const [memberships, accountRows] = await Promise.all([
+    db
+      .select({ user_id: tables.tripMembers.user_id, trip_name: tables.trips.name })
+      .from(tables.tripMembers)
+      .innerJoin(tables.trips, eq(tables.trips.id, tables.tripMembers.trip_id))
+      .orderBy(asc(tables.trips.start_date)),
+    db.select({ userId: tables.authAccounts.userId }).from(tables.authAccounts),
+  ]);
+
+  const tripsByUser = new Map<string, string[]>();
+  for (const m of memberships) {
+    const list = tripsByUser.get(m.user_id) ?? [];
+    list.push(m.trip_name);
+    tripsByUser.set(m.user_id, list);
+  }
+  const withAccount = new Set(accountRows.map((a) => a.userId));
+
+  return users.map(({ password_hash, ...u }) => ({
+    ...u,
+    has_account: withAccount.has(u.id),
+    has_pin: !!password_hash,
+    trips: tripsByUser.get(u.id) ?? [],
+  }));
+}
+
+/**
  * People a to-do can be assigned to, mirroring `requireAssignable`:
  *  - a specific trip → its members.
  *  - no trip selected → everyone the user shares any trip with (themselves

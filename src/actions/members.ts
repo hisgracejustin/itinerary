@@ -331,7 +331,10 @@ export async function deletePartyAction(input: unknown) {
 
 const updateMemberProfileSchema = z
   .object({
-    trip_id: z.string().uuid(),
+    // Optional: the person-level writes below are gated on `requireAdmin`, not on
+    // the trip, and an admin must be able to fix up an account that is on no trip
+    // at all. When present it's still checked, keeping the caller honest.
+    trip_id: z.string().uuid().optional(),
     user_id: z.string().min(1),
     name: z.string().min(1).optional(),
     email: z
@@ -411,7 +414,7 @@ export async function updateMemberProfileAction(input: unknown) {
     // Admin-only: editing a person's email/identity must never be reachable via
     // trip ownership (which anyone can self-grant), or it becomes account takeover.
     requireAdmin(user);
-    await requireTripMembers(data.trip_id, [data.user_id]);
+    if (data.trip_id) await requireTripMembers(data.trip_id, [data.user_id]);
 
     const [current] = await db
       .select({
@@ -422,7 +425,7 @@ export async function updateMemberProfileAction(input: unknown) {
       .from(tables.users)
       .where(eq(tables.users.id, data.user_id))
       .limit(1);
-    if (!current) throw new Error("That person isn't a member of this trip");
+    if (!current) throw new Error("That person no longer has an account");
 
     const updates: {
       name?: string;
@@ -505,7 +508,8 @@ export async function updateMemberProfileAction(input: unknown) {
 }
 
 const setMemberPinSchema = z.object({
-  trip_id: z.string().uuid(),
+  // Optional for the same reason as `updateMemberProfileSchema.trip_id`.
+  trip_id: z.string().uuid().optional(),
   user_id: z.string().min(1),
   // null clears the PIN (revokes email+PIN login for this member).
   pin: z.string().min(6).max(64).nullable(),
@@ -521,7 +525,7 @@ export async function setMemberPinAction(input: unknown) {
     // Admin-only: writing another person's login credential is exactly the
     // takeover primitive, so trip ownership must not grant it.
     requireAdmin(user);
-    await requireTripMembers(data.trip_id, [data.user_id]);
+    if (data.trip_id) await requireTripMembers(data.trip_id, [data.user_id]);
     await db
       .update(tables.users)
       .set({
@@ -562,7 +566,8 @@ export async function setMyAvatarAction(input: unknown) {
 }
 
 const setMemberAvatarSchema = setMyAvatarSchema.extend({
-  trip_id: z.string().uuid(),
+  // Optional for the same reason as `updateMemberProfileSchema.trip_id`.
+  trip_id: z.string().uuid().optional(),
   user_id: z.string().min(1),
 });
 
@@ -575,7 +580,7 @@ export async function setMemberAvatarAction(input: unknown) {
     const data = setMemberAvatarSchema.parse(input);
     // Admin-only: writes another person's `users.image` (global, all trips).
     requireAdmin(user);
-    await requireTripMembers(data.trip_id, [data.user_id]);
+    if (data.trip_id) await requireTripMembers(data.trip_id, [data.user_id]);
     const image = data.icon === null ? null : `/icons/${data.icon}`;
     await db.update(tables.users).set({ image }).where(eq(tables.users.id, data.user_id));
     revalidateApp();

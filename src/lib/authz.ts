@@ -15,14 +15,17 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "")
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
 
+/** Non-throwing form of `requireAdmin`, for deciding what a page may show. */
+export function isAdmin(user: { email?: string | null }) {
+  return !!user.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
+}
+
 /**
  * Throw "Forbidden" unless the caller is a configured global admin. Gates writes
  * to another person's account identity, which trip ownership must never confer.
  */
 export function requireAdmin(user: { email?: string | null }) {
-  if (!user.email || !ADMIN_EMAILS.includes(user.email.toLowerCase())) {
-    throw new Error("Forbidden");
-  }
+  if (!isAdmin(user)) throw new Error("Forbidden");
 }
 
 /**
