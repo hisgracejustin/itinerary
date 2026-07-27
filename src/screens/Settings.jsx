@@ -194,8 +194,8 @@ const AVATAR_ICONS = Array.from({ length: 16 }, (_, i) => `icon${i + 1}.png`)
 /**
  * One person in the global People card. Owners (of a shared trip) get the
  * pencil (name/email) and key (PIN) controls; the viewer's own row gets the
- * avatar picker. Changing an email that belongs to someone who has signed in
- * unlinks their old login, so we confirm first.
+ * avatar picker. Changing an email always unlinks their old login (and may
+ * absorb an unused account on the new address), so we confirm first.
  */
 function PersonRow({ p, ownerTripId, isSelf, busy, run }) {
   // 'edit' | 'pin' | 'avatar' | null — which inline panel is open.
@@ -213,9 +213,11 @@ function PersonRow({ p, ownerTripId, isSelf, busy, run }) {
       const email = draft.email.trim()
       if (!name || !email) return
       const emailChanged = email.toLowerCase() !== (p.email || '').toLowerCase()
-      if (emailChanged && (p.has_account || p.has_pin)) {
+      if (emailChanged) {
+        // One confirm covering both outcomes: the old sign-in is always dropped,
+        // and if the new address already has an unused account it gets absorbed.
         const ok = window.confirm(
-          "Changing the email unlinks their old sign-in (Google and/or PIN) — they'll need a fresh sign-in for the new address. Continue?",
+          `Change ${memberLabel(p)}'s email to ${email}? If ${email} belongs to an unused account, its login is absorbed into this person. Their PIN and old logins are cleared — they'll sign in with the new address.`,
         )
         if (!ok) return
       }

@@ -345,10 +345,65 @@ const updateMemberProfileSchema = z
   });
 
 /**
+ * Zero rows anywhere that would make this `users` row worth keeping? Signup is
+ * open, so a person can sign in with their NEW address before an admin moves it
+ * onto their real row, leaving a hollow duplicate that then blocks the edit.
+ * Such a row is safe to absorb only if nothing at all points at it — checked
+ * across every table that references `users.id` with real content.
+ */
+async function userHasFootprint(userId: string) {
+  const [member, bSplit, eSplit, bPaid, ePaid, settled, todo] = await Promise.all([
+    db
+      .select({ x: tables.tripMembers.user_id })
+      .from(tables.tripMembers)
+      .where(eq(tables.tripMembers.user_id, userId))
+      .limit(1),
+    db
+      .select({ x: tables.bookingSplits.user_id })
+      .from(tables.bookingSplits)
+      .where(eq(tables.bookingSplits.user_id, userId))
+      .limit(1),
+    db
+      .select({ x: tables.expenseSplits.user_id })
+      .from(tables.expenseSplits)
+      .where(eq(tables.expenseSplits.user_id, userId))
+      .limit(1),
+    db
+      .select({ x: tables.bookings.id })
+      .from(tables.bookings)
+      .where(eq(tables.bookings.paid_by, userId))
+      .limit(1),
+    db
+      .select({ x: tables.expenses.id })
+      .from(tables.expenses)
+      .where(eq(tables.expenses.paid_by, userId))
+      .limit(1),
+    db
+      .select({ x: tables.settlements.id })
+      .from(tables.settlements)
+      .where(
+        or(eq(tables.settlements.from_user, userId), eq(tables.settlements.to_user, userId)),
+      )
+      .limit(1),
+    db
+      .select({ x: tables.todos.id })
+      .from(tables.todos)
+      .where(eq(tables.todos.assignee_id, userId))
+      .limit(1),
+  ]);
+  return !!(member[0] || bSplit[0] || eSplit[0] || bPaid[0] || ePaid[0] || settled[0] || todo[0]);
+}
+
+/**
  * Owner edits a member's display name and/or email. Changing the email unlinks
  * their existing login identities (the `accounts` rows) so the old Google login
  * can't reopen the account; on next sign-in Auth.js links the new address back
  * to the same `users` row by email (allowDangerousEmailAccountLinking).
+ *
+ * If the new address is already taken by an EMPTY `users` row (see
+ * `userHasFootprint`) we absorb it rather than refusing: its login link moves to
+ * the real person, so the sign-in they already did opens their actual account.
+ * A row with any footprint is a genuine merge and still refuses loudly.
  */
 export async function updateMemberProfileAction(input: unknown) {
   return runAction(async (user) => {
@@ -383,6 +438,8 @@ export async function updateMemberProfileAction(input: unknown) {
 
     const emailChanged =
       data.email !== undefined && data.email !== (current.email ?? "").toLowerCase();
+    // Id of an empty duplicate `users` row holding the new address, to absorb.
+    let absorbId: string | null = null;
     if (emailChanged) {
       const [clash] = await db
         .select({ id: tables.users.id })
@@ -390,7 +447,10 @@ export async function updateMemberProfileAction(input: unknown) {
         .where(eq(tables.users.email, data.email!))
         .limit(1);
       if (clash && clash.id !== current.id) {
-        throw new Error("That email already belongs to another person");
+        if (await userHasFootprint(clash.id)) {
+          throw new Error("That email already belongs to another person");
+        }
+        absorbId = clash.id;
       }
       updates.email = data.email;
       updates.emailVerified = null;
@@ -404,15 +464,35 @@ export async function updateMemberProfileAction(input: unknown) {
     }
 
     if (updates.name !== undefined || updates.email !== undefined) {
-      await db.update(tables.users).set(updates).where(eq(tables.users.id, current.id));
-    }
-
-    if (emailChanged) {
-      // Drop the old login identities so the previous Google account can't
-      // reopen this row; the new address re-links on next sign-in by email.
-      await db
-        .delete(tables.authAccounts)
-        .where(eq(tables.authAccounts.userId, current.id));
+      // Order is load-bearing, all in one transaction:
+      //  1. Delete the TARGET's old `accounts` rows first — the unlink. Doing it
+      //     before the repoint is what stops it from wiping the absorbed link,
+      //     and it also frees the (provider, provider_account_id) primary key in
+      //     case both rows had linked the same provider.
+      //  2. Repoint the squatter's `accounts` rows onto the target, so the
+      //     sign-in they already completed opens their real account.
+      //  3. Delete the hollow squatter row — only now, because `accounts` has
+      //     on-delete-cascade and would otherwise take the link with it. This
+      //     must also precede step 4, since it's still holding the new address
+      //     against the unique index on `users.email`.
+      //  4. Write name/email (+ PIN clear, session cutoff) onto the target.
+      await transaction(async (tx) => {
+        if (emailChanged) {
+          // Drop the old login identities so the previous Google account can't
+          // reopen this row; the new address re-links on next sign-in by email.
+          await tx
+            .delete(tables.authAccounts)
+            .where(eq(tables.authAccounts.userId, current.id));
+        }
+        if (absorbId) {
+          await tx
+            .update(tables.authAccounts)
+            .set({ userId: current.id })
+            .where(eq(tables.authAccounts.userId, absorbId));
+          await tx.delete(tables.users).where(eq(tables.users.id, absorbId));
+        }
+        await tx.update(tables.users).set(updates).where(eq(tables.users.id, current.id));
+      });
     }
 
     revalidateApp();
