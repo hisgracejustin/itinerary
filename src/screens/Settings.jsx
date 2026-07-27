@@ -80,6 +80,22 @@ export default function Settings({ trips: tripsProp, currentUserId, isAdmin = fa
     })
   const tripless = allPeople.filter((p) => p.trips.length === 0).length
 
+  // Trip cards are long; collapsing them turns the page into a list you can
+  // scan. Everything starts expanded (the shape this screen has always had) and
+  // collapse is per-card, so "collapse all" then opening the one you're editing
+  // is two taps. Kept in memory only — a fresh visit is expanded again.
+  const [collapsedTrips, setCollapsedTrips] = useState(() => new Set())
+  const allCollapsed = trips.length > 0 && trips.every((t) => collapsedTrips.has(t.id))
+  const toggleTrip = (id) =>
+    setCollapsedTrips((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const toggleAllTrips = () =>
+    setCollapsedTrips(allCollapsed ? new Set() : new Set(trips.map((t) => t.id)))
+
   return (
     <div className="w-full max-w-3xl lg:max-w-4xl mx-auto pb-10">
       <p className="text-sm text-on-surface-variant mb-6">
@@ -102,14 +118,33 @@ export default function Settings({ trips: tripsProp, currentUserId, isAdmin = fa
 
       {/* Trips */}
       <section className="mb-8">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between gap-2 mb-3">
           <h3 className="text-sm font-semibold text-on-surface">Trips</h3>
-          <button
-            onClick={() => setShowNewTrip((v) => !v)}
-            className="mat-btn-outlined text-xs"
-          >
-            {showNewTrip ? 'Cancel' : '+ New trip'}
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {trips.length > 0 && (
+              <button
+                onClick={toggleAllTrips}
+                aria-label={allCollapsed ? 'Expand all trips' : 'Collapse all trips'}
+                title={allCollapsed ? 'Expand all trips' : 'Collapse all trips'}
+                className="flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary p-2 rounded-full hover:bg-primary-light transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {allCollapsed ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 13l-7 7-7-7m14-8l-7 7-7-7" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 11l7-7 7 7M5 19l7-7 7 7" />
+                  )}
+                </svg>
+                <span className="hidden sm:inline">{allCollapsed ? 'Expand all' : 'Collapse all'}</span>
+              </button>
+            )}
+            <button
+              onClick={() => setShowNewTrip((v) => !v)}
+              className="mat-btn-outlined text-xs"
+            >
+              {showNewTrip ? 'Cancel' : '+ New trip'}
+            </button>
+          </div>
         </div>
 
         {showNewTrip && (
@@ -159,6 +194,8 @@ export default function Settings({ trips: tripsProp, currentUserId, isAdmin = fa
                 trip={trip}
                 allPeople={allPeople}
                 currentUserId={currentUserId}
+                collapsed={collapsedTrips.has(trip.id)}
+                onToggleCollapse={() => toggleTrip(trip.id)}
                 busy={busy}
                 run={run}
               />
@@ -540,7 +577,13 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
   )
 }
 
-function TripCard({ trip, allPeople, currentUserId, busy, run }) {
+/**
+ * One trip: header (name/dates/role + edit/delete) above a roster, party manager
+ * and add-person form. `collapsed` hides everything below the header — the
+ * header itself, including the delete confirmation, always stays visible so a
+ * collapsed card can still be renamed or deleted.
+ */
+function TripCard({ trip, allPeople, currentUserId, collapsed = false, onToggleCollapse, busy, run }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState({
     name: trip.name,
@@ -618,14 +661,36 @@ function TripCard({ trip, allPeople, currentUserId, busy, run }) {
           </div>
         </form>
       ) : (
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div className="min-w-0">
-            <h4 className="text-base font-medium text-on-surface truncate">{trip.name}</h4>
-            <p className="text-xs text-on-surface-variant">
-              {trip.start_date} → {trip.end_date}
-              {trip.myRole && <span className="ml-2 uppercase tracking-wide">· {trip.myRole}</span>}
-            </p>
-          </div>
+        <div className={`flex items-start justify-between gap-3 ${collapsed ? '' : 'mb-4'}`}>
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            aria-expanded={!collapsed}
+            aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${trip.name}`}
+            className="flex items-start gap-2 min-w-0 flex-1 text-left group"
+          >
+            <svg
+              className={`w-4 h-4 mt-0.5 shrink-0 text-on-surface-variant group-hover:text-primary transition-transform ${collapsed ? '' : 'rotate-90'}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <span className="min-w-0">
+              <span className="block text-base font-medium text-on-surface truncate">{trip.name}</span>
+              <span className="block text-xs text-on-surface-variant">
+                {trip.start_date} → {trip.end_date}
+                {trip.myRole && <span className="ml-2 uppercase tracking-wide">· {trip.myRole}</span>}
+                {/* Collapsed, the roster is hidden — keep its size in view. */}
+                {collapsed && (
+                  <span className="ml-2">
+                    · {trip.members.length} {trip.members.length === 1 ? 'person' : 'people'}
+                  </span>
+                )}
+              </span>
+            </span>
+          </button>
           <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => { setDraft({ name: trip.name, start_date: trip.start_date, end_date: trip.end_date }); setEditing(true) }}
@@ -649,7 +714,7 @@ function TripCard({ trip, allPeople, currentUserId, busy, run }) {
       )}
 
       {confirmDelete && (
-        <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200">
+        <div className={`mb-4 p-3 rounded-xl bg-red-50 border border-red-200 ${collapsed ? 'mt-3' : ''}`}>
           <p className="text-xs text-red-700 mb-2">
             Delete <strong>{trip.name}</strong>? Everything on it is deleted too — bookings,
             to-dos, day notes and reminders. This can&apos;t be undone.
@@ -670,7 +735,7 @@ function TripCard({ trip, allPeople, currentUserId, busy, run }) {
       )}
 
       {/* People */}
-      <div className="border-t border-outline/20 pt-3">
+      <div className={`border-t border-outline/20 pt-3 ${collapsed ? 'hidden' : ''}`}>
         <h5 className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
           People ({trip.members.length})
         </h5>
