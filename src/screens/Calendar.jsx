@@ -395,6 +395,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
                 spanEnd={journeyEnd}
                 onSelectDate={handleSelectDate}
                 onDayHighlight={(date) => setCurrentDate(date)}
+                onNavigateMonth={navigate}
                 onBookingClick={openEditModal}
                 onUpsertDayNote={handleUpsertDayNote}
                 collapsed={calendarCollapsed}

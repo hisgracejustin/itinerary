@@ -13,7 +13,7 @@ function toLocalDateStr(date) {
   return `${y}-${m}-${d}`
 }
 
-export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, tripMetas = [], selectedTrip, spanStart, spanEnd, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, collapsed = false, onCollapsedChange }) {
+export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, tripMetas = [], selectedTrip, spanStart, spanEnd, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, onNavigateMonth, collapsed = false, onCollapsedChange }) {
   // Default: if trip selected → first day of trip, else today
   const getDefaultDay = useCallback(() => {
     if (selectedTrip && tripMeta?.start_date) {
@@ -29,6 +29,10 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
   const calendarRef = useRef(null)
   const expandedHeight = useRef(0)
   const agendaRef = useRef(null)
+  const gridRef = useRef(null)
+  // Direction of the swipe that caused the pending month change (0 = none), so
+  // the incoming grid can animate in from the side the finger came from.
+  const swipeDir = useRef(0)
   const touchStartY = useRef(null)
   const isDragging = useRef(false)
   const isSnapping = useRef(false)
@@ -361,6 +365,102 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
     }
   }, [selectedDay, onCollapsedChange])
 
+  // Horizontal swipe across the month grid → previous/next month, the gesture
+  // equivalent of the header arrows. Native listeners because React's onTouchMove
+  // is passive at the root and so can't preventDefault. Vertical intent is handed
+  // straight back to the collapse/scroll gestures, which live on the agenda.
+  const navigateMonthRef = useRef(onNavigateMonth)
+  useEffect(() => { navigateMonthRef.current = onNavigateMonth }, [onNavigateMonth])
+  useEffect(() => {
+    const el = gridRef.current
+    if (!el) return
+
+    let startX = 0
+    let startY = 0
+    let mode = null // null | 'swipe' | 'ignore'
+    const DEAD_ZONE = 10 // px before committing to a direction
+    const TRACK = 0.6 // the grid follows the finger at this fraction (rubber-band)
+    const COMMIT_MIN = 48 // px — floor for the commit distance on narrow screens
+
+    const reset = () => {
+      mode = null
+      el.style.transition = 'transform 0.2s ease-out, opacity 0.2s ease-out'
+      el.style.transform = ''
+      el.style.opacity = ''
+    }
+
+    const onStart = (e) => {
+      if (e.touches.length !== 1 || isSnapping.current || isCollapsedRef.current || !navigateMonthRef.current) {
+        mode = 'ignore'
+        return
+      }
+      startX = e.touches[0].clientX
+      startY = e.touches[0].clientY
+      mode = null
+      el.style.transition = 'none'
+    }
+
+    const onMove = (e) => {
+      if (mode === 'ignore' || e.touches.length !== 1) return
+      const dx = e.touches[0].clientX - startX
+      const dy = e.touches[0].clientY - startY
+      if (mode === null) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < DEAD_ZONE) return
+        // Only claim the gesture when it's decisively horizontal.
+        mode = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'swipe' : 'ignore'
+        if (mode !== 'swipe') return
+      }
+      e.preventDefault()
+      const width = el.offsetWidth || 320
+      el.style.transform = `translateX(${dx * TRACK}px)`
+      el.style.opacity = `${1 - Math.min(Math.abs(dx) / width, 0.55)}`
+    }
+
+    const onEnd = (e) => {
+      if (mode !== 'swipe') {
+        mode = null
+        return
+      }
+      const dx = (e.changedTouches?.[0]?.clientX ?? startX) - startX
+      const width = el.offsetWidth || 320
+      const commit = Math.abs(dx) > Math.max(COMMIT_MIN, width * 0.25)
+      reset()
+      if (commit) {
+        // Swipe left (dx < 0) reveals the NEXT month, mirroring a page turn.
+        swipeDir.current = dx < 0 ? 1 : -1
+        navigateMonthRef.current?.(swipeDir.current)
+      }
+    }
+
+    el.addEventListener('touchstart', onStart, { passive: true })
+    el.addEventListener('touchmove', onMove, { passive: false })
+    el.addEventListener('touchend', onEnd, { passive: true })
+    el.addEventListener('touchcancel', reset, { passive: true })
+
+    return () => {
+      el.removeEventListener('touchstart', onStart)
+      el.removeEventListener('touchmove', onMove)
+      el.removeEventListener('touchend', onEnd)
+      el.removeEventListener('touchcancel', reset)
+    }
+  }, [])
+
+  // Slide the new month in from the side the swipe came from. Only runs for
+  // swipe-driven changes — arrow-button navigation stays instant.
+  useLayoutEffect(() => {
+    const el = gridRef.current
+    const dir = swipeDir.current
+    if (!el || !dir) return
+    swipeDir.current = 0
+    el.style.transition = 'none'
+    el.style.transform = `translateX(${dir * 28}px)`
+    el.style.opacity = '0.35'
+    el.offsetHeight // force reflow so the transition below actually runs
+    el.style.transition = 'transform 0.22s ease-out, opacity 0.22s ease-out'
+    el.style.transform = 'translateX(0)'
+    el.style.opacity = '1'
+  }, [year, month])
+
   // Check if a day has any bookings (for dot indicator)
   const dayHasBookings = (day) => getBookingsForDate(bookings, day).length > 0
 
@@ -372,6 +472,9 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
         style={isCollapsed ? { height: 0, overflow: 'hidden', opacity: 0 } : {}}
         className="shrink-0 border-b border-outline/30 shadow-sm pb-2 will-change-[height,opacity] overflow-hidden"
       >
+        {/* Swipe surface: headers + grid move together as one "page".
+            touch-pan-y leaves vertical panning (and browser back-swipe) alone. */}
+        <div ref={gridRef} className="touch-pan-y will-change-[transform,opacity]">
         {/* Day headers */}
         <div className="grid grid-cols-7 px-2 pt-1.5 pb-1.5">
           {DAY_NAMES.map((name, i) => (
@@ -428,6 +531,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
               </button>
             )
           })}
+        </div>
         </div>
       </div>
 
