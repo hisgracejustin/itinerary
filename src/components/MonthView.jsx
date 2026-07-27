@@ -50,31 +50,42 @@ function sortBookingsForDay(dayBookings, day) {
   })
 }
 
-// A "stay" renders as one thin continuous bar (check-in → check-out) instead of
-// per-day chips — mirrors MobileMonthView's thin-bar rules for hotels (incl.
-// informal), cruises, and rentals.
-const STAY_TYPES = new Set(['hotel', 'cruise', 'rental'])
-const isStay = (b) => {
-  if (!STAY_TYPES.has(b.type) || !b.end_date) return false
+// ANY booking whose end day is after its start day renders as one thin
+// continuous bar instead of an identical chip repeated on every day it touches:
+// stays (hotel incl. informal, cruise, rental) and equally a long-haul flight,
+// an overnight train, a multi-day activity. One booking, one bar.
+const isSpanning = (b) => {
+  if (!b.end_date) return false
   return midnight(new Date(b.end_date)) > midnight(new Date(b.start_date))
 }
 
-const STAY_BAR_COLORS = {
+// One step stronger than the chip palette (TYPE_COLORS) so a bar reads as a
+// solid band behind the day's chips rather than competing with them.
+const SPAN_BAR_COLORS = {
   hotel: 'bg-amber-100 text-amber-800 hover:bg-amber-200',
   cruise: 'bg-purple-100 text-purple-800 hover:bg-purple-200',
   rental: 'bg-indigo-100 text-indigo-800 hover:bg-indigo-200',
+  flight: 'bg-primary-light text-accent-ink hover:bg-primary-light/70',
+  train: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200',
+  bus: 'bg-teal-100 text-teal-800 hover:bg-teal-200',
+  activity: 'bg-red-100 text-red-800 hover:bg-red-200',
 }
 
-const stayIcon = (b) => {
+const STAY_TYPES = new Set(['hotel', 'cruise', 'rental'])
+const isStay = (b) => STAY_TYPES.has(b.type)
+
+const spanIcon = (b) => {
   if (b.type === 'cruise') return '🚢'
   if (b.type === 'rental') return getRentalIcon(parseDetails(b))
-  return '🏡'
+  if (b.type === 'hotel') return '🏡'
+  return TYPE_ICONS[b.type] || '📌'
 }
 
 /**
- * Split every stay into per-week bar segments and pack them into lanes.
- * A segment spans [startCol, endCol] within the week; rounded ends only at the
- * stay's TRUE start/end so a row-crossing stay reads as one unbroken bar.
+ * Split every spanning booking into per-week bar segments and pack them into
+ * lanes. A segment spans [startCol, endCol] within the week; rounded ends only
+ * at the booking's TRUE start/end so a row-crossing span reads as one unbroken
+ * bar.
  */
 function staySegmentsForWeek(stays, week) {
   const weekStart = week[0]
@@ -212,7 +223,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
       return isSameDay(new Date(t.due_date + 'T00:00:00'), date)
     })
 
-  const stays = bookings.filter(isStay)
+  const stays = bookings.filter(isSpanning)
   const stayIds = new Set(stays.map((b) => b.id))
 
   // A day tap scrolls the rail to that day (wide) or opens Day view (narrow).
@@ -228,7 +239,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
 
   const renderBar = (seg) => {
     const b = seg.booking
-    const colors = STAY_BAR_COLORS[b.type] || STAY_BAR_COLORS.hotel
+    const colors = SPAN_BAR_COLORS[b.type] || SPAN_BAR_COLORS.hotel
     const leftPct = (seg.startCol / 7) * 100
     const widthPct = ((seg.endCol - seg.startCol + 1) / 7) * 100
     const insetL = seg.isStart ? 3 : 0
@@ -243,13 +254,19 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
           top: HEADER_PX + seg.lane * BAR_STRIDE,
         }}
         title={b.title}
-        aria-label={`${b.title}${seg.isStart ? ' (check-in)' : ''}${seg.isEnd ? ' (check-out)' : ''}`}
+        aria-label={
+          isStay(b)
+            ? `${b.title}${seg.isStart ? ' (check-in)' : ''}${seg.isEnd ? ' (check-out)' : ''}`
+            : `${b.title}${seg.isStart ? ' (departs)' : ''}${seg.isEnd ? ' (arrives)' : ''}`
+        }
         className={`absolute z-10 h-4 flex items-center gap-1 px-1.5 text-[10px] font-medium leading-none transition-colors ${colors} ${
           seg.isStart ? 'rounded-l-full' : ''
         } ${seg.isEnd ? 'rounded-r-full' : ''}`}
       >
         <span className="shrink-0 text-[9px]" aria-hidden>
-          {seg.isStart ? (b.type === 'cruise' ? '🚢' : '🔑') : stayIcon(b)}
+          {/* Stays open with a key (the check-in moment); everything else just
+              wears its type icon the whole way across. */}
+          {isStay(b) && seg.isStart && b.type !== 'cruise' ? '🔑' : spanIcon(b)}
         </span>
         <span className="truncate min-w-0">{b.title}</span>
       </button>
@@ -299,27 +316,10 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
           )
         })
       const dayBookings = sortBookingsForDay(getBookingsForDate(bookings, day), day)
+      // Anything spanning days is drawn as a bar above; the separate "Overnight"
+      // chip that used to mark an over-midnight departure went with it — the bar
+      // now runs visibly through the night it covers.
       const nonStay = dayBookings.filter((b) => !stayIds.has(b.id))
-      // Overnight flight/train/bus chip (start day of an over-midnight leg)
-      nonStay
-        .filter((b) => {
-          if (b.type !== 'flight' && b.type !== 'train' && b.type !== 'bus') return false
-          if (!b.end_date) return false
-          const startDay = midnight(new Date(b.start_date))
-          const endDay = midnight(new Date(b.end_date))
-          return endDay > startDay && midnight(day).getTime() === startDay.getTime()
-        })
-        .forEach((b) => {
-          const chipColors = b.type === 'flight' ? 'bg-primary-light text-accent-ink' : 'bg-emerald-100 text-emerald-800'
-          items.push(
-            <span
-              key={`overnight-${b.id}`}
-              className={`w-full inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${chipColors} truncate`}
-            >
-              {TYPE_ICONS[b.type] || '📌'} Overnight
-            </span>
-          )
-        })
       // No accommodation warning — bounded by the whole journey span (union of
       // selected trips), so a night covered by another selected trip's hotel
       // doesn't false-warn.

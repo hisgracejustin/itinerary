@@ -675,6 +675,44 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       </button>
                     )
                   })}
+                  {/* Still-in-transit chips — a long-haul's middle days. Mirrors
+                      the mid-stay chips above so a 3-day flight reads as one
+                      journey instead of the same card three times. */}
+                  {dayBookings.filter((b) => {
+                    if (b.type !== 'flight' && b.type !== 'train' && b.type !== 'bus') return false
+                    if (!b.end_date) return false
+                    const start = new Date(b.start_date)
+                    const end = new Date(b.end_date)
+                    const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                    const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                    const viewDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+                    return endDay > startDay && viewDay > startDay && viewDay < endDay
+                  }).map((b) => {
+                    const start = new Date(b.start_date)
+                    const end = new Date(b.end_date)
+                    const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                    const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                    const viewDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+                    const totalDays = Math.round((endDay - startDay) / (1000 * 60 * 60 * 24)) + 1
+                    const dayNumber = Math.round((viewDay - startDay) / (1000 * 60 * 60 * 24)) + 1
+                    const typeIcon = TYPE_ICONS[b.type] || '📌'
+                    const chipColors = b.type === 'flight'
+                      ? 'bg-primary-light text-accent-ink hover:bg-primary/20'
+                      : b.type === 'train'
+                        ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                        : 'bg-teal-100 text-teal-800 hover:bg-teal-200'
+                    return (
+                      <button
+                        key={`transit-${b.id}`}
+                        onClick={() => onBookingClick?.(b)}
+                        className={`inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors ${chipColors}`}
+                      >
+                        <span className="shrink-0">{typeIcon}</span>
+                        <span className="truncate">{b.title}</span>
+                        <span className="font-normal opacity-70 shrink-0">{dayNumber}/{totalDays}</span>
+                      </button>
+                    )
+                  })}
                   {/* Overnight flight/train/bus chip */}
                   {dayBookings.filter((b) => {
                     if (b.type !== 'flight' && b.type !== 'train' && b.type !== 'bus') return false
@@ -776,6 +814,17 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       </div>
                     )}
                     {[...dayBookings].filter((b) => {
+                      // Exclude a long-haul's middle days: departure and arrival
+                      // get full cards, the days in between get the transit chip
+                      // above (same rule as a stay's middle days).
+                      if ((b.type === 'flight' || b.type === 'train' || b.type === 'bus') && b.end_date) {
+                        const start = new Date(b.start_date)
+                        const end = new Date(b.end_date)
+                        const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                        const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                        const viewDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+                        if (viewDay > startDay && viewDay < endDay) return false
+                      }
                       // Exclude hotel/rental mid-stay/informal from full cards (shown as chips above)
                       if ((b.type === 'hotel' || b.type === 'rental') && b.end_date) {
                         const details = typeof b.details === 'string' ? (() => { try { return JSON.parse(b.details) } catch { return {} } })() : (b.details || {})

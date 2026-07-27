@@ -186,7 +186,8 @@ export function getRentalIcon(details) {
 
 /**
  * Check if a date has overnight accommodation covered by any booking.
- * Returns true if there's a hotel/cruise spanning that night, or an overnight flight/train/bus departing that day.
+ * True when a hotel/cruise/camper spans that night, or a flight/train/bus is
+ * still in transit through it (departure day up to, not including, arrival day).
  */
 export function hasOvernightCoverage(bookings, date) {
   const viewDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
@@ -210,8 +211,11 @@ export function hasOvernightCoverage(bookings, date) {
       return viewDay >= startDay && viewDay < endDay
     }
     if (b.type === 'flight' || b.type === 'train' || b.type === 'bus') {
-      // Overnight transit: departure day = viewDay
-      return viewDay.getTime() === startDay.getTime()
+      // In transit IS the night's accommodation, for every night the leg is
+      // still moving — same window as a hotel: departure day through the day
+      // before arrival. A long-haul that leaves Sep 7 and lands Sep 9 covers the
+      // nights of the 7th AND the 8th; only the arrival night needs a bed.
+      return viewDay >= startDay && viewDay < endDay
     }
     return false
   })
