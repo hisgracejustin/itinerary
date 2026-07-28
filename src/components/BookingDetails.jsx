@@ -166,7 +166,9 @@ export default function BookingDetails({ booking }) {
                   <Row key={i} label={`Until ${formatCutoff(tier.cutoff)}`}>
                     {tier.kind === 'percent'
                       ? `${tier.value}% refund`
-                      : `${formatCurrency(tier.value, booking.cost_currency || 'USD')} refundable`}
+                      : tier.kind === 'fee'
+                        ? `Refund minus ${formatCurrency(tier.value, booking.cost_currency || 'USD')} fee`
+                        : `${formatCurrency(tier.value, booking.cost_currency || 'USD')} refundable`}
                   </Row>
                 ))}
                 <Row label={`After ${formatCutoff(policy[policy.length - 1].cutoff)}`}>Non-refundable</Row>

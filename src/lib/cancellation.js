@@ -8,9 +8,12 @@
  *   Tier[]           — tiered refunds, an ascending list of:
  *                        { cutoff: 'YYYY-MM-DD'          // whole day, or
  *                                | 'YYYY-MM-DDTHH:mm',   // naive wall-clock
- *                          kind:   'percent' | 'amount', // what `value` means
- *                          value:  number }              // 0-100, or a flat
- *                                                        // cost_currency amount
+ *                          kind:   'percent'             // what `value` means
+ *                                | 'amount'
+ *                                | 'fee',
+ *                          value:  number }              // 0-100, a flat
+ *                                                        // cost_currency amount,
+ *                                                        // or a fee to deduct
  *   'non_refundable' — KNOWN non-cancellable: nothing comes back, ever.
  *   null             — UNKNOWN: no policy recorded. Callers must keep this
  *                      distinct from 'non_refundable' (an unrecorded policy is
@@ -29,6 +32,11 @@
  *  - `amount` is a flat figure already in the booking's cost_currency (NOT
  *    share-scaled), clamped to the effective cost so a stale policy on a
  *    reduced booking can't refund more than was spent.
+ *  - `fee` is a cancellation/service fee in cost_currency, SUBTRACTED from the
+ *    effective cost ("full refund minus a $25 fee") and floored at 0. Like
+ *    `amount` it is not share-scaled — it comes off the effective cost before
+ *    any scope scaling a caller applies, so a shared booking's viewer sees their
+ *    fraction of the post-fee refund, not a fraction of the fee.
  *  - Every date here is a naive string compared LEXICOGRAPHICALLY, never
  *    `new Date()` day math — the app's convention (a booking must land on the
  *    same calendar day for every viewer, in any timezone). A cutoff is either
@@ -57,7 +65,7 @@ const CUTOFF_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/
  * state mid-edit, and on legacy rows, and one bad tier must never block a save.
  *
  * @param {unknown} raw
- * @returns {{ cutoff: string, kind: 'percent' | 'amount', value: number }[] | 'non_refundable' | null}
+ * @returns {{ cutoff: string, kind: 'percent' | 'amount' | 'fee', value: number }[] | 'non_refundable' | null}
  */
 export function sanitizeCancellationPolicy(raw) {
   if (raw === 'non_refundable') return 'non_refundable'
@@ -72,7 +80,7 @@ export function sanitizeCancellationPolicy(raw) {
     const normalized = String(t.cutoff ?? '').replace(' ', 'T').slice(0, 16)
     const cutoff = CUTOFF_RE.test(normalized) ? normalized : normalized.slice(0, 10)
     if (!DATE_RE.test(cutoff.slice(0, 10))) continue
-    const kind = t.kind === 'amount' ? 'amount' : t.kind === 'percent' ? 'percent' : null
+    const kind = ['percent', 'amount', 'fee'].includes(t.kind) ? t.kind : null
     if (!kind) continue
     // parseFloat, not Number: the form holds tier values as strings, and
     // Number('') is 0 — an untouched "+ Add tier" row would save as a real 0%
@@ -95,7 +103,7 @@ export function sanitizeCancellationPolicy(raw) {
  * before comparing — otherwise a timed `asOfDate` would read it as expired from
  * midnight onwards. Timed cutoffs compare as-is.
  *
- * @param {{ cutoff: string, kind: 'percent' | 'amount', value: number }[] | 'non_refundable' | null} policy
+ * @param {{ cutoff: string, kind: 'percent' | 'amount' | 'fee', value: number }[] | 'non_refundable' | null} policy
  * @param {string} asOfDate 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:mm'
  */
 export function applicableTier(policy, asOfDate) {
@@ -110,7 +118,7 @@ export function applicableTier(policy, asOfDate) {
  * NOT render as zero: an unrecorded policy is not a non-refundable booking. A
  * policy of 'non_refundable' IS a zero, and says so.
  *
- * @param {{ cutoff: string, kind: 'percent' | 'amount', value: number }[] | 'non_refundable' | null} policy
+ * @param {{ cutoff: string, kind: 'percent' | 'amount' | 'fee', value: number }[] | 'non_refundable' | null} policy
  * @param {number} effectiveCost
  * @param {string} asOfDate 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:mm'
  */
@@ -120,7 +128,13 @@ export function refundableAsOf(policy, effectiveCost, asOfDate) {
   const cost = Number(effectiveCost) || 0
   const tier = applicableTier(policy, asOfDate)
   if (!tier) return { refundable: 0, tier: null }
-  const raw = tier.kind === 'percent' ? (cost * tier.value) / 100 : tier.value
+  const raw =
+    tier.kind === 'percent'
+      ? (cost * tier.value) / 100
+      : tier.kind === 'fee'
+        ? cost - tier.value
+        : tier.value
+  // Floors a fee bigger than the booking at 0 and clamps a stale flat amount.
   return { refundable: Math.max(0, Math.min(raw, cost)), tier }
 }
 

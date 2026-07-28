@@ -377,10 +377,10 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
     if (policy === 'non_refundable') return 'Non-refundable'
     const tier = policy && applicableTier(policy, localToday())
     if (!tier) return null
+    const money = formatCurrency(tier.value, booking.cost_currency || 'USD')
+    // The minus keeps a fee from reading as the amount coming back.
     const value =
-      tier.kind === 'percent'
-        ? `${tier.value}%`
-        : formatCurrency(tier.value, booking.cost_currency || 'USD')
+      tier.kind === 'percent' ? `${tier.value}%` : tier.kind === 'fee' ? `−${money} fee` : money
     return `↩ ${value} until ${formatCutoff(tier.cutoff)}`
   })()
 

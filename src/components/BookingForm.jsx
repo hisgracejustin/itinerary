@@ -585,8 +585,8 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                   onChange={(e) => setTier(i, { cutoff: e.target.value ? `${cutoffDate}T${e.target.value}` : cutoffDate })}
                   className="mat-input w-24 min-w-0 text-xs"
                 />
-                <div className="flex rounded-xl border border-outline/40 overflow-hidden shrink-0 max-w-[7rem]">
-                  {['percent', 'amount'].map((k) => (
+                <div className="flex rounded-xl border border-outline/40 overflow-hidden shrink-0 max-w-[10rem]">
+                  {['percent', 'amount', 'fee'].map((k) => (
                     <button
                       key={k}
                       type="button"
@@ -598,7 +598,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                       }`}
                     >
                       <span className="block truncate">
-                        {k === 'percent' ? '%' : form.cost_currency || 'amt'}
+                        {k === 'percent' ? '%' : k === 'fee' ? 'fee' : form.cost_currency || 'amt'}
                       </span>
                     </button>
                   ))}
@@ -608,7 +608,9 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                   inputMode="decimal"
                   value={tier.value ?? ''}
                   onChange={(e) => setTier(i, { value: e.target.value.replace(/[^0-9.]/g, '') })}
-                  placeholder={(tier.kind || 'percent') === 'percent' ? '100' : '500'}
+                  placeholder={
+                    (tier.kind || 'percent') === 'percent' ? '100' : tier.kind === 'fee' ? '25' : '500'
+                  }
                   className="mat-input w-20"
                 />
                 <button

@@ -187,6 +187,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     const refundable = r.refundable * frac
     refundRows.push({
       it,
+      base,
       refundable,
       tier: r.tier,
       policy,
@@ -399,7 +400,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                     </button>
                   </div>
                   <div className="mt-1 space-y-1">
-                    {refundRows.map(({ it, refundable, tier, policy }) => {
+                    {refundRows.map(({ it, base, refundable, tier, policy }) => {
                       const selected = !deselected.has(it.id)
                       return (
                         <div
@@ -427,10 +428,19 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                             <div className="text-right shrink-0">
                               <div className="text-sm font-medium text-on-surface">
                                 {formatCurrency(refundable, it.currency)}
+                                <span className="text-on-surface-variant font-normal">
+                                  {' '}of {formatCurrency(base, it.currency)}
+                                </span>
                               </div>
                               <div className="text-[11px] text-on-surface-variant">
                                 {tier
-                                  ? `${tier.kind === 'percent' ? `${tier.value}%` : formatCurrency(tier.value, it.currency)} until ${formatCutoff(tier.cutoff)}`
+                                  ? `${
+                                      tier.kind === 'percent'
+                                        ? `${tier.value}%`
+                                        : tier.kind === 'fee'
+                                          ? `−${formatCurrency(tier.value, it.currency)} fee`
+                                          : formatCurrency(tier.value, it.currency)
+                                    } until ${formatCutoff(tier.cutoff)}`
                                   : Array.isArray(policy)
                                     ? `expired ${formatCutoff(policy[policy.length - 1].cutoff)}`
                                     : 'Non-refundable'}
