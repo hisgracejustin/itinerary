@@ -433,53 +433,64 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                   className="mat-input w-52 text-xs"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                <div className="min-w-0">
-                  <div className="text-2xl font-medium text-emerald-600">
-                    ~HK${refundableHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              {/* Two scenario panels: cash-world on the left, credit-world on
+                  the right. The wall between them is the point — the two
+                  worlds' figures are alternatives and must never be cross-
+                  added. Forfeit and True loss share the loss red: both are
+                  money gone, just under different assumptions. */}
+              <div className={`grid gap-3 mt-4 ${creditHKD > 0 ? 'sm:grid-cols-2' : ''}`}>
+                <div className="rounded-xl border border-outline/20 px-4 py-3 min-w-0">
+                  <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
+                    If you take cash
                   </div>
-                  <div className="text-xs text-on-surface-variant mt-0.5">Refundable</div>
-                  {/* Vouchers sit under the cash figure, deliberately smaller:
-                      they're money back, but only with the provider that issued
-                      them — never something to add to the refund total, and
-                      never one pooled number. */}
-                  {creditHKD > 0 && (
-                    <div className="mt-2">
-                      <div className="text-xs text-on-surface-variant">As credit</div>
-                      {creditByProvider.slice(0, 3).map(([name, hkd]) => (
-                        <div key={name} className="flex items-baseline gap-1.5 min-w-0 mt-0.5">
-                          <span className="text-base font-medium text-primary shrink-0">
-                            + ~HK${hkd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                          </span>
-                          {/* Airline names run long; truncate rather than wrap. */}
-                          <span className="text-xs text-on-surface-variant truncate min-w-0">{name}</span>
-                        </div>
-                      ))}
-                      {creditByProvider.length > 3 && (
-                        <div className="text-xs text-on-surface-variant/70 mt-0.5">
-                          + {creditByProvider.length - 3} more
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-xs text-on-surface-variant">Get back</span>
+                    <span className="text-xl font-medium text-emerald-600">
+                      ~HK${refundableHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-3 mt-1">
+                    <span className="text-xs text-on-surface-variant">Forfeit</span>
+                    <span className="text-xl font-medium text-red-600">
+                      ~HK${nonRefundableHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <div className="text-2xl font-medium text-on-surface">
-                    ~HK${nonRefundableHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                  </div>
-                  <div className="text-xs text-on-surface-variant mt-0.5">Non-refundable</div>
-                  {/* Mirrors the As-credit block opposite: same secondary size,
-                      same "only when credits are in play" gate — with none it
-                      would just restate the figure above it. */}
-                  {creditHKD > 0 && (
-                    <div className="mt-2">
-                      <div className="text-base font-medium text-on-surface">
-                        ~HK${netLossHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                {/* With no credits anywhere this panel would just restate the
+                    one on the left, so it only appears when vouchers exist. */}
+                {creditHKD > 0 && (
+                  <div className="rounded-xl border border-outline/20 px-4 py-3 min-w-0">
+                    <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
+                      If you use credits
+                    </div>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-xs text-on-surface-variant">Hold in credits</span>
+                      <span className="text-xl font-medium text-primary">
+                        ~HK${creditHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
+                    {creditByProvider.slice(0, 3).map(([name, hkd]) => (
+                      <div key={name} className="flex items-baseline justify-between gap-3 pl-3 min-w-0">
+                        {/* Airline names run long; truncate rather than wrap. */}
+                        <span className="text-xs text-on-surface-variant truncate min-w-0">{name}</span>
+                        <span className="text-xs text-on-surface-variant shrink-0">
+                          {hkd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </span>
                       </div>
-                      <div className="text-xs text-on-surface-variant mt-0.5">Net loss if credits used</div>
+                    ))}
+                    {creditByProvider.length > 3 && (
+                      <div className="text-xs text-on-surface-variant/70 pl-3">
+                        + {creditByProvider.length - 3} more
+                      </div>
+                    )}
+                    <div className="flex items-baseline justify-between gap-3 mt-1">
+                      <span className="text-xs text-on-surface-variant">True loss</span>
+                      <span className="text-xl font-medium text-red-600">
+                        ~HK${netLossHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
               <p className="text-xs text-on-surface-variant/60 mt-3">
                 Follows the scope selected above — under {meLabel}
