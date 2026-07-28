@@ -38,7 +38,8 @@ All types may also include:
 - notes: free-text info worth keeping that fits no other field (host contact, luggage allowance, meal, special instructions). Omit if none.
 - cancellation_policy: array of refund tiers, ONLY if the document states a cancellation policy, e.g.
   [{ "cutoff": "2026-09-05", "kind": "percent", "value": 100 }, { "cutoff": "2026-09-20", "kind": "amount", "value": 500 }]
-  Each tier means: cancelling on or before "cutoff" (YYYY-MM-DD) refunds "value" — a percent of the booking cost ("kind": "percent") or a flat amount in cost_currency ("kind": "amount"). Order tiers by cutoff ascending.
+  Each tier means: cancelling on or before "cutoff" refunds "value" — a percent of the booking cost ("kind": "percent") or a flat amount in cost_currency ("kind": "amount"). Order tiers by cutoff ascending.
+  "cutoff" is "YYYY-MM-DD", or "YYYY-MM-DDTHH:mm" when the document states a specific deadline time (e.g. "free cancellation until 6:00 PM on 5 Sep" → "2026-09-05T18:00"). Use the time exactly as printed — no timezone conversion.
   If instead the document explicitly states the booking is non-refundable / cannot be cancelled, use the string "non_refundable" in place of the array: "cancellation_policy": "non_refundable".
   Omit the field entirely if no policy is stated. NEVER invent a policy.
 

@@ -6,7 +6,8 @@
  * migration) and is THREE-WAY:
  *
  *   Tier[]           — tiered refunds, an ascending list of:
- *                        { cutoff: 'YYYY-MM-DD',         // date-only, naive
+ *                        { cutoff: 'YYYY-MM-DD'          // whole day, or
+ *                                | 'YYYY-MM-DDTHH:mm',   // naive wall-clock
  *                          kind:   'percent' | 'amount', // what `value` means
  *                          value:  number }              // 0-100, or a flat
  *                                                        // cost_currency amount
@@ -28,13 +29,21 @@
  *  - `amount` is a flat figure already in the booking's cost_currency (NOT
  *    share-scaled), clamped to the effective cost so a stale policy on a
  *    reduced booking can't refund more than was spent.
- *  - Every date here is a naive 'YYYY-MM-DD' string compared LEXICOGRAPHICALLY,
- *    never `new Date()` day math — the app's convention (a booking must land on
- *    the same calendar day for every viewer, in any timezone).
- *  - Date-only cutoffs: "free until 6pm on the 20th" collapses to the 20th.
+ *  - Every date here is a naive string compared LEXICOGRAPHICALLY, never
+ *    `new Date()` day math — the app's convention (a booking must land on the
+ *    same calendar day for every viewer, in any timezone). A cutoff is either
+ *    'YYYY-MM-DD' (deadline is the end of that day) or 'YYYY-MM-DDTHH:mm' when
+ *    the document names a time ("free until 6:00 PM on Sep 5"), stored as
+ *    wall-clock with no timezone. Mixing the two formats is safe: string compare
+ *    puts '2026-09-05T18:00' at or after '2026-09-05' and before '2026-09-06'.
+ *  - SOFT SPOT: as-of values are date-only, so on the cutoff's OWN day a timed
+ *    cutoff still counts as applicable — deliberately optimistic (it assumes you
+ *    would cancel before that day's deadline rather than after it). The day
+ *    after, it has correctly expired.
  */
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const CUTOFF_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/
 
 /**
  * Normalize whatever was stored, parsed or typed into a sorted tier list, the
@@ -51,9 +60,13 @@ export function sanitizeCancellationPolicy(raw) {
   const tiers = []
   for (const t of raw) {
     if (!t || typeof t !== 'object') continue
-    // Tolerates a datetime ('2026-09-05T00:00:00') from the parser or a merge.
-    const cutoff = String(t.cutoff ?? '').slice(0, 10)
-    if (!DATE_RE.test(cutoff)) continue
+    // Keep a wall-clock time when there is one, but never trust it: a parser can
+    // emit seconds ('...T18:00:00'), a space separator, or junk where the time
+    // should be — anything that doesn't survive the timed pattern degrades to
+    // the date, which is still a usable deadline.
+    const normalized = String(t.cutoff ?? '').replace(' ', 'T').slice(0, 16)
+    const cutoff = CUTOFF_RE.test(normalized) ? normalized : normalized.slice(0, 10)
+    if (!DATE_RE.test(cutoff.slice(0, 10))) continue
     const kind = t.kind === 'amount' ? 'amount' : t.kind === 'percent' ? 'percent' : null
     if (!kind) continue
     // parseFloat, not Number: the form holds tier values as strings, and
@@ -72,6 +85,10 @@ export function sanitizeCancellationPolicy(raw) {
  * has passed. A 'non_refundable' policy has no tiers, so it's null too — the
  * Array.isArray guard covers it (a bare `.find` on the string would iterate its
  * characters).
+ *
+ * `asOfDate` is date-only; comparing it against a timed cutoff needs no special
+ * casing, since 'YYYY-MM-DDTHH:mm' > 'YYYY-MM-DD' for the same day (see the
+ * soft-spot note in the module header).
  *
  * @param {{ cutoff: string, kind: 'percent' | 'amount', value: number }[] | 'non_refundable' | null} policy
  * @param {string} asOfDate
@@ -113,15 +130,20 @@ export function localToday() {
 }
 
 /**
- * 'Sep 5' for a cutoff string. The `T00:00:00` is load-bearing — a bare
- * 'YYYY-MM-DD' is parsed as UTC and renders a day early west of Greenwich.
+ * 'Sep 5' for a date-only cutoff, 'Sep 5, 18:00' for a timed one. Both parse
+ * through a seconds-bearing local datetime string: a bare 'YYYY-MM-DD' is parsed
+ * as UTC and renders a day early west of Greenwich, and 'YYYY-MM-DDTHH:mm' with
+ * a second `T` appended is an Invalid Date.
  *
  * @param {string} cutoff
  */
 export function formatCutoff(cutoff) {
   if (!cutoff) return ''
-  return new Date(`${cutoff}T00:00:00`).toLocaleDateString(undefined, {
+  const timed = cutoff.length > 10
+  const d = new Date(timed ? `${cutoff}:00` : `${cutoff}T00:00:00`)
+  return d.toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
+    ...(timed ? { hour: '2-digit', minute: '2-digit', hour12: false } : {}),
   })
 }

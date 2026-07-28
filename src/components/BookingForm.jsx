@@ -565,13 +565,25 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         </label>
         {!nonRefundable && tiers.length > 0 && (
           <div className="space-y-2 mb-2">
-            {tiers.map((tier, i) => (
+            {tiers.map((tier, i) => {
+              // Both inputs are backed by the single `cutoff` string, which is
+              // either 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:mm'.
+              const cutoffDate = (tier.cutoff || '').slice(0, 10)
+              const cutoffTime = (tier.cutoff || '').length > 10 ? tier.cutoff.slice(11, 16) : ''
+              return (
               <div key={i} className="flex flex-wrap items-center gap-2 min-w-0">
                 <input
                   type="date"
-                  value={tier.cutoff || ''}
-                  onChange={(e) => setTier(i, { cutoff: e.target.value })}
+                  value={cutoffDate}
+                  onChange={(e) => setTier(i, { cutoff: cutoffTime ? `${e.target.value}T${cutoffTime}` : e.target.value })}
                   className="mat-input w-36 min-w-0 text-xs"
+                />
+                {/* Optional deadline time — blank means the whole day counts. */}
+                <input
+                  type="time"
+                  value={cutoffTime}
+                  onChange={(e) => setTier(i, { cutoff: e.target.value ? `${cutoffDate}T${e.target.value}` : cutoffDate })}
+                  className="mat-input w-24 min-w-0 text-xs"
                 />
                 <div className="flex rounded-xl border border-outline/40 overflow-hidden shrink-0 max-w-[7rem]">
                   {['percent', 'amount'].map((k) => (
@@ -608,7 +620,8 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                   ×
                 </button>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
         {!nonRefundable && (
