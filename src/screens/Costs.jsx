@@ -98,37 +98,6 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   // per-type booking lists). Cost math below runs on the chip-filtered set.
   const filteredItems = tripFilter === 'all' ? items : items.filter((it) => it.trip_id === tripFilter)
 
-  // Refund exposure as of `asOf`. Deliberately scope-chip INDEPENDENT: a refund
-  // goes back to whoever fronted the cost, not to each person's share, so this
-  // works off the item's effective cost rather than contribution().
-  const refundRows = []
-  let refundableHKD = 0
-  let nonRefundableHKD = 0
-  let noPolicyCount = 0
-  let noPolicyHKD = 0
-  filteredItems.forEach((it) => {
-    if (it.kind !== 'booking') return
-    // Already underway at the as-of moment — there's nothing left to cancel.
-    // start_date is 'YYYY-MM-DDTHH:mm:ss'; slicing to 16 aligns it with asOf.
-    if (String(it.booking.start_date).slice(0, 16) < asOf) return
-    const policy = sanitizeCancellationPolicy(it.booking.details?.cancellation_policy)
-    const r = refundableAsOf(policy, it.effective, asOf)
-    // No policy on file is UNKNOWN, not zero — its own bucket, never summed into
-    // the non-refundable figure. A policy of 'non_refundable' is a real zero and
-    // falls through to the non-refundable total below.
-    if (!r) {
-      noPolicyCount += 1
-      noPolicyHKD += hkdOf(it, it.effective)
-      return
-    }
-    const hkd = hkdOf(it, r.refundable)
-    refundableHKD += hkd
-    nonRefundableHKD += hkdOf(it, it.effective - r.refundable)
-    refundRows.push({ it, refundable: r.refundable, tier: r.tier, policy, hkd })
-  })
-  refundRows.sort((a, b) => b.hkd - a.hkd)
-  const hasBookings = filteredItems.some((it) => it.kind === 'booking')
-
   // Whether the viewer belongs to a party in any relevant (filtered) trip — the
   // "Us" chip only appears then. The label is that party's name.
   const relevantTrips = (trips || []).filter((t) => inSel(t.id))
@@ -179,6 +148,47 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   const unsplitItems = scope === 'everyone' ? [] : filteredItems.filter((it) => it.splits.length === 0)
   const unsplitCount = unsplitItems.length
   const unsplitTotalHKD = unsplitItems.reduce((sum, it) => sum + hkdOf(it, it.effective), 0)
+
+  // Refund exposure as of `asOf`, FOLLOWING the scope chips: under Me/Us every
+  // figure is the viewer's share, so the card answers "how much of MY money
+  // comes back". Unsplit items drop out under Me/Us exactly as they do from
+  // `scoped` below — the warning above already accounts for them.
+  const refundRows = []
+  let refundableHKD = 0
+  let nonRefundableHKD = 0
+  let noPolicyCount = 0
+  let noPolicyHKD = 0
+  filteredItems.forEach((it) => {
+    if (it.kind !== 'booking') return
+    // Already underway at the as-of moment — there's nothing left to cancel.
+    // start_date is 'YYYY-MM-DDTHH:mm:ss'; slicing to 16 aligns it with asOf.
+    if (String(it.booking.start_date).slice(0, 16) < asOf) return
+    const base = scope === 'everyone' ? it.effective : contribution(it)
+    // Under Me/Us, no share means no stake — mirror `scoped` below, which also
+    // drops zero-contribution items rather than listing them at $0.00.
+    if (base == null || (scope !== 'everyone' && base <= 0)) return
+    const policy = sanitizeCancellationPolicy(it.booking.details?.cancellation_policy)
+    const r = refundableAsOf(policy, it.effective, asOf)
+    // No policy on file is UNKNOWN, not zero — its own bucket, never summed into
+    // the non-refundable figure. A policy of 'non_refundable' is a real zero and
+    // falls through to the non-refundable total below.
+    if (!r) {
+      noPolicyCount += 1
+      noPolicyHKD += hkdOf(it, base)
+      return
+    }
+    // The refund is computed on the whole cost (so a flat tier clamps against the
+    // real total), then scaled to the viewer's fraction of it: a HK$500 refund on
+    // a 50/50 split gives each payer back HK$250.
+    const frac = it.effective > 0 ? base / it.effective : 0
+    const refundable = r.refundable * frac
+    const hkd = hkdOf(it, refundable)
+    refundableHKD += hkd
+    nonRefundableHKD += hkdOf(it, base - refundable)
+    refundRows.push({ it, refundable, tier: r.tier, policy, hkd })
+  })
+  refundRows.sort((a, b) => b.hkd - a.hkd)
+  const hasBookings = filteredItems.some((it) => it.kind === 'booking')
 
   const scoped = filteredItems
     .map((it) => ({ it, amount: contribution(it) }))
@@ -320,8 +330,9 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                 </div>
               </div>
               <p className="text-xs text-on-surface-variant/60 mt-3">
-                Full booking amounts — a refund goes back to whoever paid, so this ignores the scope
-                above. Bookings already underway at this time are left out.
+                Follows the scope selected above — under {meLabel}
+                {showUs ? ` or ${usParty.name}` : ''} these figures are your share of each refund.
+                Bookings already underway at this time are left out.
               </p>
               {noPolicyCount > 0 && (
                 <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5">
