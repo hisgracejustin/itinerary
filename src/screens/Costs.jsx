@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
 import { updateBooking, deleteBooking } from '@/lib/client-actions'
 import { toHKD, formatCurrency } from '../lib/currencies'
-import { sanitizeCancellationPolicy, refundableAsOf, localToday, formatCutoff } from '../lib/cancellation'
+import { sanitizeCancellationPolicy, refundableAsOf, localNow, formatCutoff } from '../lib/cancellation'
 import { TYPE_ICONS } from '../lib/calendar'
 import FilterChip from '../components/FilterChip'
 import BookingModal from '../components/BookingModal'
@@ -35,8 +35,9 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   // 'all' | <tripId>. Only offered on the All Trips view — with a sidebar
   // selection the list is already scoped by it, so chips would be dead.
   const [tripFilter, setTripFilter] = useState('all')
-  // "What comes back if I cancel on this date" — naive YYYY-MM-DD throughout.
-  const [asOf, setAsOf] = useState(localToday)
+  // "What comes back if I cancel at this moment" — naive 'YYYY-MM-DDTHH:mm'
+  // throughout, so a same-day cancellation deadline resolves to the right side.
+  const [asOf, setAsOf] = useState(localNow)
   const showTripChips = selectedTrips.length === 0 && trips.length > 1
 
   // Props carry the union of every trip; filter by the client-side selection.
@@ -107,8 +108,9 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   let noPolicyHKD = 0
   filteredItems.forEach((it) => {
     if (it.kind !== 'booking') return
-    // Already underway on the as-of date — there's nothing left to cancel.
-    if (String(it.booking.start_date).slice(0, 10) < asOf) return
+    // Already underway at the as-of moment — there's nothing left to cancel.
+    // start_date is 'YYYY-MM-DDTHH:mm:ss'; slicing to 16 aligns it with asOf.
+    if (String(it.booking.start_date).slice(0, 16) < asOf) return
     const policy = sanitizeCancellationPolicy(it.booking.details?.cancellation_policy)
     const r = refundableAsOf(policy, it.effective, asOf)
     // No policy on file is UNKNOWN, not zero — its own bucket, never summed into
@@ -295,10 +297,12 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                   Refundable if cancelled
                 </div>
                 <input
-                  type="date"
+                  type="datetime-local"
                   value={asOf}
-                  onChange={(e) => setAsOf(e.target.value)}
-                  className="mat-input w-40 text-xs"
+                  // Clearing the field would leave every tier looking expired —
+                  // fall back to now rather than showing a silent all-zero.
+                  onChange={(e) => setAsOf(e.target.value || localNow())}
+                  className="mat-input w-52 text-xs"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4 mt-4">
@@ -317,7 +321,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
               </div>
               <p className="text-xs text-on-surface-variant/60 mt-3">
                 Full booking amounts — a refund goes back to whoever paid, so this ignores the scope
-                above. Bookings already underway on this date are left out.
+                above. Bookings already underway at this time are left out.
               </p>
               {noPolicyCount > 0 && (
                 <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5">

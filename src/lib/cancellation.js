@@ -36,10 +36,15 @@
  *    the document names a time ("free until 6:00 PM on Sep 5"), stored as
  *    wall-clock with no timezone. Mixing the two formats is safe: string compare
  *    puts '2026-09-05T18:00' at or after '2026-09-05' and before '2026-09-06'.
- *  - SOFT SPOT: as-of values are date-only, so on the cutoff's OWN day a timed
- *    cutoff still counts as applicable — deliberately optimistic (it assumes you
- *    would cancel before that day's deadline rather than after it). The day
- *    after, it has correctly expired.
+ *  - A date-only cutoff means "through the END of that day", so comparisons
+ *    expand it to 'T23:59'. Without that, an as-of of '2026-09-05T19:23' would
+ *    read a '2026-09-05' cutoff as having expired at midnight.
+ *  - As-of values may themselves be date-only or timed. A timed as-of (the
+ *    /costs picker sends one) resolves a same-day timed cutoff EXACTLY — 19:23
+ *    is past an 18:00 deadline. SOFT SPOT: with a date-only as-of (BookingCard's
+ *    at-a-glance hint) a same-day timed cutoff still counts as applicable, which
+ *    is deliberately optimistic — it assumes you would cancel before that day's
+ *    deadline rather than after it.
  */
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -86,16 +91,16 @@ export function sanitizeCancellationPolicy(raw) {
  * Array.isArray guard covers it (a bare `.find` on the string would iterate its
  * characters).
  *
- * `asOfDate` is date-only; comparing it against a timed cutoff needs no special
- * casing, since 'YYYY-MM-DDTHH:mm' > 'YYYY-MM-DD' for the same day (see the
- * soft-spot note in the module header).
+ * A date-only cutoff runs through the END of its day, so it's expanded to 23:59
+ * before comparing — otherwise a timed `asOfDate` would read it as expired from
+ * midnight onwards. Timed cutoffs compare as-is.
  *
  * @param {{ cutoff: string, kind: 'percent' | 'amount', value: number }[] | 'non_refundable' | null} policy
- * @param {string} asOfDate
+ * @param {string} asOfDate 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:mm'
  */
 export function applicableTier(policy, asOfDate) {
   if (!Array.isArray(policy) || policy.length === 0 || !asOfDate) return null
-  return policy.find((t) => t.cutoff >= asOfDate) || null
+  return policy.find((t) => (t.cutoff.length > 10 ? t.cutoff : `${t.cutoff}T23:59`) >= asOfDate) || null
 }
 
 /**
@@ -107,7 +112,7 @@ export function applicableTier(policy, asOfDate) {
  *
  * @param {{ cutoff: string, kind: 'percent' | 'amount', value: number }[] | 'non_refundable' | null} policy
  * @param {number} effectiveCost
- * @param {string} asOfDate
+ * @param {string} asOfDate 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:mm'
  */
 export function refundableAsOf(policy, effectiveCost, asOfDate) {
   if (policy === 'non_refundable') return { refundable: 0, tier: null }
@@ -119,14 +124,25 @@ export function refundableAsOf(policy, effectiveCost, asOfDate) {
   return { refundable: Math.max(0, Math.min(raw, cost)), tier }
 }
 
+const pad = (n) => String(n).padStart(2, '0')
+
 /**
  * Today as a naive local 'YYYY-MM-DD'. NOT toISOString(): that's UTC, which is
  * still yesterday for most of the day east of Greenwich (this app's home).
  */
 export function localToday() {
   const d = new Date()
-  const pad = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/**
+ * Now as a naive local 'YYYY-MM-DDTHH:mm' — localToday plus the wall clock, for
+ * as-of values that need to resolve a same-day timed cutoff. Same anti-UTC
+ * rationale as localToday.
+ */
+export function localNow() {
+  const d = new Date()
+  return `${localToday()}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 /**
