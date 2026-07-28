@@ -38,6 +38,11 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   // "What comes back if I cancel at this moment" — naive 'YYYY-MM-DDTHH:mm'
   // throughout, so a same-day cancellation deadline resolves to the right side.
   const [asOf, setAsOf] = useState(localNow)
+  // DESELECTED refundable rows, not selected ones: everything is counted by
+  // default, including rows that appear later when the chips, trip filter or
+  // as-of moment change. Ids of rows that fall out of the list linger here
+  // harmlessly, so a row keeps its state if the user filters back to it.
+  const [deselected, setDeselected] = useState(() => new Set())
   const showTripChips = selectedTrips.length === 0 && trips.length > 1
 
   // Props carry the union of every trip; filter by the client-side selection.
@@ -154,8 +159,6 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   // comes back". Unsplit items drop out under Me/Us exactly as they do from
   // `scoped` below — the warning above already accounts for them.
   const refundRows = []
-  let refundableHKD = 0
-  let nonRefundableHKD = 0
   let noPolicyCount = 0
   let noPolicyHKD = 0
   filteredItems.forEach((it) => {
@@ -182,13 +185,48 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     // a 50/50 split gives each payer back HK$250.
     const frac = it.effective > 0 ? base / it.effective : 0
     const refundable = r.refundable * frac
-    const hkd = hkdOf(it, refundable)
-    refundableHKD += hkd
-    nonRefundableHKD += hkdOf(it, base - refundable)
-    refundRows.push({ it, refundable, tier: r.tier, policy, hkd })
+    refundRows.push({
+      it,
+      refundable,
+      tier: r.tier,
+      policy,
+      hkd: hkdOf(it, refundable),
+      nonRefHkd: hkdOf(it, base - refundable),
+    })
   })
   refundRows.sort((a, b) => b.hkd - a.hkd)
   const hasBookings = filteredItems.some((it) => it.kind === 'booking')
+
+  // The two headline figures count SELECTED rows only, so the card can answer
+  // "what if I cancel just these". The no-policy bucket has no rows of its own
+  // and stays selection-independent.
+  const selectedRows = refundRows.filter((row) => !deselected.has(row.it.id))
+  const refundableHKD = selectedRows.reduce((sum, row) => sum + row.hkd, 0)
+  const nonRefundableHKD = selectedRows.reduce((sum, row) => sum + row.nonRefHkd, 0)
+  const allSelected = refundRows.every((row) => !deselected.has(row.it.id))
+  // Which costs still have a cancellation decision to make: an upcoming booking
+  // with nothing recorded. Same set the amber note counts (minus its scope
+  // nuances), flagged inline so the culprits are findable.
+  const nowStamp = localNow()
+  const missingPolicy = (it) =>
+    it.kind === 'booking' &&
+    !sanitizeCancellationPolicy(it.booking.details?.cancellation_policy) &&
+    String(it.booking.start_date).slice(0, 16) >= nowStamp
+  const toggleRow = (id) =>
+    setDeselected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  // Only the rows currently on screen change state — ids deselected under a
+  // different filter keep theirs.
+  const toggleAll = () =>
+    setDeselected((prev) => {
+      const next = new Set(prev)
+      refundRows.forEach((row) => (allSelected ? next.add(row.it.id) : next.delete(row.it.id)))
+      return next
+    })
 
   const scoped = filteredItems
     .map((it) => ({ it, amount: contribution(it) }))
@@ -350,35 +388,60 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                 </div>
               )}
               {refundRows.length > 0 && (
-                <div className="mt-4 space-y-1">
-                  {refundRows.map(({ it, refundable, tier, policy }) => (
-                    <div
-                      key={it.id}
-                      onClick={() => openEditModal(it.booking)}
-                      className="flex items-center justify-between py-3 border-b border-outline/20 last:border-0 cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors"
+                <>
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={toggleAll}
+                      className="text-xs text-primary font-medium hover:underline"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-base">{typeIcon(it.type)}</span>
-                        <div className="min-w-0">
-                          <div className="text-sm text-on-surface font-medium truncate">{it.title}</div>
-                          <div className="text-xs text-on-surface-variant truncate">{it.subtitle}</div>
+                      {allSelected ? 'Deselect all' : 'Select all'}
+                    </button>
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    {refundRows.map(({ it, refundable, tier, policy }) => {
+                      const selected = !deselected.has(it.id)
+                      return (
+                        <div
+                          key={it.id}
+                          onClick={() => openEditModal(it.booking)}
+                          className="flex items-center justify-between gap-3 py-3 border-b border-outline/20 last:border-0 cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleRow(it.id)}
+                            // The row opens the booking; the checkbox must not.
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label={`Count ${it.title}`}
+                            className="w-4 h-4 shrink-0 rounded border-outline/50 text-primary focus:ring-primary/30"
+                          />
+                          <div className={`flex flex-1 items-center justify-between gap-3 min-w-0 ${selected ? '' : 'opacity-50'}`}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="text-base">{typeIcon(it.type)}</span>
+                              <div className="min-w-0">
+                                <div className="text-sm text-on-surface font-medium truncate">{it.title}</div>
+                                <div className="text-xs text-on-surface-variant truncate">{it.subtitle}</div>
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="text-sm font-medium text-on-surface">
+                                {formatCurrency(refundable, it.currency)}
+                              </div>
+                              <div className="text-[11px] text-on-surface-variant">
+                                {tier
+                                  ? `${tier.kind === 'percent' ? `${tier.value}%` : formatCurrency(tier.value, it.currency)} until ${formatCutoff(tier.cutoff)}`
+                                  : Array.isArray(policy)
+                                    ? `expired ${formatCutoff(policy[policy.length - 1].cutoff)}`
+                                    : 'Non-refundable'}
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-right shrink-0 ml-3">
-                        <div className="text-sm font-medium text-on-surface">
-                          {formatCurrency(refundable, it.currency)}
-                        </div>
-                        <div className="text-[11px] text-on-surface-variant">
-                          {tier
-                            ? `${tier.kind === 'percent' ? `${tier.value}%` : formatCurrency(tier.value, it.currency)} until ${formatCutoff(tier.cutoff)}`
-                            : Array.isArray(policy)
-                              ? `expired ${formatCutoff(policy[policy.length - 1].cutoff)}`
-                              : 'Non-refundable'}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                      )
+                    })}
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -429,7 +492,15 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                   <div className="flex items-center gap-3 min-w-0">
                     <span className="text-base">{typeIcon(it.type)}</span>
                     <div className="min-w-0">
-                      <div className="text-sm text-on-surface font-medium truncate">{it.title}</div>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-sm text-on-surface font-medium truncate">{it.title}</span>
+                        {missingPolicy(it) && (
+                          <span
+                            className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
+                            title="No cancellation policy recorded"
+                          />
+                        )}
+                      </div>
                       <div className="text-xs text-on-surface-variant truncate">{it.subtitle}</div>
                     </div>
                   </div>
