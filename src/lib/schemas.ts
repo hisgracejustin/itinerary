@@ -105,10 +105,11 @@ function stripUnsafeMapsUrl(details: Record<string, unknown>) {
   return details;
 }
 
-// `details` also carries `cancellation_policy` — an array of refund tiers the
-// booking modal and the refundable view on /costs read. Re-sanitize it on every
-// write with the same helper the form and the AI parser use, so a malformed tier
-// from any of the three entry points can't reach the jsonb column.
+// `details` also carries `cancellation_policy` — refund tiers or the
+// 'non_refundable' marker — which the booking modal and the refundable view on
+// /costs read. Re-sanitize it on every write with the same helper the form and
+// the AI parser use, so a malformed tier from any of the three entry points
+// can't reach the jsonb column.
 function sanitizeDetails(details: Record<string, unknown>) {
   const stripped = stripUnsafeMapsUrl(details);
   if (!("cancellation_policy" in stripped)) return stripped;

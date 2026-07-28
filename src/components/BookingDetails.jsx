@@ -158,14 +158,20 @@ export default function BookingDetails({ booking }) {
         <div>
           <h3 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">Cancellation</h3>
           <div className="rounded-xl border border-outline/20 px-4 py-1">
-            {policy.map((tier, i) => (
-              <Row key={i} label={`Until ${formatCutoff(tier.cutoff)}`}>
-                {tier.kind === 'percent'
-                  ? `${tier.value}% refund`
-                  : `${formatCurrency(tier.value, booking.cost_currency || 'USD')} refundable`}
-              </Row>
-            ))}
-            <Row label={`After ${formatCutoff(policy[policy.length - 1].cutoff)}`}>Non-refundable</Row>
+            {policy === 'non_refundable' ? (
+              <Row label="Policy">Non-refundable</Row>
+            ) : (
+              <>
+                {policy.map((tier, i) => (
+                  <Row key={i} label={`Until ${formatCutoff(tier.cutoff)}`}>
+                    {tier.kind === 'percent'
+                      ? `${tier.value}% refund`
+                      : `${formatCurrency(tier.value, booking.cost_currency || 'USD')} refundable`}
+                  </Row>
+                ))}
+                <Row label={`After ${formatCutoff(policy[policy.length - 1].cutoff)}`}>Non-refundable</Row>
+              </>
+            )}
           </div>
         </div>
       )}

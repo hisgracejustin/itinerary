@@ -180,9 +180,13 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
     setForm((prev) => ({ ...prev, details: { ...prev.details, [key]: value } }))
   }
 
-  // Cancellation tiers. `value` is held as a string like cost_amount and parsed
-  // on save (sanitizeCancellationPolicy drops the rows that never got filled in).
-  const tiers = form.details.cancellation_policy || []
+  // Cancellation policy: a tier array, the 'non_refundable' marker, or absent
+  // (unknown). Array.isArray, not `|| []` — the marker is a string, and mapping
+  // over it would render one tier row per character.
+  const nonRefundable = form.details.cancellation_policy === 'non_refundable'
+  // Tier `value` is held as a string like cost_amount and parsed on save
+  // (sanitizeCancellationPolicy drops the rows that never got filled in).
+  const tiers = Array.isArray(form.details.cancellation_policy) ? form.details.cancellation_policy : []
   const setTiers = (next) => setDetail('cancellation_policy', next)
   const setTier = (index, patch) =>
     setTiers(tiers.map((t, i) => (i === index ? { ...t, ...patch } : t)))
@@ -546,9 +550,20 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
           Cancellation Policy
         </h3>
         <p className="text-xs text-on-surface-variant/60 mb-3">
-          Refund if cancelled on or before each date. After the last date the booking is non-refundable.
+          {nonRefundable
+            ? 'Nothing comes back from this booking, whenever it is cancelled.'
+            : 'Refund if cancelled on or before each date. After the last date the booking is non-refundable.'}
         </p>
-        {tiers.length > 0 && (
+        <label className="flex items-center gap-2.5 cursor-pointer mb-3">
+          <input
+            type="checkbox"
+            checked={nonRefundable}
+            onChange={(e) => setDetail('cancellation_policy', e.target.checked ? 'non_refundable' : undefined)}
+            className="w-4 h-4 rounded border-outline/50 text-primary focus:ring-primary/30"
+          />
+          <span className="text-sm text-on-surface-variant">Non-refundable — cannot be cancelled</span>
+        </label>
+        {!nonRefundable && tiers.length > 0 && (
           <div className="space-y-2 mb-2">
             {tiers.map((tier, i) => (
               <div key={i} className="flex flex-wrap items-center gap-2 min-w-0">
@@ -596,13 +611,15 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
             ))}
           </div>
         )}
-        <button
-          type="button"
-          onClick={() => setTiers([...tiers, { cutoff: '', kind: 'percent', value: '' }])}
-          className="text-xs text-primary font-medium hover:underline"
-        >
-          + Add tier
-        </button>
+        {!nonRefundable && (
+          <button
+            type="button"
+            onClick={() => setTiers([...tiers, { cutoff: '', kind: 'percent', value: '' }])}
+            className="text-xs text-primary font-medium hover:underline"
+          >
+            + Add tier
+          </button>
+        )}
       </div>
 
       {/* Hidden submit button so form submit works from footer */}

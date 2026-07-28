@@ -112,7 +112,8 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     const policy = sanitizeCancellationPolicy(it.booking.details?.cancellation_policy)
     const r = refundableAsOf(policy, it.effective, asOf)
     // No policy on file is UNKNOWN, not zero — its own bucket, never summed into
-    // the non-refundable figure.
+    // the non-refundable figure. A policy of 'non_refundable' is a real zero and
+    // falls through to the non-refundable total below.
     if (!r) {
       noPolicyCount += 1
       noPolicyHKD += hkdOf(it, it.effective)
@@ -355,7 +356,9 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                         <div className="text-[11px] text-on-surface-variant">
                           {tier
                             ? `${tier.kind === 'percent' ? `${tier.value}%` : formatCurrency(tier.value, it.currency)} until ${formatCutoff(tier.cutoff)}`
-                            : `expired ${formatCutoff(policy[policy.length - 1].cutoff)}`}
+                            : Array.isArray(policy)
+                              ? `expired ${formatCutoff(policy[policy.length - 1].cutoff)}`
+                              : 'Non-refundable'}
                         </div>
                       </div>
                     </div>

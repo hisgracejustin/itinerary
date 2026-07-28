@@ -373,6 +373,8 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
   // is the default assumption, and this is a glance surface.
   const policyHint = (() => {
     const policy = sanitizeCancellationPolicy(details.cancellation_policy)
+    // No ↩ here: the arrow means money coming back, and none is.
+    if (policy === 'non_refundable') return 'Non-refundable'
     const tier = policy && applicableTier(policy, localToday())
     if (!tier) return null
     const value =

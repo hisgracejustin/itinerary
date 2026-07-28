@@ -3,13 +3,18 @@
  * mirrors src/lib/split.js.
  *
  * A policy lives at `details.cancellation_policy` (jsonb — no columns, no
- * migration) as an ascending list of refund tiers:
+ * migration) and is THREE-WAY:
  *
- *   Tier = {
- *     cutoff: 'YYYY-MM-DD',         // date-only, naive
- *     kind:   'percent' | 'amount', // what `value` means
- *     value:  number                // 0-100, or a flat amount in cost_currency
- *   }
+ *   Tier[]           — tiered refunds, an ascending list of:
+ *                        { cutoff: 'YYYY-MM-DD',         // date-only, naive
+ *                          kind:   'percent' | 'amount', // what `value` means
+ *                          value:  number }              // 0-100, or a flat
+ *                                                        // cost_currency amount
+ *   'non_refundable' — KNOWN non-cancellable: nothing comes back, ever.
+ *   null             — UNKNOWN: no policy recorded. Callers must keep this
+ *                      distinct from 'non_refundable' (an unrecorded policy is
+ *                      not evidence of a non-refundable booking) — /costs
+ *                      buckets the two separately.
  *
  * Semantics:
  *  - The tier that applies on an as-of date D is the EARLIEST tier with
@@ -32,15 +37,16 @@
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 /**
- * Normalize whatever was stored, parsed or typed into a sorted tier list, or
- * null if nothing usable survives. Malformed tiers are DROPPED rather than
- * throwing: this runs on the AI parser's output, on form state mid-edit, and on
- * legacy rows, and one bad tier must never block a save.
+ * Normalize whatever was stored, parsed or typed into a sorted tier list, the
+ * 'non_refundable' marker, or null if nothing usable survives. Malformed tiers
+ * are DROPPED rather than throwing: this runs on the AI parser's output, on form
+ * state mid-edit, and on legacy rows, and one bad tier must never block a save.
  *
  * @param {unknown} raw
- * @returns {{ cutoff: string, kind: 'percent' | 'amount', value: number }[] | null}
+ * @returns {{ cutoff: string, kind: 'percent' | 'amount', value: number }[] | 'non_refundable' | null}
  */
 export function sanitizeCancellationPolicy(raw) {
+  if (raw === 'non_refundable') return 'non_refundable'
   if (!Array.isArray(raw)) return null
   const tiers = []
   for (const t of raw) {
@@ -63,9 +69,11 @@ export function sanitizeCancellationPolicy(raw) {
 
 /**
  * The tier that applies when cancelling on `asOfDate`, or null once every cutoff
- * has passed (non-refundable).
+ * has passed. A 'non_refundable' policy has no tiers, so it's null too — the
+ * Array.isArray guard covers it (a bare `.find` on the string would iterate its
+ * characters).
  *
- * @param {{ cutoff: string, kind: 'percent' | 'amount', value: number }[] | null} policy
+ * @param {{ cutoff: string, kind: 'percent' | 'amount', value: number }[] | 'non_refundable' | null} policy
  * @param {string} asOfDate
  */
 export function applicableTier(policy, asOfDate) {
@@ -77,13 +85,15 @@ export function applicableTier(policy, asOfDate) {
  * What comes back if this booking is cancelled on `asOfDate`.
  *
  * Returns null when there's no policy on file — "unknown", which callers must
- * NOT render as zero: an unrecorded policy is not a non-refundable booking.
+ * NOT render as zero: an unrecorded policy is not a non-refundable booking. A
+ * policy of 'non_refundable' IS a zero, and says so.
  *
- * @param {{ cutoff: string, kind: 'percent' | 'amount', value: number }[] | null} policy
+ * @param {{ cutoff: string, kind: 'percent' | 'amount', value: number }[] | 'non_refundable' | null} policy
  * @param {number} effectiveCost
  * @param {string} asOfDate
  */
 export function refundableAsOf(policy, effectiveCost, asOfDate) {
+  if (policy === 'non_refundable') return { refundable: 0, tier: null }
   if (!Array.isArray(policy) || policy.length === 0) return null
   const cost = Number(effectiveCost) || 0
   const tier = applicableTier(policy, asOfDate)

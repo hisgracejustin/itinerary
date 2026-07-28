@@ -38,7 +38,9 @@ All types may also include:
 - notes: free-text info worth keeping that fits no other field (host contact, luggage allowance, meal, special instructions). Omit if none.
 - cancellation_policy: array of refund tiers, ONLY if the document states a cancellation policy, e.g.
   [{ "cutoff": "2026-09-05", "kind": "percent", "value": 100 }, { "cutoff": "2026-09-20", "kind": "amount", "value": 500 }]
-  Each tier means: cancelling on or before "cutoff" (YYYY-MM-DD) refunds "value" — a percent of the booking cost ("kind": "percent") or a flat amount in cost_currency ("kind": "amount"). Order tiers by cutoff ascending. Omit entirely if no policy is stated. NEVER invent a policy.
+  Each tier means: cancelling on or before "cutoff" (YYYY-MM-DD) refunds "value" — a percent of the booking cost ("kind": "percent") or a flat amount in cost_currency ("kind": "amount"). Order tiers by cutoff ascending.
+  If instead the document explicitly states the booking is non-refundable / cannot be cancelled, use the string "non_refundable" in place of the array: "cancellation_policy": "non_refundable".
+  Omit the field entirely if no policy is stated. NEVER invent a policy.
 
 Layover / connecting flight handling:
 - For multi-leg journeys (e.g. SFO → LAX → NRT), return EACH leg as a separate flight booking.
