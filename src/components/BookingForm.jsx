@@ -571,7 +571,10 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
               const cutoffDate = (tier.cutoff || '').slice(0, 10)
               const cutoffTime = (tier.cutoff || '').length > 10 ? tier.cutoff.slice(11, 16) : ''
               return (
-              <div key={i} className="flex flex-wrap items-center gap-2 min-w-0">
+              // The inputs wrap among themselves inside the inner group; the
+              // remove button sits outside it so it can never drop to its own line.
+              <div key={i} className="flex items-center gap-2 min-w-0">
+                <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
                 <input
                   type="date"
                   value={cutoffDate}
@@ -613,6 +616,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                   }
                   className="mat-input w-20"
                 />
+                </div>
                 <button
                   type="button"
                   onClick={() => setTiers(tiers.filter((_, j) => j !== i))}
