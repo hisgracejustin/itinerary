@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { CURRENCIES, formatCurrency } from '../lib/currencies'
+import { sanitizeCancellationPolicy } from '../lib/cancellation'
 import { useTripContext } from '../lib/trip-context'
 import SplitEditor from './SplitEditor'
 import ChargedRateEditor from './ChargedRateEditor'
@@ -25,6 +26,7 @@ const TYPE_FIELDS = {
     { key: 'seat', label: 'Seat', placeholder: '24A' },
     { key: 'terminal', label: 'Terminal', placeholder: '3' },
     { key: 'gate', label: 'Gate', placeholder: 'G12' },
+    { key: 'notes', label: 'Notes', placeholder: '23kg checked · window seat requested', multiline: true },
   ],
   train: [
     { key: 'departure_station', label: 'Departure Station', placeholder: 'Tokyo Station' },
@@ -32,12 +34,14 @@ const TYPE_FIELDS = {
     { key: 'train_number', label: 'Train Number', placeholder: 'Nozomi 1' },
     { key: 'car', label: 'Car', placeholder: '5' },
     { key: 'seat', label: 'Seat', placeholder: '3A' },
+    { key: 'notes', label: 'Notes', placeholder: 'Reserved luggage rack', multiline: true },
   ],
   bus: [
     { key: 'departure_station', label: 'Departure Stop', placeholder: 'Central Bus Station' },
     { key: 'arrival_station', label: 'Arrival Stop', placeholder: 'Airport Terminal 1' },
     { key: 'bus_number', label: 'Bus/Route Number', placeholder: 'A1' },
     { key: 'seat', label: 'Seat', placeholder: '12' },
+    { key: 'notes', label: 'Notes', placeholder: 'Pick-up at the north exit', multiline: true },
   ],
   rental: [
     { key: 'vehicle_type', label: 'Vehicle Type', options: ['Car', 'Motorcycle', 'RV / Camper', 'Scooter', 'Bicycle', 'Other'] },
@@ -53,6 +57,8 @@ const TYPE_FIELDS = {
     { key: 'deck', label: 'Deck', placeholder: '8' },
     { key: 'departure_port', label: 'Departure Port', placeholder: 'Yokohama' },
     { key: 'arrival_port', label: 'Arrival Port', placeholder: 'Kobe' },
+    { key: 'ports_of_call', label: 'Ports of Call (comma-separated)', placeholder: 'Nagasaki, Busan, Kagoshima' },
+    { key: 'notes', label: 'Notes', placeholder: 'Dinner seating 19:30', multiline: true },
   ],
   hotel: [
     { key: 'address', label: 'Address', placeholder: '1-2-3 Shibuya, Tokyo' },
@@ -60,6 +66,7 @@ const TYPE_FIELDS = {
     { key: 'check_out_time', label: 'Check-out Time', placeholder: '11:00' },
     { key: 'room_type', label: 'Room Type', placeholder: 'Deluxe King' },
     { key: 'maps_url', label: 'Google Maps URL', placeholder: 'https://maps.google.com/...' },
+    { key: 'notes', label: 'Notes', placeholder: 'Host: +81 90 1234 5678 · late check-in', multiline: true },
   ],
   activity: [
     { key: 'location', label: 'Location', placeholder: 'Fushimi Inari Shrine' },
@@ -125,7 +132,17 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
           : [],
         charged_currency: booking.charged_currency || '',
         charged_rate: booking.charged_rate != null ? String(booking.charged_rate) : '',
-        details: booking.details || {},
+        // ports_of_call is stored as an array (the cards join it), but the
+        // generic detail input binds a string — an array would coerce to "a,b"
+        // and save straight back as a string, breaking the .join() render.
+        details: booking.details
+          ? {
+              ...booking.details,
+              ...(Array.isArray(booking.details.ports_of_call)
+                ? { ports_of_call: booking.details.ports_of_call.join(', ') }
+                : {}),
+            }
+          : {},
       })
     }
   }, [booking])
@@ -162,6 +179,13 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
   const setDetail = (key, value) => {
     setForm((prev) => ({ ...prev, details: { ...prev.details, [key]: value } }))
   }
+
+  // Cancellation tiers. `value` is held as a string like cost_amount and parsed
+  // on save (sanitizeCancellationPolicy drops the rows that never got filled in).
+  const tiers = form.details.cancellation_policy || []
+  const setTiers = (next) => setDetail('cancellation_policy', next)
+  const setTier = (index, patch) =>
+    setTiers(tiers.map((t, i) => (i === index ? { ...t, ...patch } : t)))
 
   const validate = () => {
     const errs = {}
@@ -227,6 +251,20 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
       if (isInformal) return `${str.slice(0, 10)}T00:00:00`
       return str.length <= 10 ? `${str}T00:00:00` : str
     }
+    // Two details keys aren't stored the way they're typed: ports_of_call is an
+    // array (the cards join it) and tier values are strings from their inputs.
+    // The `details` line below only nulls the whole object when it's empty, so
+    // half-filled tiers would otherwise persist verbatim.
+    const details = { ...form.details }
+    const ports =
+      typeof details.ports_of_call === 'string'
+        ? details.ports_of_call.split(/[,·]/).map((p) => p.trim()).filter(Boolean)
+        : details.ports_of_call
+    if (Array.isArray(ports) && ports.length > 0) details.ports_of_call = ports
+    else delete details.ports_of_call
+    const policy = sanitizeCancellationPolicy(details.cancellation_policy)
+    if (policy) details.cancellation_policy = policy
+    else delete details.cancellation_policy
     onSave({
       ...form,
       start_date: wall(form.start_date),
@@ -248,7 +286,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         form.cost_amount && form.charged_currency && parseFloat(form.charged_rate) > 0
           ? parseFloat(form.charged_rate)
           : null,
-      details: Object.keys(form.details).length > 0 ? form.details : null,
+      details: Object.keys(details).length > 0 ? details : null,
     })
   }
 
@@ -501,6 +539,71 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
           </div>
         </div>
       )}
+
+      {/* Cancellation policy (all types) */}
+      <div>
+        <h3 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-1">
+          Cancellation Policy
+        </h3>
+        <p className="text-xs text-on-surface-variant/60 mb-3">
+          Refund if cancelled on or before each date. After the last date the booking is non-refundable.
+        </p>
+        {tiers.length > 0 && (
+          <div className="space-y-2 mb-2">
+            {tiers.map((tier, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 min-w-0">
+                <input
+                  type="date"
+                  value={tier.cutoff || ''}
+                  onChange={(e) => setTier(i, { cutoff: e.target.value })}
+                  className="mat-input w-36 min-w-0 text-xs"
+                />
+                <div className="flex rounded-xl border border-outline/40 overflow-hidden shrink-0 max-w-[7rem]">
+                  {['percent', 'amount'].map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setTier(i, { kind: k })}
+                      className={`px-2.5 py-2 text-xs min-w-0 transition-all duration-150 ${
+                        (tier.kind || 'percent') === k
+                          ? 'bg-primary-light text-primary font-medium'
+                          : 'text-on-surface-variant hover:bg-surface-container'
+                      }`}
+                    >
+                      <span className="block truncate">
+                        {k === 'percent' ? '%' : form.cost_currency || 'amt'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={tier.value ?? ''}
+                  onChange={(e) => setTier(i, { value: e.target.value.replace(/[^0-9.]/g, '') })}
+                  placeholder={(tier.kind || 'percent') === 'percent' ? '100' : '500'}
+                  className="mat-input w-20"
+                />
+                <button
+                  type="button"
+                  onClick={() => setTiers(tiers.filter((_, j) => j !== i))}
+                  className="shrink-0 w-8 h-8 rounded-full text-on-surface-variant hover:bg-surface-container transition-colors duration-150"
+                  aria-label="Remove tier"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setTiers([...tiers, { cutoff: '', kind: 'percent', value: '' }])}
+          className="text-xs text-primary font-medium hover:underline"
+        >
+          + Add tier
+        </button>
+      </div>
 
       {/* Hidden submit button so form submit works from footer */}
       <button type="submit" className="hidden" />

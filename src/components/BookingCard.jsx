@@ -1,6 +1,8 @@
 import { Fragment } from 'react'
 import { TYPE_COLORS, TYPE_ICONS, formatTime, getRentalIcon } from '../lib/calendar'
 import { getFlightDuration } from '../lib/airports'
+import { formatCurrency } from '../lib/currencies'
+import { sanitizeCancellationPolicy, applicableTier, localToday, formatCutoff } from '../lib/cancellation'
 
 function layoverDuration(arrivalISO, departureISO) {
   const arr = new Date(arrivalISO)
@@ -112,6 +114,9 @@ function FlightDetails({ booking, details }) {
         {details.seat && <span>Seat {details.seat}</span>}
         {booking.confirmation_number && <span>Conf: {booking.confirmation_number}</span>}
       </div>
+      {details.notes && (
+        <div className="text-xs opacity-60 italic whitespace-pre-wrap break-words">{details.notes}</div>
+      )}
     </div>
   )
 }
@@ -151,6 +156,9 @@ function TrainDetails({ booking, details }) {
         {details.seat && <span>Seat {details.seat}</span>}
         {booking.confirmation_number && <span>Conf: {booking.confirmation_number}</span>}
       </div>
+      {details.notes && (
+        <div className="text-xs opacity-60 italic whitespace-pre-wrap break-words">{details.notes}</div>
+      )}
     </div>
   )
 }
@@ -202,6 +210,9 @@ function CruiseDetails({ booking, details }) {
         <span>{formatTime(booking.start_date)}</span>
         {booking.end_date && <span>→ {formatTime(booking.end_date)}</span>}
       </div>
+      {details.notes && (
+        <div className="text-xs opacity-60 italic whitespace-pre-wrap break-words">{details.notes}</div>
+      )}
     </div>
   )
 }
@@ -251,6 +262,9 @@ function HotelDetails({ booking, details }) {
       </div>
       {details.address && (
         <div className="text-xs opacity-70">📍 {details.address}</div>
+      )}
+      {details.notes && (
+        <div className="text-xs opacity-60 italic whitespace-pre-wrap break-words">{details.notes}</div>
       )}
     </div>
   )
@@ -304,6 +318,9 @@ function RentalDetails({ booking, details }) {
       {oneWay && (
         <div className="text-xs opacity-70">🏁 Drop-off: {details.dropoff_location}</div>
       )}
+      {details.notes && (
+        <div className="text-xs opacity-60 italic whitespace-pre-wrap break-words">{details.notes}</div>
+      )}
     </div>
   )
 }
@@ -330,7 +347,7 @@ function ActivityDetails({ booking, details }) {
         <div className="text-xs opacity-70">📍 {details.address}</div>
       )}
       {details.notes && (
-        <div className="text-xs opacity-60 italic">{details.notes}</div>
+        <div className="text-xs opacity-60 italic whitespace-pre-wrap break-words">{details.notes}</div>
       )}
     </div>
   )
@@ -351,6 +368,19 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
   const details = parseDetails(booking)
   const DetailComponent = DETAIL_COMPONENTS[booking.type] || ActivityDetails
   const mapsUrl = details.maps_url
+
+  // Refund status at a glance. An expired policy says nothing — non-refundable
+  // is the default assumption, and this is a glance surface.
+  const policyHint = (() => {
+    const policy = sanitizeCancellationPolicy(details.cancellation_policy)
+    const tier = policy && applicableTier(policy, localToday())
+    if (!tier) return null
+    const value =
+      tier.kind === 'percent'
+        ? `${tier.value}%`
+        : formatCurrency(tier.value, booking.cost_currency || 'USD')
+    return `↩ ${value} until ${formatCutoff(tier.cutoff)}`
+  })()
 
   // Determine check-in / check-out context for multi-day bookings
   const stayNote = (() => {
@@ -427,12 +457,16 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
       className={`p-4 rounded-xl border-l-4 ${colors.border} bg-white shadow-elevation-1 hover:shadow-elevation-2 transition-all duration-150 cursor-pointer relative mat-press`}
     >
       <DetailComponent booking={booking} details={details} />
-      {((!hideTrip && booking.trip) || mapsUrl || stayNote) && (
-        <div className="mt-2.5 pt-2 border-t border-outline/20 flex items-center justify-between">
-          <span className="text-xs text-on-surface-variant">
+      {((!hideTrip && booking.trip) || mapsUrl || stayNote || policyHint) && (
+        <div className="mt-2.5 pt-2 border-t border-outline/20 flex items-center justify-between gap-2">
+          <span className="text-xs text-on-surface-variant min-w-0 truncate">
             {stayNote && <span className="text-on-surface font-medium">{stayNote}</span>}
             {stayNote && !hideTrip && booking.trip && <span className="mx-1.5 opacity-40">·</span>}
             {!hideTrip && (booking.trip || '')}
+            {policyHint && (stayNote || (!hideTrip && booking.trip)) && (
+              <span className="mx-1.5 opacity-40">·</span>
+            )}
+            {policyHint}
           </span>
           {mapsUrl && (
             <a

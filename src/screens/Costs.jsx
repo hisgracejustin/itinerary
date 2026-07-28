@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
 import { updateBooking, deleteBooking } from '@/lib/client-actions'
 import { toHKD, formatCurrency } from '../lib/currencies'
+import { sanitizeCancellationPolicy, refundableAsOf, localToday, formatCutoff } from '../lib/cancellation'
 import { TYPE_ICONS } from '../lib/calendar'
 import FilterChip from '../components/FilterChip'
 import BookingModal from '../components/BookingModal'
@@ -34,6 +35,8 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   // 'all' | <tripId>. Only offered on the All Trips view — with a sidebar
   // selection the list is already scoped by it, so chips would be dead.
   const [tripFilter, setTripFilter] = useState('all')
+  // "What comes back if I cancel on this date" — naive YYYY-MM-DD throughout.
+  const [asOf, setAsOf] = useState(localToday)
   const showTripChips = selectedTrips.length === 0 && trips.length > 1
 
   // Props carry the union of every trip; filter by the client-side selection.
@@ -93,6 +96,35 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   // Trip chips sub-filter the sidebar selection (the same compose pattern as the
   // per-type booking lists). Cost math below runs on the chip-filtered set.
   const filteredItems = tripFilter === 'all' ? items : items.filter((it) => it.trip_id === tripFilter)
+
+  // Refund exposure as of `asOf`. Deliberately scope-chip INDEPENDENT: a refund
+  // goes back to whoever fronted the cost, not to each person's share, so this
+  // works off the item's effective cost rather than contribution().
+  const refundRows = []
+  let refundableHKD = 0
+  let nonRefundableHKD = 0
+  let noPolicyCount = 0
+  let noPolicyHKD = 0
+  filteredItems.forEach((it) => {
+    if (it.kind !== 'booking') return
+    // Already underway on the as-of date — there's nothing left to cancel.
+    if (String(it.booking.start_date).slice(0, 10) < asOf) return
+    const policy = sanitizeCancellationPolicy(it.booking.details?.cancellation_policy)
+    const r = refundableAsOf(policy, it.effective, asOf)
+    // No policy on file is UNKNOWN, not zero — its own bucket, never summed into
+    // the non-refundable figure.
+    if (!r) {
+      noPolicyCount += 1
+      noPolicyHKD += hkdOf(it, it.effective)
+      return
+    }
+    const hkd = hkdOf(it, r.refundable)
+    refundableHKD += hkd
+    nonRefundableHKD += hkdOf(it, it.effective - r.refundable)
+    refundRows.push({ it, refundable: r.refundable, tier: r.tier, policy, hkd })
+  })
+  refundRows.sort((a, b) => b.hkd - a.hkd)
+  const hasBookings = filteredItems.some((it) => it.kind === 'booking')
 
   // Whether the viewer belongs to a party in any relevant (filtered) trip — the
   // "Us" chip only appears then. The label is that party's name.
@@ -253,6 +285,85 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
               </div>
             )}
           </div>
+
+          {/* Refundable if cancelled */}
+          {hasBookings && (
+            <div className="mat-surface p-6 lg:col-span-2 min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">
+                  Refundable if cancelled
+                </div>
+                <input
+                  type="date"
+                  value={asOf}
+                  onChange={(e) => setAsOf(e.target.value)}
+                  className="mat-input w-40 text-xs"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div className="min-w-0">
+                  <div className="text-2xl font-medium text-emerald-600">
+                    ~HK${refundableHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </div>
+                  <div className="text-xs text-on-surface-variant mt-0.5">Refundable</div>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-2xl font-medium text-on-surface">
+                    ~HK${nonRefundableHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </div>
+                  <div className="text-xs text-on-surface-variant mt-0.5">Non-refundable</div>
+                </div>
+              </div>
+              <p className="text-xs text-on-surface-variant/60 mt-3">
+                Full booking amounts — a refund goes back to whoever paid, so this ignores the scope
+                above. Bookings already underway on this date are left out.
+              </p>
+              {noPolicyCount > 0 && (
+                <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5">
+                  <svg className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.59 3z" />
+                  </svg>
+                  <p className="text-xs text-amber-700 min-w-0">
+                    {noPolicyCount} booking{noPolicyCount === 1 ? '' : 's'}{' '}
+                    <span className="font-semibold whitespace-nowrap">
+                      (~HK${noPolicyHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })})
+                    </span>{' '}
+                    {noPolicyCount === 1 ? 'has' : 'have'} no cancellation policy info and{' '}
+                    {noPolicyCount === 1 ? "isn't" : "aren't"} counted.
+                  </p>
+                </div>
+              )}
+              {refundRows.length > 0 && (
+                <div className="mt-4 space-y-1">
+                  {refundRows.map(({ it, refundable, tier, policy }) => (
+                    <div
+                      key={it.id}
+                      onClick={() => openEditModal(it.booking)}
+                      className="flex items-center justify-between py-3 border-b border-outline/20 last:border-0 cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-base">{typeIcon(it.type)}</span>
+                        <div className="min-w-0">
+                          <div className="text-sm text-on-surface font-medium truncate">{it.title}</div>
+                          <div className="text-xs text-on-surface-variant truncate">{it.subtitle}</div>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0 ml-3">
+                        <div className="text-sm font-medium text-on-surface">
+                          {formatCurrency(refundable, it.currency)}
+                        </div>
+                        <div className="text-[11px] text-on-surface-variant">
+                          {tier
+                            ? `${tier.kind === 'percent' ? `${tier.value}%` : formatCurrency(tier.value, it.currency)} until ${formatCutoff(tier.cutoff)}`
+                            : `expired ${formatCutoff(policy[policy.length - 1].cutoff)}`}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* By type summary */}
           <div className="mat-surface p-6 min-w-0">

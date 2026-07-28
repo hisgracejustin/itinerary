@@ -1023,6 +1023,13 @@ function AgendaItem({ booking, displayDate, onClick }) {
           )}
         </div>
       </div>
+      {/* Notes preview — line breaks preserved, but capped so one long note
+          can't push the rest of the day's agenda off screen. */}
+      {details.notes && (
+        <div className="mt-1.5 text-xs text-on-surface-variant italic whitespace-pre-wrap break-words line-clamp-3">
+          {details.notes}
+        </div>
+      )}
       {/* Layover route visual */}
       {layovers.length > 0 && (
         <div className="mt-2 pt-2 border-t border-gray-100">

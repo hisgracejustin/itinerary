@@ -1,4 +1,5 @@
 import { formatCurrency } from '../lib/currencies'
+import { sanitizeCancellationPolicy, formatCutoff } from '../lib/cancellation'
 import { itemUnitTransfers } from '../lib/split'
 import { useTripContext } from '../lib/trip-context'
 
@@ -34,6 +35,7 @@ const DETAIL_LABELS = {
   deck: 'Deck',
   departure_port: 'Departure Port',
   arrival_port: 'Arrival Port',
+  ports_of_call: 'Ports of Call',
   address: 'Address',
   check_in_time: 'Check-in Time',
   check_out_time: 'Check-out Time',
@@ -45,7 +47,7 @@ const DETAIL_LABELS = {
 }
 
 // details keys that aren't shown as plain rows here
-const SKIP_DETAIL_KEYS = new Set(['informal', 'layovers', 'maps_url'])
+const SKIP_DETAIL_KEYS = new Set(['informal', 'layovers', 'maps_url', 'cancellation_policy'])
 
 function formatDate(iso, dateOnly) {
   if (!iso) return null
@@ -89,8 +91,10 @@ export default function BookingDetails({ booking }) {
   const start = formatDate(booking.start_date, dateOnly)
   const end = formatDate(booking.end_date, dateOnly)
   const detailEntries = Object.entries(details).filter(
-    ([k, v]) => !SKIP_DETAIL_KEYS.has(k) && v != null && v !== '',
+    ([k, v]) => !SKIP_DETAIL_KEYS.has(k) && v != null && v !== '' && !(Array.isArray(v) && v.length === 0),
   )
+  // Re-sanitized on read: seeded and legacy rows never passed through the Zod layer.
+  const policy = sanitizeCancellationPolicy(details.cancellation_policy)
 
   return (
     <div className="space-y-4 min-w-0">
@@ -132,11 +136,36 @@ export default function BookingDetails({ booking }) {
         <div>
           <h3 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">Details</h3>
           <div className="rounded-xl border border-outline/20 px-4 py-1">
-            {detailEntries.map(([key, value]) => (
-              <Row key={key} label={DETAIL_LABELS[key] || key.replace(/_/g, ' ')}>
-                {String(value)}
+            {detailEntries.map(([key, value]) => {
+              const text = Array.isArray(value) ? value.join(' · ') : String(value)
+              return (
+                <Row key={key} label={DETAIL_LABELS[key] || key.replace(/_/g, ' ')}>
+                  {/* Notes are typed with Enter; without pre-wrap every line
+                      collapses into one run-on paragraph. */}
+                  {text.includes('\n') ? (
+                    <span className="block whitespace-pre-wrap break-words">{text}</span>
+                  ) : (
+                    text
+                  )}
+                </Row>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {policy && (
+        <div>
+          <h3 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">Cancellation</h3>
+          <div className="rounded-xl border border-outline/20 px-4 py-1">
+            {policy.map((tier, i) => (
+              <Row key={i} label={`Until ${formatCutoff(tier.cutoff)}`}>
+                {tier.kind === 'percent'
+                  ? `${tier.value}% refund`
+                  : `${formatCurrency(tier.value, booking.cost_currency || 'USD')} refundable`}
               </Row>
             ))}
+            <Row label={`After ${formatCutoff(policy[policy.length - 1].cutoff)}`}>Non-refundable</Row>
           </div>
         </div>
       )}

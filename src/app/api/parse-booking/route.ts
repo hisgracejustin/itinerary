@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { sanitizeCancellationPolicy } from "@/lib/cancellation";
 
 export const runtime = "nodejs";
 
@@ -28,10 +29,16 @@ Type-specific detail fields to extract:
 - Flight: departure_airport, arrival_airport, flight_number, seat, terminal, gate
 - Train: departure_station, arrival_station, train_number, car, seat
 - Bus: departure_station, arrival_station, bus_number, seat
-- Rental (rental car/motorcycle/RV — agencies like Hertz/Avis or platforms like Turo, Riders Share, Getaround): vehicle_type (one of: Car, Motorcycle, RV / Camper, Scooter, Bicycle, Other), pickup_location, dropoff_location (only if different from pickup), insurance. Title = the vehicle (e.g. "2025 Royal Enfield Himalayan 450"), provider = the rental company or platform, start_date = pick-up time, end_date = drop-off/return time.
-- Cruise: ship_name, cabin, deck, departure_port, arrival_port
-- Hotel: address, check_in_time, check_out_time, room_type
-- Activity: location, address, duration, notes, maps_url
+- Rental (rental car/motorcycle/RV — agencies like Hertz/Avis or platforms like Turo, Riders Share, Getaround): vehicle_type (one of: Car, Motorcycle, RV / Camper, Scooter, Bicycle, Other), pickup_location, dropoff_location (only if different from pickup), insurance, maps_url. Title = the vehicle (e.g. "2025 Royal Enfield Himalayan 450"), provider = the rental company or platform, start_date = pick-up time, end_date = drop-off/return time.
+- Cruise: ship_name, cabin, deck, departure_port, arrival_port, ports_of_call (array of intermediate port names, in order)
+- Hotel: address, check_in_time, check_out_time, room_type, maps_url
+- Activity: location, address, duration, maps_url
+
+All types may also include:
+- notes: free-text info worth keeping that fits no other field (host contact, luggage allowance, meal, special instructions). Omit if none.
+- cancellation_policy: array of refund tiers, ONLY if the document states a cancellation policy, e.g.
+  [{ "cutoff": "2026-09-05", "kind": "percent", "value": 100 }, { "cutoff": "2026-09-20", "kind": "amount", "value": 500 }]
+  Each tier means: cancelling on or before "cutoff" (YYYY-MM-DD) refunds "value" — a percent of the booking cost ("kind": "percent") or a flat amount in cost_currency ("kind": "amount"). Order tiers by cutoff ascending. Omit entirely if no policy is stated. NEVER invent a policy.
 
 Layover / connecting flight handling:
 - For multi-leg journeys (e.g. SFO → LAX → NRT), return EACH leg as a separate flight booking.
@@ -43,7 +50,7 @@ Rules:
 - Use null for any field you cannot find in the document. NEVER hallucinate data.
 - IMPORTANT: Do NOT apply any timezone conversions. Use times EXACTLY as they appear in the document. If it says "7:30 AM" then use "07:30:00". If it says "3:30 PM" use "15:30:00". Never convert between timezones.
 - For round-trip flights, return each direction as a separate booking.
-- For maps_url: if an address is available, generate a Google Maps search URL like "https://www.google.com/maps/search/" followed by the URL-encoded address.
+- For maps_url (hotel, rental and activity): if an address is available, generate a Google Maps search URL like "https://www.google.com/maps/search/" followed by the URL-encoded address.
 - If the document is NOT a booking/travel document, return: { "error": "This doesn't appear to be a booking confirmation. Please upload a screenshot of a flight, hotel, train, bus, cruise, rental, or activity booking." }
 - Return ONLY the JSON object, no markdown fencing, no explanation.`;
 
@@ -207,6 +214,17 @@ export async function POST(req: Request) {
       // would total into silently wrong money. Normalize here so every consumer
       // (merge, form, per-leg save) sees a clean number or null.
       b.cost_amount = normalizeAmount(b.cost_amount);
+      // Same details sanitation the Zod layer applies on save — a hallucinated
+      // tier shape or a stringified port list would otherwise reach the form and
+      // (for the policy) render as [object Object].
+      if (b.details && typeof b.details === "object") {
+        const d = b.details as Record<string, unknown>;
+        const policy = sanitizeCancellationPolicy(d.cancellation_policy);
+        if (policy) d.cancellation_policy = policy;
+        else delete d.cancellation_policy;
+        if (d.ports_of_call !== undefined && (!Array.isArray(d.ports_of_call) || d.ports_of_call.length === 0)) delete d.ports_of_call;
+        if (d.notes !== undefined && typeof d.notes !== "string") delete d.notes;
+      }
     }
 
     return json(parsed, 200);

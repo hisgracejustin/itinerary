@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CURRENCIES } from "./currencies";
+import { sanitizeCancellationPolicy } from "./cancellation";
 
 export const bookingTypeSchema = z.enum([
   "flight",
@@ -104,6 +105,20 @@ function stripUnsafeMapsUrl(details: Record<string, unknown>) {
   return details;
 }
 
+// `details` also carries `cancellation_policy` — an array of refund tiers the
+// booking modal and the refundable view on /costs read. Re-sanitize it on every
+// write with the same helper the form and the AI parser use, so a malformed tier
+// from any of the three entry points can't reach the jsonb column.
+function sanitizeDetails(details: Record<string, unknown>) {
+  const stripped = stripUnsafeMapsUrl(details);
+  if (!("cancellation_policy" in stripped)) return stripped;
+  const policy = sanitizeCancellationPolicy(stripped.cancellation_policy);
+  const next = { ...stripped };
+  if (policy) next.cancellation_policy = policy;
+  else delete next.cancellation_policy;
+  return next;
+}
+
 const bookingBaseShape = {
   id: z.string().optional(),
   trip_id: z.string().uuid(),
@@ -113,7 +128,7 @@ const bookingBaseShape = {
   end_date: z.string().nullish(),
   confirmation_number: z.string().nullish(),
   provider: z.string().nullish(),
-  details: z.record(z.string(), z.unknown()).transform(stripUnsafeMapsUrl).nullish(),
+  details: z.record(z.string(), z.unknown()).transform(sanitizeDetails).nullish(),
   cost_amount: z.number().nullish(),
   cost_currency: z.string().nullish(),
   cost_share: z.number().nullish(),
