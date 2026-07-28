@@ -17,6 +17,8 @@
  *                          credit?: {                    // optional, see below
  *                            kind:    'percent' | 'amount',
  *                            value:   number,
+ *                            mode:    'or'                // instead of the cash
+ *                                   | 'and',              // on top of it
  *                            expiry?: 'YYYY-MM-DD' } }
  *   'non_refundable' — KNOWN non-cancellable: nothing comes back, ever.
  *   null             — UNKNOWN: no policy recorded. Callers must keep this
@@ -38,11 +40,20 @@
  *    reduced booking can't refund more than was spent.
  *  - A tier's optional `credit` is what comes back as VOUCHER rather than cash —
  *    future-travel credit, an airline's flight credit, a re-booking voucher. It
- *    is a rider on the tier, not a replacement: cash and credit are both paid out
- *    by the same tier and are reported separately, never summed (one is money
- *    back, the other is money you must spend with the same provider). `kind` and
- *    `value` mirror the cash side exactly — a percent of the effective cost, or a
- *    flat cost_currency amount clamped to it.
+ *    is a rider on the tier: cash and credit are reported separately and never
+ *    summed by this module (one is money back, the other is money you must spend
+ *    with the same provider). `kind` and `value` mirror the cash side exactly — a
+ *    percent of the effective cost, or a flat cost_currency amount clamped to it.
+ *  - `credit.mode` says how the voucher relates to the cash on its own tier:
+ *      'or'  — INSTEAD of it, a choice at cancellation time ("75% refund, or
+ *              100% in travel credit"). You get one or the other, so a caller
+ *              netting out a worst case takes max(cash, credit), not the sum.
+ *              This is how airline credits work, and it is the DEFAULT — every
+ *              sanitized credit carries a mode, and anything but 'and' is 'or'.
+ *      'and' — ON TOP of it ("50% refunded plus a $100 voucher for the trouble").
+ *    For a 0%-cash tier the two modes are equivalent; 'or' is still what's
+ *    stored, and legacy credits saved before this field existed read as 'or' on
+ *    the way through the sanitizer, which is the right call for both.
  *  - The common airline fare — "non-refundable, but cancel any time before
  *    departure for a full flight credit" — is ONE tier with cash `kind:'percent',
  *    value:0` plus `credit:{ kind:'percent', value:100 }` and cutoff = departure.
@@ -80,7 +91,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const CUTOFF_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/
 
 /**
- * @typedef {{ kind: 'percent' | 'amount', value: number, expiry?: string }} Credit
+ * @typedef {{ kind: 'percent' | 'amount', value: number, mode: 'or' | 'and', expiry?: string }} Credit
  * @typedef {{ cutoff: string, kind: 'percent' | 'amount' | 'fee', value: number, credit?: Credit }} Tier
  */
 
@@ -90,7 +101,7 @@ const CUTOFF_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/
  * readable kind/value is noise, and the tier's cash side still stands alone.
  *
  * @param {unknown} raw
- * @returns {{ kind: 'percent' | 'amount', value: number, expiry?: string } | null}
+ * @returns {Credit | null}
  */
 function sanitizeCredit(raw) {
   if (!raw || typeof raw !== 'object') return null
@@ -103,7 +114,11 @@ function sanitizeCredit(raw) {
   // a real 0-value credit instead of being dropped as incomplete.
   const value = parseFloat(raw.value)
   if (!Number.isFinite(value) || value < 0) return null
-  const credit = { kind, value: kind === 'percent' ? Math.min(value, 100) : value }
+  // Mode is always written out, so no reader has to know the default: anything
+  // that isn't an explicit 'and' — junk, or a credit saved before this field
+  // existed — is the common "instead of the cash refund" reading.
+  const mode = raw.mode === 'and' ? 'and' : 'or'
+  const credit = { kind, value: kind === 'percent' ? Math.min(value, 100) : value, mode }
   // Expiry is date-only (a voucher expires at the end of its day) and purely
   // informational, so junk is dropped FROM the credit rather than taking the
   // credit down with it — the vouchers still exist, we just can't date them.
@@ -186,6 +201,12 @@ export function applicableTier(policy, asOfDate) {
  * and never folded into it — HK$0 back plus HK$4,000 of flight credit is not a
  * HK$4,000 refund. It's 0 for a tier with no credit, so callers can sum it
  * unconditionally.
+ *
+ * Netting the two is deliberately NOT done here: whether they combine depends on
+ * `tier.credit.mode` ('or' → you pick one, 'and' → both), and what to do with
+ * that is a presentation question — /costs nets a worst case, the booking detail
+ * lists the terms as written. Both figures are returned raw; read the mode off
+ * the returned `tier` if you need to combine them.
  *
  * @param {Tier[] | 'non_refundable' | null} policy
  * @param {number} effectiveCost

@@ -237,6 +237,18 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
       hkd: hkdOf(it, refundable),
       nonRefHkd: hkdOf(it, base - refundable),
       creditHkd: hkdOf(it, credit),
+      // What's actually gone if the vouchers get spent. An 'or' credit is a
+      // choice, so only the better of the two is recoverable; an 'and' credit
+      // stacks on the cash. With no credit `credit` is 0 and both branches
+      // collapse to the plain base − refundable.
+      netLossHkd: hkdOf(
+        it,
+        Math.max(
+          0,
+          base -
+            (r.tier?.credit?.mode === 'and' ? refundable + credit : Math.max(refundable, credit)),
+        ),
+      ),
     })
   })
   // Ordered by money at RISK, not money coming back: the list is read to decide
@@ -268,6 +280,9 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     })
     return [...byName.entries()].sort((a, b) => b[1] - a[1])
   })()
+  // The bottom line once vouchers are counted as recovered value. Only worth
+  // showing when credits exist — otherwise it's the non-refundable figure again.
+  const netLossHKD = selectedRows.reduce((sum, row) => sum + row.netLossHkd, 0)
   const allSelected = refundRows.every((row) => !deselected.has(row.it.id))
   // Which costs still have a cancellation decision to make: an upcoming booking
   // with nothing recorded. Same set the amber note counts (minus its scope
@@ -453,6 +468,17 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                     ~HK${nonRefundableHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </div>
                   <div className="text-xs text-on-surface-variant mt-0.5">Non-refundable</div>
+                  {/* Mirrors the As-credit block opposite: same secondary size,
+                      same "only when credits are in play" gate — with none it
+                      would just restate the figure above it. */}
+                  {creditHKD > 0 && (
+                    <div className="mt-2">
+                      <div className="text-base font-medium text-on-surface">
+                        ~HK${netLossHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </div>
+                      <div className="text-xs text-on-surface-variant mt-0.5">Net loss if credits used</div>
+                    </div>
+                  )}
                 </div>
               </div>
               <p className="text-xs text-on-surface-variant/60 mt-3">
@@ -546,9 +572,10 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                                 {/* The voucher this row also returns — kept off
                                     the money line above, which is cash only. */}
                                 {credit > 0 &&
-                                  ` · +${formatCurrency(credit, it.currency)} credit${
-                                    tier?.credit?.expiry ? ` (exp ${formatExpiry(tier.credit.expiry)})` : ''
-                                  }`}
+                                  ` · ${tier?.credit?.mode === 'and' ? '' : 'or '}+${formatCurrency(
+                                    credit,
+                                    it.currency,
+                                  )} credit${tier?.credit?.expiry ? ` (exp ${formatExpiry(tier.credit.expiry)})` : ''}`}
                               </div>
                             </div>
                           </div>

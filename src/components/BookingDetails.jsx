@@ -171,9 +171,11 @@ export default function BookingDetails({ booking }) {
                         : `${formatCurrency(tier.value, booking.cost_currency || 'USD')} refundable`}
                     {/* Voucher side of the same tier, appended rather than given
                         its own row — one line per tier keeps the ladder readable.
-                        The expiry carries its year: it's often long after the trip. */}
+                        'or' vs '+' is the whole difference between a choice and a
+                        bonus, so it's carried in the joining word. The expiry
+                        carries its year: it's often long after the trip. */}
                     {tier.credit &&
-                      ` + ${
+                      `${tier.credit.mode === 'and' ? ' + ' : ' or '}${
                         tier.credit.kind === 'percent'
                           ? `${tier.credit.value}%`
                           : formatCurrency(tier.credit.value, booking.cost_currency || 'USD')

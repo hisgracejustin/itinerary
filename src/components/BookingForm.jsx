@@ -624,7 +624,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                 {!tier.credit && (
                   <button
                     type="button"
-                    onClick={() => setTier(i, { credit: { kind: 'percent', value: '' } })}
+                    onClick={() => setTier(i, { credit: { kind: 'percent', value: '', mode: 'or' } })}
                     className="shrink-0 text-xs text-primary font-medium hover:underline"
                   >
                     + credit
@@ -684,6 +684,25 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                       onChange={(e) => setTier(i, { credit: { ...tier.credit, expiry: e.target.value } })}
                       className="mat-input w-36 min-w-0 text-xs"
                     />
+                    {/* Is the voucher offered in place of the cash refund, or as
+                        well as it? 'instead' is the usual deal (and the default),
+                        and it's what the /costs net-loss figure hinges on. */}
+                    <div className="flex rounded-xl border border-outline/40 overflow-hidden shrink-0 max-w-[10rem]">
+                      {[['or', 'instead'], ['and', 'on top']].map(([m, label]) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setTier(i, { credit: { ...tier.credit, mode: m } })}
+                          className={`px-2.5 py-2 text-xs min-w-0 transition-all duration-150 ${
+                            (tier.credit.mode || 'or') === m
+                              ? 'bg-primary-light text-primary font-medium'
+                              : 'text-on-surface-variant hover:bg-surface-container'
+                          }`}
+                        >
+                          <span className="block truncate">{label}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <button
                     type="button"
