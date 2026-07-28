@@ -4,7 +4,14 @@ import { useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
 import { updateBooking, deleteBooking } from '@/lib/client-actions'
 import { toHKD, formatCurrency } from '../lib/currencies'
-import { sanitizeCancellationPolicy, refundableAsOf, localNow, formatCutoff, formatExpiry } from '../lib/cancellation'
+import {
+  sanitizeCancellationPolicy,
+  refundableAsOf,
+  localNow,
+  formatCutoff,
+  formatExpiry,
+  daysUntilCutoff,
+} from '../lib/cancellation'
 import { TYPE_ICONS } from '../lib/calendar'
 import FilterChip from '../components/FilterChip'
 import BookingModal from '../components/BookingModal'
@@ -25,6 +32,16 @@ const TYPE_LABELS = {
   activity: 'Activities',
   expense: 'Expenses',
 }
+
+// A tier's cash terms on one line. Shared by the refund row's sub-line and its
+// deadline warning, so "drops to 50%" is worded the same as the 50% it will read
+// once that cutoff passes. The minus keeps a fee from looking like a payout.
+const tierLabel = (tier, currency) =>
+  tier.kind === 'percent'
+    ? `${tier.value}%`
+    : tier.kind === 'fee'
+      ? `−${formatCurrency(tier.value, currency)} fee`
+      : formatCurrency(tier.value, currency)
 
 export default function Costs({ bookings: allBookings, expenses: allExpenses, currentUserId }) {
   const { tripMeta, selectedTrip, selectedTrips, trips, fx } = useTripContext()
@@ -188,6 +205,27 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     // Voucher/flight credit rides the same scaling, and stays OUT of both money
     // figures: it isn't cash back, and it isn't money lost either.
     const credit = r.credit * frac
+    // Deadline pressure: what these terms turn into when the applicable tier's
+    // cutoff passes, surfaced only once that's inside a week. The next tier down
+    // the sorted array is what takes over; nothing after the last one means
+    // non-refundable. `days` is calendar-day DISPLAY math (see daysUntilCutoff)
+    // — which tier applies is still decided by string compare, above.
+    const warning = (() => {
+      if (!r.tier) return null
+      const days = daysUntilCutoff(r.tier.cutoff, asOf)
+      if (days == null || days < 0 || days > 7) return null
+      const next = policy[policy.indexOf(r.tier) + 1]
+      const becomes = next ? `drops to ${tierLabel(next, it.currency)}` : 'becomes non-refundable'
+      // A same-day deadline is the one case where the hour still matters, so
+      // 'today' carries it; past today the time of day is noise.
+      const when =
+        days === 0
+          ? `today${r.tier.cutoff.length > 10 ? `, ${r.tier.cutoff.slice(11, 16)}` : ''}`
+          : days === 1
+            ? 'tomorrow'
+            : `in ${days} days`
+      return { days, label: `${becomes} ${when}`, urgent: days <= 2 }
+    })()
     refundRows.push({
       it,
       base,
@@ -195,12 +233,17 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
       credit,
       tier: r.tier,
       policy,
+      warning,
       hkd: hkdOf(it, refundable),
       nonRefHkd: hkdOf(it, base - refundable),
       creditHkd: hkdOf(it, credit),
     })
   })
-  refundRows.sort((a, b) => b.hkd - a.hkd)
+  // Ordered by money at RISK, not money coming back: the list is read to decide
+  // what to cancel, and the booking with the most to lose is the one to look at
+  // first — a fully refundable HK$20k flight needs less attention than a HK$3k
+  // hotel that refunds nothing.
+  refundRows.sort((a, b) => b.nonRefHkd - a.nonRefHkd)
   const hasBookings = filteredItems.some((it) => it.kind === 'booking')
 
   // The two headline figures count SELECTED rows only, so the card can answer
@@ -212,6 +255,19 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   // Third figure, shown only when there is one — most trips have no vouchers,
   // and an always-on "~HK$0 as credit" would just be noise.
   const creditHKD = selectedRows.reduce((sum, row) => sum + row.creditHkd, 0)
+  // ...and broken out by issuer, because credit is only spendable with the
+  // provider that issued it: HK$13k of United credit and HK$800 of hotel voucher
+  // are not one HK$13.8k pot. Keyed on the row subtitle (the provider), falling
+  // back to the title when a booking has none.
+  const creditByProvider = (() => {
+    const byName = new Map()
+    selectedRows.forEach((row) => {
+      if (row.creditHkd <= 0) return
+      const name = row.it.subtitle || row.it.title
+      byName.set(name, (byName.get(name) || 0) + row.creditHkd)
+    })
+    return [...byName.entries()].sort((a, b) => b[1] - a[1])
+  })()
   const allSelected = refundRows.every((row) => !deselected.has(row.it.id))
   // Which costs still have a cancellation decision to make: an upcoming booking
   // with nothing recorded. Same set the amber note counts (minus its scope
@@ -369,15 +425,27 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                   </div>
                   <div className="text-xs text-on-surface-variant mt-0.5">Refundable</div>
                   {/* Vouchers sit under the cash figure, deliberately smaller:
-                      they're money back, but only with the same provider — not
-                      something to add to the refund total. */}
+                      they're money back, but only with the provider that issued
+                      them — never something to add to the refund total, and
+                      never one pooled number. */}
                   {creditHKD > 0 && (
-                    <>
-                      <div className="text-base font-medium text-primary mt-2">
-                        + ~HK${creditHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                      </div>
-                      <div className="text-xs text-on-surface-variant mt-0.5">As credit</div>
-                    </>
+                    <div className="mt-2">
+                      <div className="text-xs text-on-surface-variant">As credit</div>
+                      {creditByProvider.slice(0, 3).map(([name, hkd]) => (
+                        <div key={name} className="flex items-baseline gap-1.5 min-w-0 mt-0.5">
+                          <span className="text-base font-medium text-primary shrink-0">
+                            + ~HK${hkd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          </span>
+                          {/* Airline names run long; truncate rather than wrap. */}
+                          <span className="text-xs text-on-surface-variant truncate min-w-0">{name}</span>
+                        </div>
+                      ))}
+                      {creditByProvider.length > 3 && (
+                        <div className="text-xs text-on-surface-variant/70 mt-0.5">
+                          + {creditByProvider.length - 3} more
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="min-w-0">
@@ -419,7 +487,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                     </button>
                   </div>
                   <div className="mt-1 space-y-1">
-                    {refundRows.map(({ it, base, refundable, credit, tier, policy }) => {
+                    {refundRows.map(({ it, base, refundable, credit, tier, policy, warning }) => {
                       const selected = !deselected.has(it.id)
                       return (
                         <div
@@ -442,6 +510,21 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                               <div className="min-w-0">
                                 <div className="text-sm text-on-surface font-medium truncate">{it.title}</div>
                                 <div className="text-xs text-on-surface-variant truncate">{it.subtitle}</div>
+                                {/* The terms are about to change — the one thing
+                                    on this row that's time-critical, so it gets
+                                    colour the rest of the row doesn't. */}
+                                {warning && (
+                                  <div
+                                    className={`flex items-center gap-1 min-w-0 text-[11px] ${
+                                      warning.urgent ? 'text-red-600' : 'text-amber-600'
+                                    }`}
+                                  >
+                                    <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.59 3z" />
+                                    </svg>
+                                    <span className="truncate">{warning.label}</span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                             <div className="text-right shrink-0">
@@ -456,13 +539,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                                   would squeeze the title off a phone screen. */}
                               <div className="text-[11px] text-on-surface-variant truncate max-w-[10rem] sm:max-w-[20rem] ml-auto">
                                 {tier
-                                  ? `${
-                                      tier.kind === 'percent'
-                                        ? `${tier.value}%`
-                                        : tier.kind === 'fee'
-                                          ? `−${formatCurrency(tier.value, it.currency)} fee`
-                                          : formatCurrency(tier.value, it.currency)
-                                    } until ${formatCutoff(tier.cutoff)}`
+                                  ? `${tierLabel(tier, it.currency)} until ${formatCutoff(tier.cutoff)}`
                                   : Array.isArray(policy)
                                     ? `expired ${formatCutoff(policy[policy.length - 1].cutoff)}`
                                     : 'Non-refundable'}

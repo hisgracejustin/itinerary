@@ -252,6 +252,34 @@ export function formatCutoff(cutoff) {
 }
 
 /**
+ * Whole CALENDAR days from `asOf` to `cutoff` — 3 for "the terms change in 3
+ * days", 0 for today, negative once the cutoff is behind. Null if either side is
+ * unusable.
+ *
+ * DISPLAY ONLY, and the single place in this module that does Date day math. It
+ * is quarantined here on purpose: every ELIGIBILITY question ("does this tier
+ * still apply?") stays a lexicographic string compare, because a booking must
+ * resolve identically for every viewer in every timezone. A countdown rendered
+ * for one reader on one device carries no such obligation — and reads more
+ * naturally in that reader's own days.
+ *
+ * Both sides drop to their date part before diffing, so this counts calendar
+ * days rather than 24-hour periods: 23:00 tonight to 01:00 tomorrow is 1 day,
+ * not 0. Math.round absorbs the 23- and 25-hour days a DST boundary produces.
+ *
+ * @param {string} cutoff 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:mm'
+ * @param {string} asOf   same
+ */
+export function daysUntilCutoff(cutoff, asOf) {
+  if (!cutoff || !asOf) return null
+  // Local midnight, not a bare 'YYYY-MM-DD' — that parses as UTC, and the two
+  // sides would land on different offsets.
+  const day = (s) => new Date(`${String(s).slice(0, 10)}T00:00:00`)
+  const diff = (day(cutoff) - day(asOf)) / 86400000
+  return Number.isFinite(diff) ? Math.round(diff) : null
+}
+
+/**
  * 'Sep 5, 2027' for a credit expiry. Deliberately NOT formatCutoff: a cutoff is
  * days or weeks out and reads fine year-less, but a voucher expiry is usually a
  * year or two after the trip, where a bare 'Sep 5' is ambiguous. Parsed through
