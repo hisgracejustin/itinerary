@@ -571,9 +571,12 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
               const cutoffDate = (tier.cutoff || '').slice(0, 10)
               const cutoffTime = (tier.cutoff || '').length > 10 ? tier.cutoff.slice(11, 16) : ''
               return (
-              // The inputs wrap among themselves inside the inner group; the
-              // remove button sits outside it so it can never drop to its own line.
-              <div key={i} className="flex items-center gap-2 min-w-0">
+              // A tier is two stacked rows: the cash terms, and — when one is
+              // set — its credit rider indented underneath.
+              <div key={i} className="space-y-2">
+              {/* The inputs wrap among themselves inside the inner group; the
+                  remove button sits outside it so it can never drop to its own line. */}
+              <div className="flex items-center gap-2 min-w-0">
                 <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
                 <input
                   type="date"
@@ -616,6 +619,17 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                   }
                   className="mat-input w-20"
                 />
+                {/* Cash and credit are separate payouts, so the credit rider is
+                    opt-in per tier rather than a fourth `kind`. */}
+                {!tier.credit && (
+                  <button
+                    type="button"
+                    onClick={() => setTier(i, { credit: { kind: 'percent', value: '' } })}
+                    className="shrink-0 text-xs text-primary font-medium hover:underline"
+                  >
+                    + credit
+                  </button>
+                )}
                 </div>
                 <button
                   type="button"
@@ -625,6 +639,65 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                 >
                   ×
                 </button>
+              </div>
+              {/* Voucher / future-travel credit for this same tier, indented
+                  under it. Same wrap pattern as the row above: the inputs wrap
+                  inside the inner group, the × stays pinned outside it. */}
+              {tier.credit && (
+                <div className="flex items-center gap-2 min-w-0 pl-6 border-l-2 border-outline/20 ml-1.5">
+                  <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
+                    <span className="text-xs text-on-surface-variant shrink-0">+ credit</span>
+                    <div className="flex rounded-xl border border-outline/40 overflow-hidden shrink-0 max-w-[8rem]">
+                      {['percent', 'amount'].map((k) => (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => setTier(i, { credit: { ...tier.credit, kind: k } })}
+                          className={`px-2.5 py-2 text-xs min-w-0 transition-all duration-150 ${
+                            (tier.credit.kind || 'percent') === k
+                              ? 'bg-primary-light text-primary font-medium'
+                              : 'text-on-surface-variant hover:bg-surface-container'
+                          }`}
+                        >
+                          <span className="block truncate">
+                            {k === 'percent' ? '%' : form.cost_currency || 'amt'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={tier.credit.value ?? ''}
+                      onChange={(e) =>
+                        setTier(i, { credit: { ...tier.credit, value: e.target.value.replace(/[^0-9.]/g, '') } })
+                      }
+                      placeholder={(tier.credit.kind || 'percent') === 'percent' ? '100' : '500'}
+                      className="mat-input w-20"
+                    />
+                    {/* Optional: the day the voucher must be used by. Blank means
+                        no stated expiry — never guessed. */}
+                    <span className="text-xs text-on-surface-variant shrink-0">expires</span>
+                    <input
+                      type="date"
+                      value={tier.credit.expiry || ''}
+                      onChange={(e) => setTier(i, { credit: { ...tier.credit, expiry: e.target.value } })}
+                      className="mat-input w-36 min-w-0 text-xs"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const { credit, ...rest } = tier
+                      setTiers(tiers.map((t, j) => (j === i ? rest : t)))
+                    }}
+                    className="shrink-0 w-8 h-8 rounded-full text-on-surface-variant hover:bg-surface-container transition-colors duration-150"
+                    aria-label="Remove credit"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
               </div>
               )
             })}

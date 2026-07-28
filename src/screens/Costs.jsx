@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
 import { updateBooking, deleteBooking } from '@/lib/client-actions'
 import { toHKD, formatCurrency } from '../lib/currencies'
-import { sanitizeCancellationPolicy, refundableAsOf, localNow, formatCutoff } from '../lib/cancellation'
+import { sanitizeCancellationPolicy, refundableAsOf, localNow, formatCutoff, formatExpiry } from '../lib/cancellation'
 import { TYPE_ICONS } from '../lib/calendar'
 import FilterChip from '../components/FilterChip'
 import BookingModal from '../components/BookingModal'
@@ -185,14 +185,19 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     // a 50/50 split gives each payer back HK$250.
     const frac = it.effective > 0 ? base / it.effective : 0
     const refundable = r.refundable * frac
+    // Voucher/flight credit rides the same scaling, and stays OUT of both money
+    // figures: it isn't cash back, and it isn't money lost either.
+    const credit = r.credit * frac
     refundRows.push({
       it,
       base,
       refundable,
+      credit,
       tier: r.tier,
       policy,
       hkd: hkdOf(it, refundable),
       nonRefHkd: hkdOf(it, base - refundable),
+      creditHkd: hkdOf(it, credit),
     })
   })
   refundRows.sort((a, b) => b.hkd - a.hkd)
@@ -204,6 +209,9 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   const selectedRows = refundRows.filter((row) => !deselected.has(row.it.id))
   const refundableHKD = selectedRows.reduce((sum, row) => sum + row.hkd, 0)
   const nonRefundableHKD = selectedRows.reduce((sum, row) => sum + row.nonRefHkd, 0)
+  // Third figure, shown only when there is one — most trips have no vouchers,
+  // and an always-on "~HK$0 as credit" would just be noise.
+  const creditHKD = selectedRows.reduce((sum, row) => sum + row.creditHkd, 0)
   const allSelected = refundRows.every((row) => !deselected.has(row.it.id))
   // Which costs still have a cancellation decision to make: an upcoming booking
   // with nothing recorded. Same set the amber note counts (minus its scope
@@ -360,6 +368,17 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                     ~HK${refundableHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </div>
                   <div className="text-xs text-on-surface-variant mt-0.5">Refundable</div>
+                  {/* Vouchers sit under the cash figure, deliberately smaller:
+                      they're money back, but only with the same provider — not
+                      something to add to the refund total. */}
+                  {creditHKD > 0 && (
+                    <>
+                      <div className="text-base font-medium text-primary mt-2">
+                        + ~HK${creditHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </div>
+                      <div className="text-xs text-on-surface-variant mt-0.5">As credit</div>
+                    </>
+                  )}
                 </div>
                 <div className="min-w-0">
                   <div className="text-2xl font-medium text-on-surface">
@@ -400,7 +419,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                     </button>
                   </div>
                   <div className="mt-1 space-y-1">
-                    {refundRows.map(({ it, base, refundable, tier, policy }) => {
+                    {refundRows.map(({ it, base, refundable, credit, tier, policy }) => {
                       const selected = !deselected.has(it.id)
                       return (
                         <div
@@ -432,7 +451,10 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                                   {' '}of {formatCurrency(base, it.currency)}
                                 </span>
                               </div>
-                              <div className="text-[11px] text-on-surface-variant">
+                              {/* Capped and truncating: with a credit and an
+                                  expiry this line runs long, and unbounded it
+                                  would squeeze the title off a phone screen. */}
+                              <div className="text-[11px] text-on-surface-variant truncate max-w-[10rem] sm:max-w-[20rem] ml-auto">
                                 {tier
                                   ? `${
                                       tier.kind === 'percent'
@@ -444,6 +466,12 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                                   : Array.isArray(policy)
                                     ? `expired ${formatCutoff(policy[policy.length - 1].cutoff)}`
                                     : 'Non-refundable'}
+                                {/* The voucher this row also returns — kept off
+                                    the money line above, which is cash only. */}
+                                {credit > 0 &&
+                                  ` · +${formatCurrency(credit, it.currency)} credit${
+                                    tier?.credit?.expiry ? ` (exp ${formatExpiry(tier.credit.expiry)})` : ''
+                                  }`}
                               </div>
                             </div>
                           </div>

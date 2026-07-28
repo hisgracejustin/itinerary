@@ -381,7 +381,10 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
     // The minus keeps a fee from reading as the amount coming back.
     const value =
       tier.kind === 'percent' ? `${tier.value}%` : tier.kind === 'fee' ? `−${money} fee` : money
-    return `↩ ${value} until ${formatCutoff(tier.cutoff)}`
+    // Flag the voucher, don't quantify it — this is a glance surface, and the
+    // '0% +credit' shorthand is exactly what a credit-only fare needs to say.
+    const credit = tier.credit ? ' +credit' : ''
+    return `↩ ${value}${credit} until ${formatCutoff(tier.cutoff)}`
   })()
 
   // Determine check-in / check-out context for multi-day bookings

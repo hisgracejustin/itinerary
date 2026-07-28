@@ -1,5 +1,5 @@
 import { formatCurrency } from '../lib/currencies'
-import { sanitizeCancellationPolicy, formatCutoff } from '../lib/cancellation'
+import { sanitizeCancellationPolicy, formatCutoff, formatExpiry } from '../lib/cancellation'
 import { itemUnitTransfers } from '../lib/split'
 import { useTripContext } from '../lib/trip-context'
 
@@ -169,6 +169,15 @@ export default function BookingDetails({ booking }) {
                       : tier.kind === 'fee'
                         ? `Refund minus ${formatCurrency(tier.value, booking.cost_currency || 'USD')} fee`
                         : `${formatCurrency(tier.value, booking.cost_currency || 'USD')} refundable`}
+                    {/* Voucher side of the same tier, appended rather than given
+                        its own row — one line per tier keeps the ladder readable.
+                        The expiry carries its year: it's often long after the trip. */}
+                    {tier.credit &&
+                      ` + ${
+                        tier.credit.kind === 'percent'
+                          ? `${tier.credit.value}%`
+                          : formatCurrency(tier.credit.value, booking.cost_currency || 'USD')
+                      } credit${tier.credit.expiry ? ` (expires ${formatExpiry(tier.credit.expiry)})` : ''}`}
                   </Row>
                 ))}
                 <Row label={`After ${formatCutoff(policy[policy.length - 1].cutoff)}`}>Non-refundable</Row>

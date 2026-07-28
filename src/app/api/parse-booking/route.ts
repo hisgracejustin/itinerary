@@ -40,8 +40,10 @@ All types may also include:
   [{ "cutoff": "2026-09-05", "kind": "fee", "value": 25 }, { "cutoff": "2026-09-20", "kind": "amount", "value": 500 }]
   Each tier means: cancelling on or before "cutoff" refunds "value", read according to "kind" — a percent of the booking cost ("percent"), a flat amount in cost_currency ("amount"), or a cancellation/service fee in cost_currency that is DEDUCTED from an otherwise full refund ("fee", e.g. "free cancellation minus a $25 service fee until 5 Sep" → { "cutoff": "2026-09-05", "kind": "fee", "value": 25 }). Order tiers by cutoff ascending.
   "cutoff" is "YYYY-MM-DD", or "YYYY-MM-DDTHH:mm" when the document states a specific deadline time (e.g. "free cancellation until 6:00 PM on 5 Sep" → "2026-09-05T18:00"). Use the time exactly as printed — no timezone conversion.
+  A tier may ALSO carry "credit": { "kind": "percent"|"amount", "value": N, "expiry": "YYYY-MM-DD" } when what comes back is a voucher / future travel credit / e-credit rather than (or as well as) money — same reading of "kind" and "value" as above, and "expiry" is the date the credit must be USED by (omit "expiry" entirely if the document states no expiry date).
+  A fare that cannot be refunded to the original payment method but CAN be cancelled for airline flight credit is cash value 0 plus a credit, with the cutoff at the departure datetime, e.g. [{ "cutoff": "2026-09-05T14:30", "kind": "percent", "value": 0, "credit": { "kind": "percent", "value": 100 } }]. Use "non_refundable" only when nothing at all comes back, credit included.
   If instead the document explicitly states the booking is non-refundable / cannot be cancelled, use the string "non_refundable" in place of the array: "cancellation_policy": "non_refundable".
-  Omit the field entirely if no policy is stated. NEVER invent a policy.
+  Omit the field entirely if no policy is stated. NEVER invent a policy, a credit, or an expiry date.
 
 Layover / connecting flight handling:
 - For multi-leg journeys (e.g. SFO → LAX → NRT), return EACH leg as a separate flight booking.
