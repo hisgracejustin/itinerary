@@ -135,17 +135,21 @@ export function sanitizeCancellationPolicy(raw) {
     const cutoff = CUTOFF_RE.test(normalized) ? normalized : normalized.slice(0, 10)
     if (!DATE_RE.test(cutoff.slice(0, 10))) continue
     const kind = ['percent', 'amount', 'fee'].includes(t.kind) ? t.kind : null
-    if (!kind) continue
     // parseFloat, not Number: the form holds tier values as strings, and
     // Number('') is 0 — an untouched "+ Add tier" row would save as a real 0%
     // tier instead of being dropped as incomplete.
     const value = parseFloat(t.value)
-    if (!Number.isFinite(value) || value < 0) continue
-    const tier = { cutoff, kind, value: kind === 'percent' ? Math.min(value, 100) : value }
+    const cashValid = kind != null && Number.isFinite(value) && value >= 0
     // A malformed credit is dropped on its own — the cash tier around it is
-    // still good. Note a 0% cash tier survives on its own too: "nothing in cash"
-    // is a real answer, whether or not a credit rides along with it.
+    // still good. And the reverse: a credit-only tier ("no cash refund, but
+    // United credit until departure") with the cash side left blank is kept as
+    // an explicit 0% cash tier rather than dropped, so the credit survives.
+    // With NEITHER side usable the row is an unfilled "+ Add tier" — drop it.
     const credit = sanitizeCredit(t.credit)
+    if (!cashValid && !credit) continue
+    const tier = cashValid
+      ? { cutoff, kind, value: kind === 'percent' ? Math.min(value, 100) : value }
+      : { cutoff, kind: 'percent', value: 0 }
     if (credit) tier.credit = credit
     tiers.push(tier)
   }
