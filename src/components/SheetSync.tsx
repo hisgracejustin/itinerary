@@ -67,6 +67,16 @@ async function sync() {
   const res2 = await fetch("/sheet", { cache: "no-store" });
   if (!res2.ok || res2.redirected) return;
   await res2.blob();
+
+  // Trust the cache, not the fetch: if the request bypassed the worker (iOS
+  // routes nothing through a first-session worker) this fetch "succeeds"
+  // without caching anything — recording a sync then would debounce every
+  // later session into skipping the retry, leaving offline empty for good.
+  const cached = await window.caches
+    ?.open("itinerary-sheet-v1")
+    .then((c) => c.match("/sheet", { ignoreVary: true }))
+    .catch(() => undefined);
+  if (!cached) return;
   write(SYNCED_AT_KEY, String(Date.now()));
 
   // Sequential on purpose — attachments are up to 10MB each and this runs while

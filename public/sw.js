@@ -6,6 +6,7 @@
 const CACHE_NAME = "itinerary-v5";
 // Separate from CACHE_NAME so a version bump doesn't wipe the offline copy, and
 // so signing out can purge the personal data without touching static assets.
+// Name is mirrored in SheetSync.tsx, which verifies the sheet actually landed.
 const SHEET_CACHE = "itinerary-sheet-v1";
 // Stable key: the sheet is fetched both as a navigation and as a background
 // fetch(), whose requests differ in headers/mode. Keying on a plain URL (and
@@ -35,18 +36,21 @@ async function warmSheet() {
 }
 
 self.addEventListener("activate", (event) => {
+  // warmSheet is deliberately NOT inside waitUntil: fetch events aren't
+  // delivered while the worker is still activating, so holding activation on a
+  // full server render of /sheet would delay interception by seconds exactly
+  // when the user is racing toward airplane mode. Fire-and-forget — if the
+  // worker is torn down mid-fetch, SheetSync re-warms on the next open.
+  warmSheet();
   event.waitUntil(
-    Promise.all([
-      caches
-        .keys()
-        .then((keys) =>
-          Promise.all(
-            keys.filter((k) => k !== CACHE_NAME && k !== SHEET_CACHE).map((k) => caches.delete(k)),
-          ),
-        )
-        .then(() => self.clients.claim()),
-      warmSheet(),
-    ]),
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys.filter((k) => k !== CACHE_NAME && k !== SHEET_CACHE).map((k) => caches.delete(k)),
+        ),
+      )
+      .then(() => self.clients.claim()),
   );
 });
 
