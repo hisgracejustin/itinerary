@@ -59,11 +59,29 @@ async function sync() {
   if (switched) navigator.serviceWorker?.controller?.postMessage({ type: "purge-sheet" });
   write(OWNER_KEY, manifest.userId);
 
+  // Attachments gap-fill on EVERY online open, outside the debounce: a file
+  // uploaded five minutes after a sync must not wait out the refresh window to
+  // become viewable offline (it did — "This file isn't saved on this device"
+  // right after adding it). Already-cached files are skipped, so steady state
+  // is one manifest read + N cache lookups. Sequential on purpose —
+  // attachments are up to 10MB each and this runs while the user is actually
+  // using the app.
+  for (const url of manifest.attachments) {
+    try {
+      const hit = await window.caches?.match(url, { ignoreVary: true });
+      if (hit) continue;
+      // Drain the body: the SW caches a clone, and abandoning our half of the
+      // tee can cancel the download mid-flight.
+      const file = await fetch(url, { cache: "no-store" });
+      await file.blob();
+    } catch {
+      /* one missing file doesn't stop the rest */
+    }
+  }
+
   const lastSynced = Number(read(SYNCED_AT_KEY) ?? 0);
   if (!switched && Date.now() - lastSynced < REFRESH_MS) return;
 
-  // Drain each body: the SW caches a clone, and abandoning our half of the tee
-  // can cancel the download mid-flight.
   const res2 = await fetch("/sheet", { cache: "no-store" });
   if (!res2.ok || res2.redirected) return;
   await res2.blob();
@@ -78,17 +96,6 @@ async function sync() {
     .catch(() => undefined);
   if (!cached) return;
   write(SYNCED_AT_KEY, String(Date.now()));
-
-  // Sequential on purpose — attachments are up to 10MB each and this runs while
-  // the user is actually using the app.
-  for (const url of manifest.attachments) {
-    try {
-      const file = await fetch(url, { cache: "no-store" });
-      await file.blob();
-    } catch {
-      /* one missing file doesn't stop the rest */
-    }
-  }
 }
 
 export function SheetSync() {

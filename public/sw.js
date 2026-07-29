@@ -31,6 +31,25 @@ async function warmSheet() {
       await cache.put(SHEET_KEY, response.clone());
       warmSheetAssets(response);
     }
+    // Attachments too, so a viewable sheet never has unviewable files: the
+    // manifest lists the upcoming bookings' attachment urls. Requests from
+    // worker context skip the fetch handler, so put them explicitly, and only
+    // fetch what's missing.
+    const manifestRes = await fetch("/api/sheet-manifest", { credentials: "same-origin" });
+    if (manifestRes.ok && !manifestRes.redirected) {
+      const manifest = await manifestRes.json();
+      const cache = await caches.open(SHEET_CACHE);
+      for (const url of manifest.attachments || []) {
+        try {
+          const key = new URL(url, self.location.origin).pathname;
+          if (await cache.match(key, { ignoreVary: true })) continue;
+          const file = await fetch(url, { credentials: "same-origin" });
+          if (file.ok && !file.redirected) await cache.put(key, file);
+        } catch {
+          /* skip this file */
+        }
+      }
+    }
   } catch {
     /* offline or logged out — the runtime rule will fill it later */
   }
