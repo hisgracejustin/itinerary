@@ -6,6 +6,7 @@ import BookingDetails from '../components/BookingDetails'
 import { TripContext } from '../lib/trip-context'
 import { tripColorMap } from '../lib/calendar'
 import { formatBytes, iconForMime } from '../lib/attachments'
+import { readAttachment } from '../lib/offline-sheet'
 
 const STORAGE_KEY = 'sheet-trips'
 
@@ -139,6 +140,23 @@ export default function DaySheet({
   const activeFiles = activeBooking
     ? attachments.filter((a) => a.booking_id === activeBooking.id)
     : []
+
+  // In-sheet attachment viewer: { filename, mime, url } with a blob: url, or
+  // { filename, missing: true } when the file isn't cached and there's no
+  // connection to fetch it with.
+  const [viewer, setViewer] = useState(null)
+  const openAttachment = async (a) => {
+    const blob = await readAttachment(`/api/attachments/${a.id}`)
+    if (!blob) {
+      setViewer({ filename: a.filename, missing: true })
+      return
+    }
+    setViewer({ filename: a.filename, mime: a.mime_type, url: URL.createObjectURL(blob) })
+  }
+  const closeViewer = () => {
+    if (viewer?.url) URL.revokeObjectURL(viewer.url)
+    setViewer(null)
+  }
 
   return (
     <TripContext.Provider value={ctx}>
@@ -302,23 +320,52 @@ export default function DaySheet({
                             <p className="text-sm text-on-surface truncate">{a.filename}</p>
                             <p className="text-[10px] text-on-surface-variant">{formatBytes(a.size_bytes)}</p>
                           </div>
-                          {/* Cached by the service worker alongside the sheet —
-                              only files on upcoming bookings are pre-warmed, so
-                              an old one may still need a connection. */}
-                          <a
-                            href={`/api/attachments/${a.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          {/* Cached alongside the sheet (upcoming bookings
+                              only). Never a plain navigation: reads the bytes
+                              cache-first — no worker interception required —
+                              and shows them in the in-sheet viewer, which also
+                              sidesteps iOS standalone new-tab weirdness. */}
+                          <button
+                            onClick={() => openAttachment(a)}
                             className="text-xs font-medium text-primary hover:underline px-1.5 py-1 shrink-0"
                           >
                             Open
-                          </a>
+                          </button>
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Attachment viewer — blob-backed, so it works with no connection and
+            no service worker. Sits above the detail sheet. */}
+        {viewer && (
+          <div className="fixed inset-0 z-[60] flex flex-col bg-black/80" role="dialog" aria-modal="true">
+            <div className="shrink-0 flex items-center gap-2 px-3 h-12 pt-[env(safe-area-inset-top)] box-content">
+              <p className="flex-1 min-w-0 truncate text-sm text-white">{viewer.filename}</p>
+              <button
+                onClick={closeViewer}
+                aria-label="Close attachment"
+                className="shrink-0 w-9 h-9 rounded-full text-white/80 hover:bg-white/10 text-xl"
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 flex items-center justify-center p-2 pb-[env(safe-area-inset-bottom)]">
+              {viewer.missing ? (
+                <p className="text-sm text-white/80 text-center px-8">
+                  This file isn&apos;t saved on this device and there&apos;s no connection to fetch it.
+                </p>
+              ) : viewer.mime?.startsWith('image/') ? (
+                // eslint-disable-next-line @next/next/no-img-element -- blob: url, next/image can't optimize it
+                <img src={viewer.url} alt={viewer.filename} className="max-w-full max-h-full object-contain" />
+              ) : (
+                <iframe src={viewer.url} title={viewer.filename} className="w-full h-full rounded-lg bg-white" />
+              )}
             </div>
           </div>
         )}
