@@ -276,7 +276,7 @@ export function AppShell({ user, trips, fx, children }: Props) {
               {/* Plain <a>: a hard navigation is what lets the service worker
                   answer from the cached sheet. */}
               <a href="/sheet" className="font-medium underline">
-                open your day sheet
+                open your saved itinerary
               </a>
             </span>
             <button

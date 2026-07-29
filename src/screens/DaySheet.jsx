@@ -133,7 +133,7 @@ export default function DaySheet({
       <div className="fixed inset-0 flex flex-col bg-surface-dim pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         <header className="shrink-0 bg-white border-b border-outline/40">
           <div className="flex items-center gap-2 h-14 px-3">
-            <h1 className="text-base font-semibold text-on-surface truncate">Day sheet</h1>
+            <h1 className="text-base font-semibold text-on-surface truncate">Offline</h1>
             <div className="flex-1" />
             <div className="relative shrink-0">
               <button
