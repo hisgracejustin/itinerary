@@ -481,7 +481,21 @@ function AttachmentViewer({ viewer, onClose, onShare }) {
             src={viewer.url}
             title={viewer.filename}
             className="rounded-lg bg-white"
-            style={{ width: `${scale * 100}%`, height: '100%', margin: '0 auto' }}
+            // Two regimes: growing layout width zooms IN (native fit-to-width
+            // re-renders bigger, scrolling intact). Below 100% that doesn't
+            // work — iOS's PDF renderer clips instead of reflowing smaller —
+            // so zoom OUT renders at inflated layout size and visually scales
+            // the whole frame down, which shrinks the page for real.
+            style={
+              scale >= 1
+                ? { width: `${scale * 100}%`, height: '100%', margin: '0 auto' }
+                : {
+                    width: `${100 / scale}%`,
+                    height: `${100 / scale}%`,
+                    transform: `scale(${scale})`,
+                    transformOrigin: 'top left',
+                  }
+            }
           />
         </div>
       )}
