@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
 import BookingModal from "./BookingModal";
+import { SheetSync } from "./SheetSync";
 import { createBooking, updateBooking, deleteBooking } from "@/lib/client-actions";
 import { TripContext, type TripSummary } from "@/lib/trip-context";
 import { parseTripParam } from "@/lib/trip-params";
@@ -140,6 +141,25 @@ export function AppShell({ user, trips, fx, children }: Props) {
   // active RSC page refreshes with the new booking on its own.
   const [addOpen, setAddOpen] = useState(false);
 
+  // Connection banner. Starts false (server HTML can't know) and resolves on
+  // mount; each fresh offline transition un-dismisses it.
+  const [offline, setOffline] = useState(false);
+  const [offlineDismissed, setOfflineDismissed] = useState(false);
+  useEffect(() => {
+    const goOffline = () => {
+      setOffline(true);
+      setOfflineDismissed(false);
+    };
+    const goOnline = () => setOffline(false);
+    if (!navigator.onLine) goOffline();
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+    };
+  }, []);
+
   useEffect(() => {
     sidebarWidthRef.current = sidebarWidth;
   }, [sidebarWidth]);
@@ -248,6 +268,28 @@ export function AppShell({ user, trips, fx, children }: Props) {
       </div>
       {/* Right: header + content */}
       <div className="flex-1 flex flex-col overflow-hidden">
+        {offline && !offlineDismissed && (
+          <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-amber-50 text-amber-800 text-xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden />
+            <span className="flex-1 min-w-0 truncate">
+              You&apos;re offline —{" "}
+              {/* Plain <a>: a hard navigation is what lets the service worker
+                  answer from the cached sheet. */}
+              <a href="/sheet" className="font-medium underline">
+                open your day sheet
+              </a>
+            </span>
+            <button
+              onClick={() => setOfflineDismissed(true)}
+              aria-label="Dismiss"
+              className="shrink-0 text-amber-800/60 hover:text-amber-800"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
         <Header
           onToggleSidebar={() => setSidebarOpen((v) => !v)}
           onAddBooking={() => setAddOpen(true)}
@@ -274,6 +316,9 @@ export function AppShell({ user, trips, fx, children }: Props) {
           }}
         />
       )}
+
+      {/* Background refresh of the offline day sheet — never blocks the shell. */}
+      <SheetSync />
     </div>
     </TripContext.Provider>
   );

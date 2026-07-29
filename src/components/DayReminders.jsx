@@ -29,8 +29,11 @@ export function formatReminderTime(hhmm) {
  * (dnd-kit). Rendered per day in the day panel, calendar cells, day view, and
  * mobile agenda — `variant` only tunes sizing. CRUD + reorder flow through the
  * optimistic handlers in Calendar; this owns just the local add/edit UI state.
+ *
+ * `readOnly` drops every affordance (add, edit, delete, drag) and just lists the
+ * notes — the offline day sheet has no handlers to call.
  */
-export default function DayReminders({ reminders = [], date, tripId, onAdd, onEdit, onRemove, onReorder, variant = 'panel' }) {
+export default function DayReminders({ reminders = [], date, tripId, onAdd, onEdit, onRemove, onReorder, readOnly = false, variant = 'panel' }) {
   const { toast } = useToast()
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -47,7 +50,7 @@ export default function DayReminders({ reminders = [], date, tripId, onAdd, onEd
       String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')),
   )
   const ids = ordered.map((r) => r.id)
-  const sortable = !!onReorder && ordered.length > 1
+  const sortable = !readOnly && !!onReorder && ordered.length > 1
 
   const submitAdd = async ({ text, time }) => {
     if (!text.trim()) { setAdding(false); return }
@@ -101,6 +104,7 @@ export default function DayReminders({ reminders = [], date, tripId, onAdd, onEd
     const itemProps = {
       reminder: r,
       compact,
+      readOnly,
       onEdit: () => !r._pending && setEditingId(r.id),
       onRemove: () => !r._pending && submitRemove(r.id),
     }
@@ -132,7 +136,7 @@ export default function DayReminders({ reminders = [], date, tripId, onAdd, onEd
         list
       )}
 
-      {adding ? (
+      {readOnly ? null : adding ? (
         <ReminderForm compact={compact} onSubmit={submitAdd} onCancel={() => setAdding(false)} />
       ) : (
         <button
@@ -168,8 +172,19 @@ function SortableReminderItem(props) {
   )
 }
 
-function ReminderItem({ reminder, compact, onEdit, onRemove, dragEnabled = false, sortableRef, style, isDragging = false, handleRef, handleProps }) {
+function ReminderItem({ reminder, compact, readOnly = false, onEdit, onRemove, dragEnabled = false, sortableRef, style, isDragging = false, handleRef, handleProps }) {
   const time = formatReminderTime(reminder.time)
+  if (readOnly) {
+    return (
+      <div className={`flex items-start gap-1.5 ${compact ? 'px-1 py-0.5' : 'px-1.5 py-1'}`}>
+        <span className={compact ? 'text-[10px] leading-4' : 'text-xs leading-5'} aria-hidden>📌</span>
+        <p className={`flex-1 min-w-0 ${compact ? 'text-[10px] leading-4 break-words' : 'text-sm leading-5'}`}>
+          {time && <span className={`font-medium text-primary ${compact ? 'mr-1' : 'mr-1.5'}`}>{time}</span>}
+          <span className="text-on-surface">{reminder.text}</span>
+        </p>
+      </div>
+    )
+  }
   return (
     <div
       ref={sortableRef}

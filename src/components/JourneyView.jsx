@@ -41,6 +41,10 @@ function sortBookingsForDay(dayBookings, day) {
  * row's leading edge, plus the trip name when more than one trip is in view). An
  * overlap day therefore shows both trips' rows interleaved by time. Maximal runs
  * of empty days collapse to a single labelled divider that expands on click.
+ *
+ * Every mutation handler is optional: with none passed (the offline day sheet)
+ * the timeline renders read-only — day titles and reminders still show, they
+ * just aren't editable, and the gap-filling "add to trip" actions disappear.
  */
 export default function JourneyView({
   bookings,
@@ -245,13 +249,19 @@ function DaySection({
     >
       {/* Neutral day header (trip identity lives on the rows, not the header). */}
       <div className="flex items-center gap-2 mb-1.5">
-        <button
-          onClick={() => onSelectDate?.(day)}
-          title="Open day view"
-          className={`text-sm font-semibold hover:underline shrink-0 whitespace-nowrap ${isToday ? 'text-primary' : 'text-on-surface'}`}
-        >
-          {day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-        </button>
+        {onSelectDate ? (
+          <button
+            onClick={() => onSelectDate(day)}
+            title="Open day view"
+            className={`text-sm font-semibold hover:underline shrink-0 whitespace-nowrap ${isToday ? 'text-primary' : 'text-on-surface'}`}
+          >
+            {day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+          </button>
+        ) : (
+          <span className={`text-sm font-semibold shrink-0 whitespace-nowrap ${isToday ? 'text-primary' : 'text-on-surface'}`}>
+            {day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+          </span>
+        )}
         {isToday && (
           <span className="text-[10px] bg-primary-light text-primary px-2 py-0.5 rounded-full font-medium shrink-0">Today</span>
         )}
@@ -264,12 +274,16 @@ function DaySection({
           </span>
         )}
         {dayNote && !isEditingThis && (
-          <button
-            onClick={() => { setEditingNoteDate(dateStr); setNoteText(dayNote.title) }}
-            className="text-xs italic text-on-surface-variant truncate min-w-0 hover:text-primary transition-colors"
-          >
-            {dayNote.title}
-          </button>
+          onUpsertDayNote ? (
+            <button
+              onClick={() => { setEditingNoteDate(dateStr); setNoteText(dayNote.title) }}
+              className="text-xs italic text-on-surface-variant truncate min-w-0 hover:text-primary transition-colors"
+            >
+              {dayNote.title}
+            </button>
+          ) : (
+            <span className="text-xs italic text-on-surface-variant truncate min-w-0">{dayNote.title}</span>
+          )
         )}
         <div className="flex-1" />
         {!isEditingThis && !dayNote && onUpsertDayNote && noteTripId && (
@@ -379,7 +393,9 @@ function DaySection({
         </div>
       )}
 
-      {reminderProps.onAddReminder && (
+      {/* Without handlers the list still renders (read-only) as long as the day
+          HAS reminders — they're itinerary content, not an editing affordance. */}
+      {(reminderProps.onAddReminder || dayRems.length > 0) && (
         <div className="mt-2 pl-3">
           <DayReminders
             reminders={dayRems}
@@ -389,6 +405,7 @@ function DaySection({
             onEdit={reminderProps.onEditReminder}
             onRemove={reminderProps.onRemoveReminder}
             onReorder={reminderProps.onReorderReminder}
+            readOnly={!reminderProps.onAddReminder}
             variant="agenda"
           />
         </div>
@@ -421,7 +438,9 @@ function RunDivider({ days, tripMetas, colorMap, expanded, onToggle, onExtendTri
 
   const firstStr = days[0].dateStr
   const lastStr = days[length - 1].dateStr
-  const hasGap = days.some((d) => d.owners.length === 0)
+  // Extending a trip is a mutation — read-only renders (the day sheet) get the
+  // plain divider instead of "add to <trip>" chips.
+  const hasGap = !!onExtendTrip && days.some((d) => d.owners.length === 0)
 
   // The nearest trip ending before the run (extend its end forward) and the
   // nearest trip starting after it (extend its start backward). Gaps only occur
@@ -491,11 +510,14 @@ function RunDivider({ days, tripMetas, colorMap, expanded, onToggle, onExtendTri
                   {d.day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                 </span>
                 {isGap ? (
-                  <>
-                    {before && renderAdd(before, { end_date: d.dateStr })}
-                    {after && renderAdd(after, { start_date: d.dateStr })}
-                    {!before && !after && <span className="text-on-surface-variant/60">no trip</span>}
-                  </>
+                  onExtendTrip && (before || after) ? (
+                    <>
+                      {before && renderAdd(before, { end_date: d.dateStr })}
+                      {after && renderAdd(after, { start_date: d.dateStr })}
+                    </>
+                  ) : (
+                    <span className="text-on-surface-variant/60">no trip</span>
+                  )
                 ) : (
                   <span className="text-on-surface-variant/60 truncate min-w-0">
                     {d.covered

@@ -87,6 +87,20 @@ export default function Sidebar({ user, trips, onNavigate }) {
           }
           label="Settle up"
         />
+        {/* Hard navigation (plain <a>): /sheet lives outside the app shell, and
+            a document request is what lets the service worker serve the cached
+            copy when there's no connection. */}
+        <NavItem
+          to="/sheet"
+          hard
+          onClick={onNavigate}
+          icon={
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          }
+          label="Day sheet"
+        />
         <NavItem
           to={navHref("/settings")}
           active={pathname === "/settings"}
@@ -209,7 +223,18 @@ export default function Sidebar({ user, trips, onNavigate }) {
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-on-surface-variant truncate max-w-[160px]">{user.email}</span>
             <button
-              onClick={() => signOutAction()}
+              onClick={() => {
+                // The cached day sheet is this user's itinerary — drop it (and
+                // the ownership marker) before the session goes away.
+                try {
+                  navigator.serviceWorker?.controller?.postMessage({ type: "purge-sheet" });
+                  window.localStorage.removeItem("sheet-owner");
+                  window.localStorage.removeItem("sheet-synced-at");
+                } catch {
+                  /* no SW / no storage — nothing cached to purge */
+                }
+                signOutAction();
+              }}
               className="text-[10px] text-on-surface-variant/60 hover:text-red-500 transition-colors"
             >
               Sign out
@@ -241,19 +266,23 @@ export default function Sidebar({ user, trips, onNavigate }) {
   );
 }
 
-function NavItem({ to, active, onClick, icon, label }) {
-  return (
-    <Link
-      href={to}
-      onClick={onClick}
-      className={`flex items-center gap-3 px-4 py-2.5 rounded-full text-sm transition-all duration-150 mb-0.5 ${
-        active
-          ? "bg-primary-light text-primary font-medium"
-          : "text-on-surface hover:bg-surface-container"
-      }`}
-    >
+function NavItem({ to, active, onClick, icon, label, hard = false }) {
+  const className = `flex items-center gap-3 px-4 py-2.5 rounded-full text-sm transition-all duration-150 mb-0.5 ${
+    active ? "bg-primary-light text-primary font-medium" : "text-on-surface hover:bg-surface-container"
+  }`;
+  const body = (
+    <>
       <span className={active ? "text-primary" : "text-on-surface-variant"}>{icon}</span>
       {label}
+    </>
+  );
+  return hard ? (
+    <a href={to} onClick={onClick} className={className}>
+      {body}
+    </a>
+  ) : (
+    <Link href={to} onClick={onClick} className={className}>
+      {body}
     </Link>
   );
 }

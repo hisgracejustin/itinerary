@@ -418,6 +418,42 @@ export function getDayRemindersForUser(userId: string, tripId?: TripFilter) {
 }
 
 /**
+ * Attachment METADATA (never `content`) for every booking the user can see,
+ * carrying its booking's trip and dates. The offline day sheet embeds this so a
+ * booking's files are listed without a client round trip, and the sync effect
+ * knows which files are still worth pre-caching.
+ */
+export function getAttachmentsForUser(userId: string, tripId?: TripFilter) {
+  const base = db
+    .select({
+      id: tables.bookingAttachments.id,
+      booking_id: tables.bookingAttachments.booking_id,
+      filename: tables.bookingAttachments.filename,
+      mime_type: tables.bookingAttachments.mime_type,
+      size_bytes: tables.bookingAttachments.size_bytes,
+      trip_id: tables.bookings.trip_id,
+      booking_start: tables.bookings.start_date,
+      booking_end: tables.bookings.end_date,
+    })
+    .from(tables.bookingAttachments)
+    .innerJoin(tables.bookings, eq(tables.bookings.id, tables.bookingAttachments.booking_id))
+    .innerJoin(
+      tables.tripMembers,
+      and(
+        eq(tables.tripMembers.trip_id, tables.bookings.trip_id),
+        eq(tables.tripMembers.user_id, userId),
+      ),
+    );
+  const ids = toTripIds(tripId);
+  if (ids) {
+    return base
+      .where(inArray(tables.bookings.trip_id, ids))
+      .orderBy(asc(tables.bookingAttachments.created_at));
+  }
+  return base.orderBy(asc(tables.bookingAttachments.created_at));
+}
+
+/**
  * Everything the Settle page needs, for EVERY accessible trip. Like all pages,
  * Settle fetches the union and the screen filters by the client-side selection,
  * so multi-trip settling works from day one. Rows carry `trip_id`; members carry
