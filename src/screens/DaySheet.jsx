@@ -53,6 +53,18 @@ export default function DaySheet({
   // Null until mounted: the server-rendered strip must not claim an age, or a
   // days-old cached copy would hydrate with a mismatched "synced" label.
   const [synced, setSynced] = useState(null)
+  // Set when the user tries to leave while still offline — leaving would only
+  // serve this same cached page back, which reads as a pointless refresh, so
+  // stay put and say why instead.
+  const [stillOffline, setStillOffline] = useState(false)
+
+  const onBack = (e) => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      e.preventDefault()
+      setStillOffline(true)
+      window.setTimeout(() => setStillOffline(false), 3500)
+    }
+  }
 
   useEffect(() => {
     try {
@@ -140,6 +152,7 @@ export default function DaySheet({
             {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href="/"
+              onClick={onBack}
               aria-label="Back to app"
               className="shrink-0 flex items-center gap-1 -ml-1 px-2 py-1.5 rounded-full text-sm text-on-surface-variant hover:bg-surface-container transition-colors"
             >
@@ -215,9 +228,13 @@ export default function DaySheet({
           }`}
         >
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${offline ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden />
-          <span className="truncate">
-            {offline ? 'Offline' : 'Saved for offline'}
-            {synced && ` · ${offline ? 'saved' : 'synced'} ${synced}`}
+          <span className={`truncate ${stillOffline ? 'font-semibold' : ''}`}>
+            {stillOffline
+              ? 'Still no internet connection — showing your saved itinerary'
+              : offline
+                ? 'No internet connection — showing your saved itinerary'
+                : 'Saved for offline'}
+            {!stillOffline && synced && ` · ${offline ? 'saved' : 'synced'} ${synced}`}
           </span>
         </div>
 
