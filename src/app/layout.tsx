@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   description: "Your trips, all in one place.",
   applicationName: "Itinerary",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "Itinerary" },
-  icons: { icon: "/icon.png", apple: "/icon.png" },
+  icons: { icon: "/icon.png", apple: "/apple-icon.png" },
 };
 
 export const viewport: Viewport = {

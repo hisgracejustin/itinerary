@@ -12,6 +12,6 @@ export const config = {
   // (large uploads shouldn't run through the gate), the login page, Next
   // internals, and static/public assets.
   matcher: [
-    "/((?!api/auth|api/parse-booking|login|_next/static|_next/image|favicon.ico|icon.png|manifest.webmanifest|sw.js|pdf.worker.min.mjs).*)",
+    "/((?!api/auth|api/parse-booking|login|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|icon-192.png|manifest.webmanifest|sw.js|pdf.worker.min.mjs).*)",
   ],
 };

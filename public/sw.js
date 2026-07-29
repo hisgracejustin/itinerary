@@ -2,7 +2,8 @@
 //  - cache-first for immutable static assets (/_next/static, icon, pdf worker)
 //  - the offline day sheet (/sheet) + its attachments live in their own cache
 //  - network-first for everything else (with an offline fallback)
-const CACHE_NAME = "itinerary-v4";
+// v5: new app icon — the old one is pinned cache-first and must be dropped.
+const CACHE_NAME = "itinerary-v5";
 // Separate from CACHE_NAME so a version bump doesn't wipe the offline copy, and
 // so signing out can purge the personal data without touching static assets.
 const SHEET_CACHE = "itinerary-sheet-v1";
@@ -64,6 +65,8 @@ function isStaticAsset(url) {
   return (
     url.pathname.startsWith("/_next/static/") ||
     url.pathname === "/icon.png" ||
+    url.pathname === "/apple-icon.png" ||
+    url.pathname === "/icon-192.png" ||
     url.pathname === "/manifest.webmanifest"
   );
 }
