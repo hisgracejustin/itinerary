@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import JourneyView from '../components/JourneyView'
 import BookingDetails from '../components/BookingDetails'
 import { TripContext } from '../lib/trip-context'
@@ -141,9 +141,9 @@ export default function DaySheet({
     ? attachments.filter((a) => a.booking_id === activeBooking.id)
     : []
 
-  // In-sheet attachment viewer: { filename, mime, url } with a blob: url, or
-  // { filename, missing: true } when the file isn't cached and there's no
-  // connection to fetch it with.
+  // In-sheet attachment viewer: { filename, mime, blob, url } with a blob: url,
+  // or { filename, missing: true } when the file isn't cached and there's no
+  // connection to fetch it with. The Blob itself is kept for Share.
   const [viewer, setViewer] = useState(null)
   const openAttachment = async (a) => {
     const blob = await readAttachment(`/api/attachments/${a.id}`)
@@ -151,11 +151,31 @@ export default function DaySheet({
       setViewer({ filename: a.filename, missing: true })
       return
     }
-    setViewer({ filename: a.filename, mime: a.mime_type, url: URL.createObjectURL(blob) })
+    setViewer({ filename: a.filename, mime: a.mime_type, blob, url: URL.createObjectURL(blob) })
   }
   const closeViewer = () => {
     if (viewer?.url) URL.revokeObjectURL(viewer.url)
     setViewer(null)
+  }
+
+  // Hand the cached bytes to the OS share sheet (AirDrop / Save to Files /
+  // Mail…) — works offline since the file is already on the device. Falls back
+  // to a plain download when file-sharing isn't available (desktop browsers).
+  const shareViewerFile = async () => {
+    if (!viewer?.blob) return
+    const file = new File([viewer.blob], viewer.filename, { type: viewer.mime || 'application/octet-stream' })
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file] })
+        return
+      } catch {
+        /* user cancelled, or share failed — fall through to download */
+      }
+    }
+    const a = document.createElement('a')
+    a.href = viewer.url
+    a.download = viewer.filename
+    a.click()
   }
 
   return (
@@ -344,32 +364,154 @@ export default function DaySheet({
         {/* Attachment viewer — blob-backed, so it works with no connection and
             no service worker. Sits above the detail sheet. */}
         {viewer && (
-          <div className="fixed inset-0 z-[60] flex flex-col bg-black/80" role="dialog" aria-modal="true">
-            <div className="shrink-0 flex items-center gap-2 px-3 h-12 pt-[env(safe-area-inset-top)] box-content">
-              <p className="flex-1 min-w-0 truncate text-sm text-white">{viewer.filename}</p>
-              <button
-                onClick={closeViewer}
-                aria-label="Close attachment"
-                className="shrink-0 w-9 h-9 rounded-full text-white/80 hover:bg-white/10 text-xl"
-              >
-                ×
-              </button>
-            </div>
-            <div className="flex-1 min-h-0 flex items-center justify-center p-2 pb-[env(safe-area-inset-bottom)]">
-              {viewer.missing ? (
-                <p className="text-sm text-white/80 text-center px-8">
-                  This file isn&apos;t saved on this device and there&apos;s no connection to fetch it.
-                </p>
-              ) : viewer.mime?.startsWith('image/') ? (
-                // eslint-disable-next-line @next/next/no-img-element -- blob: url, next/image can't optimize it
-                <img src={viewer.url} alt={viewer.filename} className="max-w-full max-h-full object-contain" />
-              ) : (
-                <iframe src={viewer.url} title={viewer.filename} className="w-full h-full rounded-lg bg-white" />
-              )}
-            </div>
-          </div>
+          <AttachmentViewer
+            key={viewer.url || viewer.filename}
+            viewer={viewer}
+            onClose={closeViewer}
+            onShare={shareViewerFile}
+          />
         )}
       </div>
     </TripContext.Provider>
+  )
+}
+
+/**
+ * Full-screen attachment viewer over the sheet. Zoom works on every file type:
+ * images get pinch / drag-pan / double-tap via pointer events on a transform,
+ * while PDFs (and anything else in the iframe) zoom by growing the iframe's
+ * layout width — a transform would break the native PDF viewer's internal
+ * scrolling, but a wider iframe just makes its fit-to-width rendering bigger,
+ * with the outer container scrolling both axes. The − / % / + pill works for
+ * both; % resets.
+ */
+function AttachmentViewer({ viewer, onClose, onShare }) {
+  const [scale, setScale] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const pointers = useRef(new Map())
+  const pinch = useRef(null)
+  const lastTap = useRef(0)
+  const isImage = !viewer.missing && viewer.mime?.startsWith('image/')
+
+  const setZoom = (next) => {
+    const clamped = Math.min(5, Math.max(1, next))
+    setScale(clamped)
+    if (clamped === 1) setPan({ x: 0, y: 0 })
+  }
+  const pinchDist = () => {
+    const [a, b] = [...pointers.current.values()]
+    return Math.hypot(a.x - b.x, a.y - b.y)
+  }
+  const onPointerDown = (e) => {
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.current.size === 2) pinch.current = { startDist: pinchDist(), startScale: scale }
+  }
+  const onPointerMove = (e) => {
+    const prev = pointers.current.get(e.pointerId)
+    if (!prev) return
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.current.size === 2 && pinch.current) {
+      setZoom(pinch.current.startScale * (pinchDist() / pinch.current.startDist))
+    } else if (pointers.current.size === 1 && scale > 1) {
+      setPan((p) => ({ x: p.x + e.clientX - prev.x, y: p.y + e.clientY - prev.y }))
+    }
+  }
+  const onPointerEnd = (e) => {
+    pointers.current.delete(e.pointerId)
+    if (pointers.current.size < 2) pinch.current = null
+    if (e.type === 'pointerup' && pointers.current.size === 0) {
+      const now = Date.now()
+      if (now - lastTap.current < 300) setZoom(scale > 1 ? 1 : 2.5)
+      lastTap.current = now
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black/80" role="dialog" aria-modal="true">
+      <div className="shrink-0 flex items-center gap-1 px-3 h-12 pt-[env(safe-area-inset-top)] box-content">
+        <p className="flex-1 min-w-0 truncate text-sm text-white">{viewer.filename}</p>
+        {!viewer.missing && (
+          <button
+            onClick={onShare}
+            aria-label="Share or save"
+            className="shrink-0 w-9 h-9 rounded-full text-white/80 hover:bg-white/10 flex items-center justify-center"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12L8 8m4-4l4 4" />
+            </svg>
+          </button>
+        )}
+        <button
+          onClick={onClose}
+          aria-label="Close attachment"
+          className="shrink-0 w-9 h-9 rounded-full text-white/80 hover:bg-white/10 text-xl"
+        >
+          ×
+        </button>
+      </div>
+
+      {viewer.missing ? (
+        <div className="flex-1 min-h-0 flex items-center justify-center p-2 pb-[env(safe-area-inset-bottom)]">
+          <p className="text-sm text-white/80 text-center px-8">
+            This file isn&apos;t saved on this device and there&apos;s no connection to fetch it.
+          </p>
+        </div>
+      ) : isImage ? (
+        <div
+          className="flex-1 min-h-0 overflow-hidden touch-none flex items-center justify-center p-2"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerEnd}
+          onPointerCancel={onPointerEnd}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- blob: url, next/image can't optimize it */}
+          <img
+            src={viewer.url}
+            alt={viewer.filename}
+            draggable={false}
+            className="max-w-full max-h-full object-contain select-none"
+            style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})` }}
+          />
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 overflow-auto p-2">
+          <iframe
+            src={viewer.url}
+            title={viewer.filename}
+            className="rounded-lg bg-white"
+            style={{ width: `${scale * 100}%`, height: '100%' }}
+          />
+        </div>
+      )}
+
+      {!viewer.missing && (
+        <div className="shrink-0 flex justify-center pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-1.5">
+          <div className="flex items-center gap-1 rounded-full bg-white/10 px-2 py-1">
+            <button
+              onClick={() => setZoom(scale - 0.5)}
+              aria-label="Zoom out"
+              className="w-8 h-8 rounded-full text-white/90 hover:bg-white/10 text-lg leading-none"
+            >
+              −
+            </button>
+            <button
+              onClick={() => setZoom(1)}
+              aria-label="Reset zoom"
+              className="min-w-[3.5rem] h-8 rounded-full text-white/90 hover:bg-white/10 text-xs tabular-nums"
+            >
+              {Math.round(scale * 100)}%
+            </button>
+            <button
+              onClick={() => setZoom(scale + 0.5)}
+              aria-label="Zoom in"
+              className="w-8 h-8 rounded-full text-white/90 hover:bg-white/10 text-lg leading-none"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
