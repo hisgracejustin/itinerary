@@ -28,7 +28,8 @@ async function warmSheet() {
     const response = await fetch("/sheet", { credentials: "same-origin" });
     if (response.ok && !response.redirected) {
       const cache = await caches.open(SHEET_CACHE);
-      await cache.put(SHEET_KEY, response);
+      await cache.put(SHEET_KEY, response.clone());
+      warmSheetAssets(response);
     }
   } catch {
     /* offline or logged out — the runtime rule will fill it later */
@@ -84,6 +85,26 @@ async function cachedSheet() {
   return cache.match(SHEET_KEY, { ignoreVary: true });
 }
 
+/**
+ * Cache the sheet's own static chunks so it HYDRATES offline, not just renders:
+ * the online session may never visit /sheet, so its /_next/static assets are
+ * never requested (the runtime cache-first rule only stores what's fetched) and
+ * an offline open threw ChunkLoadError. Requests made from worker context skip
+ * the fetch handler, so these are put into CACHE_NAME explicitly.
+ */
+async function warmSheetAssets(response) {
+  try {
+    const html = await response.text();
+    const urls = [...new Set([...html.matchAll(/["'](\/_next\/static\/[^"']+?)["']/g)].map((m) => m[1]))];
+    const cache = await caches.open(CACHE_NAME);
+    await Promise.all(
+      urls.map((u) => cache.match(u).then((hit) => hit || cache.add(u).catch(() => {}))),
+    );
+  } catch {
+    /* best effort — the sheet still renders server-side without its JS */
+  }
+}
+
 /** Last-resort page for an offline navigation with nothing cached yet. */
 function offlinePage() {
   return new Response(
@@ -132,6 +153,8 @@ self.addEventListener("fetch", (event) => {
           if (response.ok && !response.redirected) {
             const clone = response.clone();
             caches.open(SHEET_CACHE).then((cache) => cache.put(key, clone));
+            // Every fresh copy of the sheet may reference a new build's chunks.
+            if (isSheet(url)) warmSheetAssets(response.clone());
           }
           return response;
         })

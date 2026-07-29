@@ -6,6 +6,7 @@ import Header from "./Header";
 import Sidebar from "./Sidebar";
 import BookingModal from "./BookingModal";
 import { SheetSync } from "./SheetSync";
+import { handleOfflineSheetClick } from "@/lib/offline-sheet";
 import { createBooking, updateBooking, deleteBooking } from "@/lib/client-actions";
 import { TripContext, type TripSummary } from "@/lib/trip-context";
 import { parseTripParam } from "@/lib/trip-params";
@@ -275,7 +276,7 @@ export function AppShell({ user, trips, fx, children }: Props) {
               You&apos;re offline —{" "}
               {/* Plain <a>: a hard navigation is what lets the service worker
                   answer from the cached sheet. */}
-              <a href="/sheet" className="font-medium underline">
+              <a href="/sheet" onClick={handleOfflineSheetClick} className="font-medium underline">
                 open your saved itinerary
               </a>
             </span>
