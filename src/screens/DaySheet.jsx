@@ -133,9 +133,11 @@ export default function DaySheet({
       <div className="fixed inset-0 flex flex-col bg-surface-dim pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         <header className="shrink-0 bg-white border-b border-outline/40">
           <div className="flex items-center gap-2 h-14 px-3">
-            {/* Hard <a>: the sheet lives outside the app shell, and in the
-                installed PWA there's no browser chrome to escape with. Offline,
-                the failed navigation just falls back to this page — harmless. */}
+            {/* Hard <a> (not <Link>): the sheet lives outside the app shell,
+                and in the installed PWA there's no browser chrome to escape
+                with. A document request is also what the service worker can
+                answer offline — where it just falls back to this page. */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href="/"
               aria-label="Back to app"
