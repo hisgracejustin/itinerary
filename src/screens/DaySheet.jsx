@@ -133,6 +133,18 @@ export default function DaySheet({
       <div className="fixed inset-0 flex flex-col bg-surface-dim pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         <header className="shrink-0 bg-white border-b border-outline/40">
           <div className="flex items-center gap-2 h-14 px-3">
+            {/* Hard <a>: the sheet lives outside the app shell, and in the
+                installed PWA there's no browser chrome to escape with. Offline,
+                the failed navigation just falls back to this page — harmless. */}
+            <a
+              href="/"
+              aria-label="Back to app"
+              className="shrink-0 flex items-center gap-1 -ml-1 px-2 py-1.5 rounded-full text-sm text-on-surface-variant hover:bg-surface-container transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </a>
             <h1 className="text-base font-semibold text-on-surface truncate">Offline</h1>
             <div className="flex-1" />
             <div className="relative shrink-0">
