@@ -31,7 +31,23 @@ function write(key: string, value: string) {
   }
 }
 
+// On the worker's very first session (fresh install — every iOS home-screen add
+// is one) our fetches race clients.claim(): issued before control, they bypass
+// the worker and nothing gets cached. Wait for control, bounded so a browser
+// with no SW support (or private mode) can't hang the sync forever.
+async function whenControlled(timeoutMs = 10_000) {
+  const sw = navigator.serviceWorker;
+  if (!sw || sw.controller) return;
+  await Promise.race([
+    new Promise<void>((resolve) => {
+      sw.addEventListener("controllerchange", () => resolve(), { once: true });
+    }),
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
+}
+
 async function sync() {
+  await whenControlled();
   const res = await fetch("/api/sheet-manifest", { cache: "no-store" });
   if (!res.ok) return;
   const manifest: { userId: string; attachments: string[] } = await res.json();

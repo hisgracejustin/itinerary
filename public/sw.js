@@ -15,16 +15,37 @@ self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
+// Fill SHEET_CACHE from inside the worker itself. The app shell's background
+// sync can't do this on the worker's very first session (its fetch races
+// clients.claim() and bypasses the uncontrolled worker — on iOS home-screen
+// installs, a fresh container, that IS the first session), so activation warms
+// the cache directly. Failure is fine: activating offline just means nothing
+// to warm from.
+async function warmSheet() {
+  try {
+    const response = await fetch("/sheet", { credentials: "same-origin" });
+    if (response.ok && !response.redirected) {
+      const cache = await caches.open(SHEET_CACHE);
+      await cache.put(SHEET_KEY, response);
+    }
+  } catch {
+    /* offline or logged out — the runtime rule will fill it later */
+  }
+}
+
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys.filter((k) => k !== CACHE_NAME && k !== SHEET_CACHE).map((k) => caches.delete(k)),
-        ),
-      )
-      .then(() => self.clients.claim()),
+    Promise.all([
+      caches
+        .keys()
+        .then((keys) =>
+          Promise.all(
+            keys.filter((k) => k !== CACHE_NAME && k !== SHEET_CACHE).map((k) => caches.delete(k)),
+          ),
+        )
+        .then(() => self.clients.claim()),
+      warmSheet(),
+    ]),
   );
 });
 
@@ -54,6 +75,14 @@ const isAttachment = (url) => url.pathname.startsWith("/api/attachments/");
 async function cachedSheet() {
   const cache = await caches.open(SHEET_CACHE);
   return cache.match(SHEET_KEY, { ignoreVary: true });
+}
+
+/** Last-resort page for an offline navigation with nothing cached yet. */
+function offlinePage() {
+  return new Response(
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Offline</title><body style="margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#f4f4f2;color:#1c1b1f"><div style="text-align:center;padding:32px;max-width:26rem"><div style="font-size:40px" aria-hidden>✈️</div><h1 style="font-size:18px;margin:12px 0 8px">You're offline</h1><p style="font-size:14px;color:#5f5e63;line-height:1.5;margin:0">No itinerary is saved on this device yet. Open the app once while online and it will be here from then on, connection or not.</p></div></body>`,
+    { status: 503, headers: { "Content-Type": "text/html; charset=utf-8" } },
+  );
 }
 
 self.addEventListener("fetch", (event) => {
@@ -102,7 +131,8 @@ self.addEventListener("fetch", (event) => {
         .catch(async () => {
           const cache = await caches.open(SHEET_CACHE);
           const cached = await cache.match(key, { ignoreVary: true });
-          return cached || new Response("Offline", { status: 503 });
+          if (cached) return cached;
+          return request.mode === "navigate" ? offlinePage() : new Response("Offline", { status: 503 });
         }),
     );
     return;
@@ -120,6 +150,7 @@ self.addEventListener("fetch", (event) => {
         if (sheet) return sheet;
         const home = await caches.match("/");
         if (home) return home;
+        return offlinePage();
       }
       return new Response("Offline", { status: 503 });
     }),
