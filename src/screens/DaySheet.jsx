@@ -394,9 +394,10 @@ function AttachmentViewer({ viewer, onClose, onShare }) {
   const isImage = !viewer.missing && viewer.mime?.startsWith('image/')
 
   const setZoom = (next) => {
-    const clamped = Math.min(5, Math.max(1, next))
+    // 50%–500%: zooming OUT below fit matters for tall tickets and wide PDFs.
+    const clamped = Math.min(5, Math.max(0.5, next))
     setScale(clamped)
-    if (clamped === 1) setPan({ x: 0, y: 0 })
+    if (clamped <= 1) setPan({ x: 0, y: 0 })
   }
   const pinchDist = () => {
     const [a, b] = [...pointers.current.values()]
@@ -480,7 +481,7 @@ function AttachmentViewer({ viewer, onClose, onShare }) {
             src={viewer.url}
             title={viewer.filename}
             className="rounded-lg bg-white"
-            style={{ width: `${scale * 100}%`, height: '100%' }}
+            style={{ width: `${scale * 100}%`, height: '100%', margin: '0 auto' }}
           />
         </div>
       )}
@@ -489,7 +490,7 @@ function AttachmentViewer({ viewer, onClose, onShare }) {
         <div className="shrink-0 flex justify-center pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-1.5">
           <div className="flex items-center gap-1 rounded-full bg-white/10 px-2 py-1">
             <button
-              onClick={() => setZoom(scale - 0.5)}
+              onClick={() => setZoom(scale - 0.25)}
               aria-label="Zoom out"
               className="w-8 h-8 rounded-full text-white/90 hover:bg-white/10 text-lg leading-none"
             >
@@ -503,7 +504,7 @@ function AttachmentViewer({ viewer, onClose, onShare }) {
               {Math.round(scale * 100)}%
             </button>
             <button
-              onClick={() => setZoom(scale + 0.5)}
+              onClick={() => setZoom(scale + 0.25)}
               aria-label="Zoom in"
               className="w-8 h-8 rounded-full text-white/90 hover:bg-white/10 text-lg leading-none"
             >
