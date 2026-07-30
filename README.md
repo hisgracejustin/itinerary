@@ -83,3 +83,4 @@ Schema lives in [`src/db/schema.ts`](src/db/schema.ts); generated SQL migrations
 - [Architecture](docs/architecture.md) — auth, data layer, project structure
 - [AI parsing](docs/ai-parsing.md) — the `/api/parse-booking` flow
 - [PWA & iOS safe areas](docs/pwa.md)
+- [Backups](docs/backups.md) — nightly Neon → Cloudflare R2 dump, and the restore drill

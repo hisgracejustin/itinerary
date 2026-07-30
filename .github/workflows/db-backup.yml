@@ -1,0 +1,114 @@
+name: DB backup
+
+on:
+  schedule:
+    # 19:00 UTC = 03:00 HKT — quiet hour for this app's users.
+    - cron: "0 19 * * *"
+  workflow_dispatch:
+
+# One backup at a time; a manual run never races the nightly one.
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      # `secrets` is not available in step-level `if:`, so the optional
+      # healthcheck URL is promoted to env and tested from there.
+      HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      # AWS CLI v2 >= 2.23 adds CRC32 trailers to uploads by default; R2 is
+      # happier without them. Harmless if your CLI predates the flag.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      MIN_DUMP_BYTES: "20480" # 20 KiB — below this the dump is empty/failed, not a backup
+
+    steps:
+      - name: Ping healthcheck (start)
+        if: env.HEALTHCHECK_URL != ''
+        run: curl -fsS -m 10 --retry 3 "$HEALTHCHECK_URL/start"
+
+      - name: Install postgresql-client-17 (PGDG)
+        # The runner's stock pg_dump may be older than Neon's server; pg_dump
+        # refuses to dump a newer server. Major version must be >= the server's.
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsS -m 30 --retry 3 -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          /usr/lib/postgresql/17/bin/pg_dump --version
+
+      - name: Resolve backup names
+        id: names
+        run: |
+          day="$(date -u +%F)"          # YYYY-MM-DD
+          month="$(date -u +%Y-%m)"     # YYYY-MM
+          {
+            echo "file=itinerary-$day.dump"
+            echo "daily_key=daily/itinerary-$day.dump"
+            echo "monthly_key=monthly/itinerary-$month.dump"
+            echo "is_first_of_month=$([ "$(date -u +%d)" = "01" ] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Dump database
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          /usr/lib/postgresql/17/bin/pg_dump -Fc --no-owner --no-privileges \
+            "$BACKUP_DATABASE_URL" > "${{ steps.names.outputs.file }}"
+
+      - name: Sanity-check dump size
+        run: |
+          size="$(stat -c%s "${{ steps.names.outputs.file }}")"
+          echo "Dump size: $size bytes"
+          if [ "$size" -lt "$MIN_DUMP_BYTES" ]; then
+            echo "::error::Dump is only $size bytes (< $MIN_DUMP_BYTES). Treating as a failed backup."
+            exit 1
+          fi
+          echo "LOCAL_SIZE=$size" >> "$GITHUB_ENV"
+
+      - name: Upload to R2 (daily)
+        run: |
+          aws s3 cp "${{ steps.names.outputs.file }}" \
+            "s3://$R2_BUCKET/${{ steps.names.outputs.daily_key }}" \
+            --endpoint-url "$R2_ENDPOINT"
+
+      - name: Copy to R2 (monthly)
+        if: steps.names.outputs.is_first_of_month == 'true'
+        # Separate prefix so the lifecycle rules can retain it far longer.
+        run: |
+          aws s3 cp "${{ steps.names.outputs.file }}" \
+            "s3://$R2_BUCKET/${{ steps.names.outputs.monthly_key }}" \
+            --endpoint-url "$R2_ENDPOINT"
+
+      - name: Verify uploaded object
+        run: |
+          remote="$(aws s3api head-object \
+            --bucket "$R2_BUCKET" \
+            --key "${{ steps.names.outputs.daily_key }}" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --query ContentLength --output text)"
+          echo "Remote size: $remote bytes (local $LOCAL_SIZE)"
+          if [ "$remote" != "$LOCAL_SIZE" ]; then
+            echo "::error::Uploaded size $remote != local size $LOCAL_SIZE."
+            exit 1
+          fi
+
+      - name: Ping healthcheck (success)
+        if: env.HEALTHCHECK_URL != ''
+        run: curl -fsS -m 10 --retry 3 "$HEALTHCHECK_URL"
+
+      - name: Ping healthcheck (failure)
+        if: failure() && env.HEALTHCHECK_URL != ''
+        run: curl -fsS -m 10 --retry 3 "$HEALTHCHECK_URL/fail"
