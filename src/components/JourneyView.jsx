@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { getRangeGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, tripColorMap, TYPE_ICONS } from '../lib/calendar'
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
+import { useToast } from './Toast'
+import { friendlyError } from '../lib/friendlyError'
 
 // Timezone-safe local date string (YYYY-MM-DD) — matches the calendar views.
 function toLocalDateStr(date) {
@@ -73,6 +75,7 @@ export default function JourneyView({
   const tripNameById = Object.fromEntries(tripMetas.map((t) => [t.id, t.name]))
   const showTripName = tripMetas.length > 1
 
+  const { toast } = useToast()
   const [expandedRuns, setExpandedRuns] = useState(() => new Set())
   const [editingNoteDate, setEditingNoteDate] = useState(null)
   const [noteText, setNoteText] = useState('')
@@ -172,9 +175,16 @@ export default function JourneyView({
   }
   if (run) segments.push({ type: 'run', days: run })
 
-  const saveNote = async (dateStr, tripId) => {
-    await onUpsertDayNote?.({ date: dateStr, title: noteText, trip_id: tripId })
-    setEditingNoteDate(null)
+  // `title` is explicit (not always noteText) so the delete button can save ''.
+  // Failures keep the editor open and say why — an unhandled rejection here
+  // used to read as "Enter does nothing".
+  const saveNote = async (dateStr, tripId, title) => {
+    try {
+      await onUpsertDayNote?.({ date: dateStr, title, trip_id: tripId })
+      setEditingNoteDate(null)
+    } catch (err) {
+      toast.error(friendlyError(err))
+    }
   }
 
   return (
@@ -301,18 +311,33 @@ function DaySection({
 
       {isEditingThis && (
         <form
-          className="mb-2"
-          onSubmit={(e) => { e.preventDefault(); saveNote(dateStr, noteTripId) }}
+          className="mb-2 flex items-center gap-1.5"
+          onSubmit={(e) => { e.preventDefault(); saveNote(dateStr, noteTripId, noteText) }}
         >
           <input
             type="text"
             autoFocus
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
-            onBlur={() => saveNote(dateStr, noteTripId)}
+            onBlur={() => saveNote(dateStr, noteTripId, noteText)}
             placeholder="Day title (optional)"
-            className="w-full px-3 py-1.5 text-xs italic text-on-surface-variant bg-surface-container border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="flex-1 min-w-0 px-3 py-1.5 text-xs italic text-on-surface-variant bg-surface-container border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
+          {dayNote && (
+            <button
+              type="button"
+              // preventDefault on pointerdown: otherwise the input blurs first
+              // and the blur-save races the delete.
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => saveNote(dateStr, noteTripId, '')}
+              title="Delete day title"
+              className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-on-surface-variant hover:text-red-500 hover:bg-surface-container transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          )}
         </form>
       )}
 

@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react
 import { getMonthGrid, getBookingsForDate, isSameDay, TYPE_COLORS, TYPE_ICONS, formatTime, hasOvernightCoverage, getRentalIcon } from '../lib/calendar'
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
+import { useToast } from './Toast'
+import { friendlyError } from '../lib/friendlyError'
 
 const DAY_NAMES = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
@@ -13,7 +15,7 @@ function toLocalDateStr(date) {
   return `${y}-${m}-${d}`
 }
 
-export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, tripMetas = [], selectedTrip, spanStart, spanEnd, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, onNavigateMonth, collapsed = false, onCollapsedChange }) {
+export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, tripMetas = [], trips = [], selectedTrip, spanStart, spanEnd, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, onNavigateMonth, collapsed = false, onCollapsedChange }) {
   // Default: if trip selected → first day of trip, else today
   const getDefaultDay = useCallback(() => {
     if (selectedTrip && tripMeta?.start_date) {
@@ -25,6 +27,35 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
   const [selectedDay, setSelectedDay] = useState(getDefaultDay)
   const [editingNoteDate, setEditingNoteDate] = useState(null)
   const [noteText, setNoteText] = useState('')
+  const { toast } = useToast()
+
+  // Day notes are trip-scoped (trip_id NOT NULL). This view never passed one,
+  // so under "All Trips" every save rejected — and silently, since nothing
+  // caught it: Enter appeared to do nothing. Resolve the owning trip the way
+  // the journey view does: the selected trip if it covers the day, else the
+  // first trip whose range does (naive date strings, lexicographic).
+  const noteTripFor = (dateStr) => {
+    const covers = (t) => t.start_date && t.end_date && t.start_date <= dateStr && dateStr <= t.end_date
+    // tripMetas is EMPTY under "All Trips" (it mirrors the sidebar selection),
+    // so fall back to the full trip list for ownership.
+    const pool = tripMetas.length ? tripMetas : trips
+    if (selectedTrip) {
+      const sel = pool.find((t) => t.id === selectedTrip)
+      if (sel && covers(sel)) return selectedTrip
+    }
+    return pool.find(covers)?.id ?? selectedTrip ?? null
+  }
+
+  // `title` explicit so the delete button can save ''. Failures keep the
+  // editor open and surface why.
+  const saveNote = async (dateStr, title) => {
+    try {
+      await onUpsertDayNote?.({ date: dateStr, title, trip_id: noteTripFor(dateStr) })
+      setEditingNoteDate(null)
+    } catch (err) {
+      toast.error(friendlyError(err))
+    }
+  }
   const [isCollapsed, setIsCollapsed] = useState(false)
   const calendarRef = useRef(null)
   const expandedHeight = useRef(0)
@@ -569,7 +600,9 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                   {isSameDay(date, today) && (
                     <span className="text-[10px] bg-primary-light text-primary px-2 py-0.5 rounded-full font-medium">Today</span>
                   )}
-                  {!isEditingThis && !dayNote && (
+                  {/* Only offered when a trip can own the note — an editor that
+                      can never save is worse than no editor. */}
+                  {!isEditingThis && !dayNote && noteTripFor(dateStr) && (
                     <button
                       onClick={() => { setEditingNoteDate(dateStr); setNoteText('') }}
                       className="text-outline hover:text-on-surface-variant transition-colors duration-150"
@@ -762,25 +795,33 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                 {/* Day note (title) */}
                 {isEditingThis ? (
                   <form
-                    className="mb-2"
-                    onSubmit={async (e) => {
-                      e.preventDefault()
-                      await onUpsertDayNote?.({ date: dateStr, title: noteText })
-                      setEditingNoteDate(null)
-                    }}
+                    className="mb-2 flex items-center gap-1.5"
+                    onSubmit={(e) => { e.preventDefault(); saveNote(dateStr, noteText) }}
                   >
                     <input
                       type="text"
                       autoFocus
                       value={noteText}
                       onChange={(e) => setNoteText(e.target.value)}
-                      onBlur={async () => {
-                        await onUpsertDayNote?.({ date: dateStr, title: noteText })
-                        setEditingNoteDate(null)
-                      }}
+                      onBlur={() => saveNote(dateStr, noteText)}
                       placeholder="Day title (optional)"
-                      className="w-full px-3 py-1.5 text-xs italic text-on-surface-variant bg-surface-container border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      className="flex-1 min-w-0 px-3 py-1.5 text-xs italic text-on-surface-variant bg-surface-container border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                     />
+                    {dayNote && (
+                      <button
+                        type="button"
+                        // preventDefault on pointerdown: otherwise the input
+                        // blurs first and the blur-save races the delete.
+                        onPointerDown={(e) => e.preventDefault()}
+                        onClick={() => saveNote(dateStr, '')}
+                        title="Delete day title"
+                        className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-on-surface-variant hover:text-red-500 hover:bg-surface-container transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    )}
                   </form>
                 ) : dayNote ? (
                   <button

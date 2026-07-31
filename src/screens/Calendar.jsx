@@ -129,10 +129,13 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   }
 
   const handleUpsertDayNote = ({ date, title, trip_id }) => {
-    const resolvedTripId = trip_id ?? selectedTrip ?? null
-    // Notes and reminders are trip-scoped (trip_id is NOT NULL) — with "All Trips"
-    // selected there is no trip to attach them to.
-    if (!resolvedTripId) return Promise.reject(new Error("Select a trip first to add notes"))
+    // Notes are trip-scoped (trip_id NOT NULL). Under "All Trips" there is no
+    // selected trip, but the DATE usually pins the owner — fall back to the
+    // first trip whose range covers it (naive date strings, lexicographic).
+    // Without this, saving under All Trips rejected on every surface.
+    const covers = (t) => t.start_date && t.end_date && t.start_date <= date && date <= t.end_date
+    const resolvedTripId = trip_id ?? selectedTrip ?? trips.find(covers)?.id ?? null
+    if (!resolvedTripId) return Promise.reject(new Error("This day isn't inside any trip — select a trip first to add a note"))
     const trimmed = title.trim()
     return new Promise((resolve, reject) => {
       startDayNoteTransition(async () => {
@@ -390,6 +393,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
                 dayNotes={dayNotes}
                 tripMeta={tripMeta}
                 tripMetas={tripMetas}
+                trips={trips}
                 selectedTrip={selectedTrip}
                 spanStart={journeyStart}
                 spanEnd={journeyEnd}
