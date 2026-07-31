@@ -564,136 +564,170 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
           <span className="text-sm text-on-surface-variant">Non-refundable — cannot be cancelled</span>
         </label>
         {!nonRefundable && tiers.length > 0 && (
-          <div className="space-y-2 mb-2">
+          <div className="space-y-3 mb-3">
             {tiers.map((tier, i) => {
               // Both inputs are backed by the single `cutoff` string, which is
               // either 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:mm'.
               const cutoffDate = (tier.cutoff || '').slice(0, 10)
               const cutoffTime = (tier.cutoff || '').length > 10 ? tier.cutoff.slice(11, 16) : ''
+              const kind = tier.kind || 'percent'
+              const cur = form.cost_currency || 'USD'
+              // Live plain-English readout of what this tier means — the
+              // controls alone ("100", "%") read as gibberish without it.
+              // Mirrors src/lib/cancellation.js semantics: percent/fee apply to
+              // the effective cost (amount × share), amounts clamp to it.
+              const effective = form.cost_amount
+                ? (parseFloat(form.cost_amount) || 0) * (parseFloat(form.cost_share) || 1)
+                : null
+              const v = parseFloat(tier.value)
+              let preview = null
+              if (cutoffDate && Number.isFinite(v)) {
+                const cash =
+                  kind === 'percent'
+                    ? effective != null
+                      ? `${formatCurrency(Math.min((effective * Math.min(v, 100)) / 100, effective), cur)} (${Math.min(v, 100)}%)`
+                      : `${Math.min(v, 100)}% of the cost`
+                    : kind === 'fee'
+                      ? effective != null
+                        ? `${formatCurrency(Math.max(effective - v, 0), cur)} (cost minus ${formatCurrency(v, cur)} fee)`
+                        : `the cost minus a ${formatCurrency(v, cur)} fee`
+                      : formatCurrency(effective != null ? Math.min(v, effective) : v, cur)
+                const c = tier.credit
+                const cv = c ? parseFloat(c.value) : NaN
+                let creditClause = ''
+                if (c && Number.isFinite(cv)) {
+                  const creditAmt =
+                    (c.kind || 'percent') === 'percent'
+                      ? effective != null
+                        ? formatCurrency(Math.min((effective * Math.min(cv, 100)) / 100, effective), cur)
+                        : `${Math.min(cv, 100)}%`
+                      : formatCurrency(cv, cur)
+                  creditClause = `${(c.mode || 'or') === 'and' ? ' plus ' : ' — or instead, '}${creditAmt} in credit`
+                  if (c.expiry) {
+                    creditClause += ` (use by ${new Date(c.expiry + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })})`
+                  }
+                }
+                const when = `${new Date(cutoffDate + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}${cutoffTime ? ` ${cutoffTime}` : ''}`
+                preview = `Cancel by ${when} → ${cash} back${creditClause}`
+              }
               return (
-              // A tier is two stacked rows: the cash terms, and — when one is
-              // set — its credit rider indented underneath.
-              <div key={i} className="space-y-2">
-              {/* The inputs wrap among themselves inside the inner group; the
-                  remove button sits outside it so it can never drop to its own line. */}
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
-                <input
-                  type="date"
-                  value={cutoffDate}
-                  onChange={(e) => setTier(i, { cutoff: cutoffTime ? `${e.target.value}T${cutoffTime}` : e.target.value })}
-                  className="mat-input w-36 min-w-0 text-xs"
-                />
-                {/* Optional deadline time — blank means the whole day counts. */}
-                <input
-                  type="time"
-                  value={cutoffTime}
-                  onChange={(e) => setTier(i, { cutoff: e.target.value ? `${cutoffDate}T${e.target.value}` : cutoffDate })}
-                  className="mat-input w-24 min-w-0 text-xs"
-                />
-                <div className="flex rounded-xl border border-outline/40 overflow-hidden shrink-0 max-w-[10rem]">
-                  {['percent', 'amount', 'fee'].map((k) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => setTier(i, { kind: k })}
-                      className={`px-2.5 py-2 text-xs min-w-0 transition-all duration-150 ${
-                        (tier.kind || 'percent') === k
-                          ? 'bg-primary-light text-primary font-medium'
-                          : 'text-on-surface-variant hover:bg-surface-container'
-                      }`}
-                    >
-                      <span className="block truncate">
-                        {k === 'percent' ? '%' : k === 'fee' ? 'fee' : form.cost_currency || 'amt'}
-                      </span>
-                    </button>
-                  ))}
+              // Each tier is a labeled card: a label column keeps the rows
+              // scannable, every toggle gets a full-width row (side-by-side
+              // they truncated to "% ..", "U…" at modal width), and a live
+              // sentence says what the controls add up to.
+              <div key={i} className="rounded-xl border border-outline/20 p-3 grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-2 items-center">
+                <span className="text-xs text-on-surface-variant">Cancel by</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <input
+                    type="date"
+                    value={cutoffDate}
+                    onChange={(e) => setTier(i, { cutoff: cutoffTime ? `${e.target.value}T${cutoffTime}` : e.target.value })}
+                    className="mat-input flex-1 min-w-0 text-xs"
+                  />
+                  {/* Optional deadline time — blank means the whole day counts. */}
+                  <input
+                    type="time"
+                    value={cutoffTime}
+                    onChange={(e) => setTier(i, { cutoff: e.target.value ? `${cutoffDate}T${e.target.value}` : cutoffDate })}
+                    className="mat-input w-20 min-w-0 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setTiers(tiers.filter((_, j) => j !== i))}
+                    className="shrink-0 w-7 h-7 rounded-full text-on-surface-variant hover:text-red-500 hover:bg-surface-container transition-colors duration-150"
+                    aria-label="Remove tier"
+                  >
+                    ×
+                  </button>
                 </div>
+
+                <span className="text-xs text-on-surface-variant">to get back</span>
                 <input
                   type="text"
                   inputMode="decimal"
                   value={tier.value ?? ''}
                   onChange={(e) => setTier(i, { value: e.target.value.replace(/[^0-9.]/g, '') })}
-                  placeholder={
-                    (tier.kind || 'percent') === 'percent' ? '100' : tier.kind === 'fee' ? '25' : '500'
-                  }
-                  className="mat-input w-20"
+                  placeholder={kind === 'percent' ? '100' : kind === 'fee' ? '25' : '500'}
+                  className="mat-input w-24"
                 />
+
+                <span aria-hidden />
+                <div className="flex rounded-xl border border-outline/40 overflow-hidden">
+                  {[
+                    ['percent', '%'],
+                    ['amount', cur],
+                    ['fee', '− fee'],
+                  ].map(([k, label]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setTier(i, { kind: k })}
+                      className={`flex-1 min-w-0 px-2 py-2 text-xs transition-all duration-150 ${
+                        kind === k
+                          ? 'bg-primary-light text-primary font-medium'
+                          : 'text-on-surface-variant hover:bg-surface-container'
+                      }`}
+                    >
+                      <span className="block truncate">{label}</span>
+                    </button>
+                  ))}
+                </div>
+
                 {/* Cash and credit are separate payouts, so the credit rider is
                     opt-in per tier rather than a fourth `kind`. */}
-                {!tier.credit && (
-                  <button
-                    type="button"
-                    onClick={() => setTier(i, { credit: { kind: 'percent', value: '', mode: 'or' } })}
-                    className="shrink-0 text-xs text-primary font-medium hover:underline"
-                  >
-                    + credit
-                  </button>
-                )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setTiers(tiers.filter((_, j) => j !== i))}
-                  className="shrink-0 w-8 h-8 rounded-full text-on-surface-variant hover:bg-surface-container transition-colors duration-150"
-                  aria-label="Remove tier"
-                >
-                  ×
-                </button>
-              </div>
-              {/* Voucher / future-travel credit for this same tier, indented
-                  under it. Same wrap pattern as the row above: the inputs wrap
-                  inside the inner group, the × stays pinned outside it. */}
-              {tier.credit && (
-                <div className="flex items-center gap-2 min-w-0 pl-6 border-l-2 border-outline/20 ml-1.5">
-                  <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
-                    <span className="text-xs text-on-surface-variant shrink-0">+ credit</span>
-                    <div className="flex rounded-xl border border-outline/40 overflow-hidden shrink-0 max-w-[8rem]">
-                      {['percent', 'amount'].map((k) => (
-                        <button
-                          key={k}
-                          type="button"
-                          onClick={() => setTier(i, { credit: { ...tier.credit, kind: k } })}
-                          className={`px-2.5 py-2 text-xs min-w-0 transition-all duration-150 ${
-                            (tier.credit.kind || 'percent') === k
-                              ? 'bg-primary-light text-primary font-medium'
-                              : 'text-on-surface-variant hover:bg-surface-container'
-                          }`}
-                        >
-                          <span className="block truncate">
-                            {k === 'percent' ? '%' : form.cost_currency || 'amt'}
-                          </span>
-                        </button>
-                      ))}
+                {tier.credit ? (
+                  <>
+                    <span className="text-xs text-on-surface-variant">credit</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={tier.credit.value ?? ''}
+                        onChange={(e) =>
+                          setTier(i, { credit: { ...tier.credit, value: e.target.value.replace(/[^0-9.]/g, '') } })
+                        }
+                        placeholder={(tier.credit.kind || 'percent') === 'percent' ? '100' : '500'}
+                        className="mat-input w-24 shrink-0"
+                      />
+                      <div className="flex flex-1 min-w-0 rounded-xl border border-outline/40 overflow-hidden">
+                        {['percent', 'amount'].map((k) => (
+                          <button
+                            key={k}
+                            type="button"
+                            onClick={() => setTier(i, { credit: { ...tier.credit, kind: k } })}
+                            className={`flex-1 min-w-0 px-2 py-2 text-xs transition-all duration-150 ${
+                              (tier.credit.kind || 'percent') === k
+                                ? 'bg-primary-light text-primary font-medium'
+                                : 'text-on-surface-variant hover:bg-surface-container'
+                            }`}
+                          >
+                            <span className="block">{k === 'percent' ? '%' : cur}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const { credit, ...rest } = tier
+                          setTiers(tiers.map((t, j) => (j === i ? rest : t)))
+                        }}
+                        className="shrink-0 w-7 h-7 rounded-full text-on-surface-variant hover:text-red-500 hover:bg-surface-container transition-colors duration-150"
+                        aria-label="Remove credit"
+                      >
+                        ×
+                      </button>
                     </div>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={tier.credit.value ?? ''}
-                      onChange={(e) =>
-                        setTier(i, { credit: { ...tier.credit, value: e.target.value.replace(/[^0-9.]/g, '') } })
-                      }
-                      placeholder={(tier.credit.kind || 'percent') === 'percent' ? '100' : '500'}
-                      className="mat-input w-20"
-                    />
-                    {/* Optional: the day the voucher must be used by. Blank means
-                        no stated expiry — never guessed. */}
-                    <span className="text-xs text-on-surface-variant shrink-0">expires</span>
-                    <input
-                      type="date"
-                      value={tier.credit.expiry || ''}
-                      onChange={(e) => setTier(i, { credit: { ...tier.credit, expiry: e.target.value } })}
-                      className="mat-input w-36 min-w-0 text-xs"
-                    />
-                    {/* Is the voucher offered in place of the cash refund, or as
-                        well as it? 'instead' is the usual deal (and the default),
-                        and it's what the /costs net-loss figure hinges on. */}
-                    <div className="flex rounded-xl border border-outline/40 overflow-hidden shrink-0 max-w-[10rem]">
+
+                    <span aria-hidden />
+                    {/* Instead of the cash refund, or on top of it? 'instead'
+                        is the usual deal and the /costs net-loss hinges on it. */}
+                    <div className="flex rounded-xl border border-outline/40 overflow-hidden">
                       {[['or', 'instead'], ['and', 'on top']].map(([m, label]) => (
                         <button
                           key={m}
                           type="button"
                           onClick={() => setTier(i, { credit: { ...tier.credit, mode: m } })}
-                          className={`px-2.5 py-2 text-xs min-w-0 transition-all duration-150 ${
+                          className={`flex-1 min-w-0 px-2 py-2 text-xs transition-all duration-150 ${
                             (tier.credit.mode || 'or') === m
                               ? 'bg-primary-light text-primary font-medium'
                               : 'text-on-surface-variant hover:bg-surface-container'
@@ -703,20 +737,37 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                         </button>
                       ))}
                     </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const { credit, ...rest } = tier
-                      setTiers(tiers.map((t, j) => (j === i ? rest : t)))
-                    }}
-                    className="shrink-0 w-8 h-8 rounded-full text-on-surface-variant hover:bg-surface-container transition-colors duration-150"
-                    aria-label="Remove credit"
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
+
+                    {/* Optional: the day the voucher must be used by. Blank
+                        means no stated expiry — never guessed. */}
+                    <span className="text-xs text-on-surface-variant">use it by</span>
+                    <input
+                      type="date"
+                      value={tier.credit.expiry || ''}
+                      onChange={(e) => setTier(i, { credit: { ...tier.credit, expiry: e.target.value } })}
+                      className="mat-input min-w-0 text-xs"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <span aria-hidden />
+                    <button
+                      type="button"
+                      onClick={() => setTier(i, { credit: { kind: 'percent', value: '', mode: 'or' } })}
+                      className="justify-self-start text-xs text-primary font-medium hover:underline"
+                    >
+                      + they give credit too
+                    </button>
+                  </>
+                )}
+
+                {preview ? (
+                  <p className="col-span-2 text-[11px] text-emerald-700 bg-emerald-50 rounded-lg px-2.5 py-1.5">{preview}</p>
+                ) : (
+                  <p className="col-span-2 text-[11px] text-on-surface-variant/60">
+                    Set the date and value to see what this tier means.
+                  </p>
+                )}
               </div>
               )
             })}
