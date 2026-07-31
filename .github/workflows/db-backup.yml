@@ -20,6 +20,10 @@ jobs:
       # `secrets` is not available in step-level `if:`, so the optional
       # healthcheck URL is promoted to env and tested from there.
       HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
+      # Not-yet-configured guard: until the secrets exist, every step skips and
+      # the run ends green (a nightly red X just trains you to ignore backup
+      # failures). Arms itself the moment the secrets are added.
+      CONFIGURED: ${{ secrets.BACKUP_DATABASE_URL != '' && secrets.R2_ACCOUNT_ID != '' && secrets.R2_ACCESS_KEY_ID != '' && secrets.R2_SECRET_ACCESS_KEY != '' && secrets.R2_BUCKET != '' }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
       R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -32,11 +36,16 @@ jobs:
       MIN_DUMP_BYTES: "20480" # 20 KiB — below this the dump is empty/failed, not a backup
 
     steps:
+      - name: Backup not configured yet
+        if: env.CONFIGURED != 'true'
+        run: echo "::notice::Backup secrets not set — skipping (see docs/backups.md for setup)."
+
       - name: Ping healthcheck (start)
-        if: env.HEALTHCHECK_URL != ''
+        if: env.CONFIGURED == 'true' && env.HEALTHCHECK_URL != ''
         run: curl -fsS -m 10 --retry 3 "$HEALTHCHECK_URL/start"
 
       - name: Install postgresql-client-17 (PGDG)
+        if: env.CONFIGURED == 'true'
         # The runner's stock pg_dump may be older than Neon's server; pg_dump
         # refuses to dump a newer server. Major version must be >= the server's.
         run: |
@@ -50,6 +59,7 @@ jobs:
           /usr/lib/postgresql/17/bin/pg_dump --version
 
       - name: Resolve backup names
+        if: env.CONFIGURED == 'true'
         id: names
         run: |
           day="$(date -u +%F)"          # YYYY-MM-DD
@@ -62,6 +72,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Dump database
+        if: env.CONFIGURED == 'true'
         env:
           BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
         run: |
@@ -69,6 +80,7 @@ jobs:
             "$BACKUP_DATABASE_URL" > "${{ steps.names.outputs.file }}"
 
       - name: Sanity-check dump size
+        if: env.CONFIGURED == 'true'
         run: |
           size="$(stat -c%s "${{ steps.names.outputs.file }}")"
           echo "Dump size: $size bytes"
@@ -79,13 +91,14 @@ jobs:
           echo "LOCAL_SIZE=$size" >> "$GITHUB_ENV"
 
       - name: Upload to R2 (daily)
+        if: env.CONFIGURED == 'true'
         run: |
           aws s3 cp "${{ steps.names.outputs.file }}" \
             "s3://$R2_BUCKET/${{ steps.names.outputs.daily_key }}" \
             --endpoint-url "$R2_ENDPOINT"
 
       - name: Copy to R2 (monthly)
-        if: steps.names.outputs.is_first_of_month == 'true'
+        if: env.CONFIGURED == 'true' && steps.names.outputs.is_first_of_month == 'true'
         # Separate prefix so the lifecycle rules can retain it far longer.
         run: |
           aws s3 cp "${{ steps.names.outputs.file }}" \
@@ -93,6 +106,7 @@ jobs:
             --endpoint-url "$R2_ENDPOINT"
 
       - name: Verify uploaded object
+        if: env.CONFIGURED == 'true'
         run: |
           remote="$(aws s3api head-object \
             --bucket "$R2_BUCKET" \
@@ -106,9 +120,9 @@ jobs:
           fi
 
       - name: Ping healthcheck (success)
-        if: env.HEALTHCHECK_URL != ''
+        if: env.CONFIGURED == 'true' && env.HEALTHCHECK_URL != ''
         run: curl -fsS -m 10 --retry 3 "$HEALTHCHECK_URL"
 
       - name: Ping healthcheck (failure)
-        if: failure() && env.HEALTHCHECK_URL != ''
+        if: failure() && env.CONFIGURED == 'true' && env.HEALTHCHECK_URL != ''
         run: curl -fsS -m 10 --retry 3 "$HEALTHCHECK_URL/fail"
