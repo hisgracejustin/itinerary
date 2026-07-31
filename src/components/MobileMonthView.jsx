@@ -812,7 +812,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                         type="button"
                         // preventDefault on pointerdown: otherwise the input
                         // blurs first and the blur-save races the delete.
-                        onPointerDown={(e) => e.preventDefault()}
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => saveNote(dateStr, '')}
                         title="Delete day title"
                         className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-on-surface-variant hover:text-red-500 hover:bg-surface-container transition-colors"
