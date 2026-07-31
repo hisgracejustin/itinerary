@@ -4,7 +4,7 @@ import BookingChip from './BookingChip'
 import JourneyView from './JourneyView'
 import { formatReminderTime } from './DayReminders'
 import useMediaQuery from '../hooks/useMediaQuery'
-import useDayNoteEditor from '../hooks/useDayNoteEditor'
+import useDayNoteEditor, { noteTripId } from '../hooks/useDayNoteEditor'
 import { useToast } from './Toast'
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -119,8 +119,8 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
   const isWide = useMediaQuery('(min-width: 1024px)')
   const [selectedDay, setSelectedDay] = useState(currentDate)
   const { toast } = useToast()
-  // Trip resolution happens in Calendar's handler here (it falls back to the
-  // trip covering the date), so no trip id is passed.
+  // Writes carry the edited note's own trip (see noteTripId); Calendar's
+  // handler only falls back to a date-derived trip for a brand-new note.
   const {
     editingNoteDate, setEditingNoteDate, noteText, setNoteText, saveNote, blurSave, deleteButtonProps,
   } = useDayNoteEditor(onUpsertDayNote, (msg) => toast.error(msg))
@@ -410,20 +410,20 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
           <form
             className="mb-0.5 flex items-center gap-0.5"
             onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => { e.preventDefault(); saveNote(dateStr, noteText) }}
+            onSubmit={(e) => { e.preventDefault(); saveNote(dateStr, noteText, noteTripId(dayNote)) }}
           >
             <input
               type="text"
               autoFocus
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
-              onBlur={(e) => blurSave(e, dateStr, noteText)}
+              onBlur={(e) => blurSave(e, dateStr, noteText, noteTripId(dayNote))}
               placeholder="Day title"
               className="flex-1 min-w-0 px-1.5 py-0.5 text-[10px] italic text-on-surface-variant bg-surface-container border-0 rounded focus:outline-none focus:ring-1 focus:ring-primary/30"
             />
             {dayNote && (
               <button
-                {...deleteButtonProps(dateStr)}
+                {...deleteButtonProps(dateStr, noteTripId(dayNote))}
                 title="Delete day title"
                 className="shrink-0 w-4 h-4 rounded flex items-center justify-center text-on-surface-variant hover:text-red-500 transition-colors"
               >

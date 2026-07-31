@@ -11,6 +11,26 @@ import { friendlyError } from '../lib/friendlyError'
  * `onError` receives a friendly message when a save is rejected; failures keep
  * the editor open rather than reading as "Enter does nothing".
  */
+/**
+ * The trip a day-note write must target.
+ *
+ * A note is unique per (date, trip_id) and the server matches on that exact
+ * pair, so an EXISTING note owns its trip — it is never safe to re-derive one
+ * from the date. Every surface used to guess ("the selected trip, else the
+ * first trip whose range covers this day"), which silently wrote to a
+ * different slot whenever the guess disagreed with the note's real owner —
+ * i.e. on any day two trips cover (a split journey's handover day) and under
+ * "All Trips". The save then INSERTED a duplicate under the guessed trip
+ * instead of updating, and the delete matched nothing and deleted nothing:
+ * the note the user clicked stayed on screen, so the trash "did nothing".
+ *
+ * Only a brand-new note has no owner yet — that is the one case the
+ * date-derived `fallbackTripId` is for.
+ */
+export function noteTripId(dayNote, fallbackTripId) {
+  return dayNote?.trip_id ?? fallbackTripId ?? null
+}
+
 export default function useDayNoteEditor(onUpsertDayNote, onError) {
   const [editingNoteDate, setEditingNoteDate] = useState(null)
   const [noteText, setNoteText] = useState('')

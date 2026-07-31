@@ -3,7 +3,7 @@ import { getRangeGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, trip
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
 import { useToast } from './Toast'
-import useDayNoteEditor from '../hooks/useDayNoteEditor'
+import useDayNoteEditor, { noteTripId } from '../hooks/useDayNoteEditor'
 
 // Timezone-safe local date string (YYYY-MM-DD) — matches the calendar views.
 function toLocalDateStr(date) {
@@ -230,7 +230,7 @@ function DaySection({
   const isEditingThis = editingNoteDate === dateStr
   // Notes/reminders attach to the day's trip. On an overlap day, default to the
   // first owning trip (the Add Booking picker handles the ambiguous case).
-  const noteTripId = owners[0]?.id ?? null
+  const dayOwnerTripId = owners[0]?.id ?? null
   const noStay = !isLastSpanDay && !covered
 
   return (
@@ -279,7 +279,7 @@ function DaySection({
           )
         )}
         <div className="flex-1" />
-        {!isEditingThis && !dayNote && onUpsertDayNote && noteTripId && (
+        {!isEditingThis && !dayNote && onUpsertDayNote && dayOwnerTripId && (
           <button
             onClick={() => { setEditingNoteDate(dateStr); setNoteText('') }}
             className="text-outline hover:text-on-surface-variant transition-colors shrink-0"
@@ -295,20 +295,20 @@ function DaySection({
       {isEditingThis && (
         <form
           className="mb-2 flex items-center gap-1.5"
-          onSubmit={(e) => { e.preventDefault(); saveNote(dateStr, noteText, noteTripId) }}
+          onSubmit={(e) => { e.preventDefault(); saveNote(dateStr, noteText, noteTripId(dayNote, dayOwnerTripId)) }}
         >
           <input
             type="text"
             autoFocus
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
-            onBlur={(e) => blurSave(e, dateStr, noteText, noteTripId)}
+            onBlur={(e) => blurSave(e, dateStr, noteText, noteTripId(dayNote, dayOwnerTripId))}
             placeholder="Day title (optional)"
             className="flex-1 min-w-0 px-3 py-1.5 text-xs italic text-on-surface-variant bg-surface-container border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           {dayNote && (
             <button
-              {...deleteButtonProps(dateStr, noteTripId)}
+              {...deleteButtonProps(dateStr, noteTripId(dayNote, dayOwnerTripId))}
               title="Delete day title"
               className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-on-surface-variant hover:text-red-500 hover:bg-surface-container transition-colors"
             >
@@ -404,7 +404,7 @@ function DaySection({
           <DayReminders
             reminders={dayRems}
             date={dateStr}
-            tripId={noteTripId}
+            tripId={dayOwnerTripId}
             onAdd={reminderProps.onAddReminder}
             onEdit={reminderProps.onEditReminder}
             onRemove={reminderProps.onRemoveReminder}

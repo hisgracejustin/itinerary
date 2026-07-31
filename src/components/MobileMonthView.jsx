@@ -3,7 +3,7 @@ import { getMonthGrid, getBookingsForDate, isSameDay, TYPE_COLORS, TYPE_ICONS, f
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
 import { useToast } from './Toast'
-import useDayNoteEditor from '../hooks/useDayNoteEditor'
+import useDayNoteEditor, { noteTripId } from '../hooks/useDayNoteEditor'
 
 const DAY_NAMES = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
@@ -788,20 +788,20 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                 {isEditingThis ? (
                   <form
                     className="mb-2 flex items-center gap-1.5"
-                    onSubmit={(e) => { e.preventDefault(); saveNote(dateStr, noteText, noteTripFor(dateStr)) }}
+                    onSubmit={(e) => { e.preventDefault(); saveNote(dateStr, noteText, noteTripId(dayNote, noteTripFor(dateStr))) }}
                   >
                     <input
                       type="text"
                       autoFocus
                       value={noteText}
                       onChange={(e) => setNoteText(e.target.value)}
-                      onBlur={(e) => blurSave(e, dateStr, noteText, noteTripFor(dateStr))}
+                      onBlur={(e) => blurSave(e, dateStr, noteText, noteTripId(dayNote, noteTripFor(dateStr)))}
                       placeholder="Day title (optional)"
                       className="flex-1 min-w-0 px-3 py-1.5 text-xs italic text-on-surface-variant bg-surface-container border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                     />
                     {dayNote && (
                       <button
-                        {...deleteButtonProps(dateStr, noteTripFor(dateStr))}
+                        {...deleteButtonProps(dateStr, noteTripId(dayNote, noteTripFor(dateStr)))}
                         title="Delete day title"
                         className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-on-surface-variant hover:text-red-500 hover:bg-surface-container transition-colors"
                       >
