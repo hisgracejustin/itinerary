@@ -4,8 +4,8 @@ import BookingChip from './BookingChip'
 import JourneyView from './JourneyView'
 import { formatReminderTime } from './DayReminders'
 import useMediaQuery from '../hooks/useMediaQuery'
+import useDayNoteEditor from '../hooks/useDayNoteEditor'
 import { useToast } from './Toast'
-import { friendlyError } from '../lib/friendlyError'
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -118,22 +118,12 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
   // rail is hidden and clicking a day navigates to the Day view.
   const isWide = useMediaQuery('(min-width: 1024px)')
   const [selectedDay, setSelectedDay] = useState(currentDate)
-  const [editingNoteDate, setEditingNoteDate] = useState(null)
-  const [noteText, setNoteText] = useState('')
   const { toast } = useToast()
-
-  // `title` explicit so the delete button can save '' (which deletes
-  // server-side). Failures keep the editor open and say why — an unhandled
-  // rejection here read as "Enter does nothing". Trip resolution happens in
-  // Calendar's handler (falls back to the trip covering the date).
-  const saveNote = async (dateStr, title) => {
-    try {
-      await onUpsertDayNote?.({ date: dateStr, title })
-      setEditingNoteDate(null)
-    } catch (err) {
-      toast.error(friendlyError(err))
-    }
-  }
+  // Trip resolution happens in Calendar's handler here (it falls back to the
+  // trip covering the date), so no trip id is passed.
+  const {
+    editingNoteDate, setEditingNoteDate, noteText, setNoteText, saveNote, blurSave, deleteButtonProps,
+  } = useDayNoteEditor(onUpsertDayNote, (msg) => toast.error(msg))
 
   // Rail scroll requests — a token forces re-scroll even for the same day.
   const [scrollRequest, setScrollRequest] = useState(null)
@@ -427,17 +417,13 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
               autoFocus
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
-              onBlur={() => saveNote(dateStr, noteText)}
+              onBlur={(e) => blurSave(e, dateStr, noteText)}
               placeholder="Day title"
               className="flex-1 min-w-0 px-1.5 py-0.5 text-[10px] italic text-on-surface-variant bg-surface-container border-0 rounded focus:outline-none focus:ring-1 focus:ring-primary/30"
             />
             {dayNote && (
               <button
-                type="button"
-                // preventDefault on pointerdown: otherwise the input blurs
-                // first and the blur-save races the delete.
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => saveNote(dateStr, '')}
+                {...deleteButtonProps(dateStr)}
                 title="Delete day title"
                 className="shrink-0 w-4 h-4 rounded flex items-center justify-center text-on-surface-variant hover:text-red-500 transition-colors"
               >

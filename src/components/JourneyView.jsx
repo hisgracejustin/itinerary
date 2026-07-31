@@ -3,7 +3,7 @@ import { getRangeGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, trip
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
 import { useToast } from './Toast'
-import { friendlyError } from '../lib/friendlyError'
+import useDayNoteEditor from '../hooks/useDayNoteEditor'
 
 // Timezone-safe local date string (YYYY-MM-DD) — matches the calendar views.
 function toLocalDateStr(date) {
@@ -77,8 +77,7 @@ export default function JourneyView({
 
   const { toast } = useToast()
   const [expandedRuns, setExpandedRuns] = useState(() => new Set())
-  const [editingNoteDate, setEditingNoteDate] = useState(null)
-  const [noteText, setNoteText] = useState('')
+  const noteEditor = useDayNoteEditor(onUpsertDayNote, (msg) => toast.error(msg))
 
   // Scroll-to-day requests from the month grid (day cell / "+N more" clicks,
   // single-trip selection). Finds the exact day section, or the nearest one
@@ -175,18 +174,6 @@ export default function JourneyView({
   }
   if (run) segments.push({ type: 'run', days: run })
 
-  // `title` is explicit (not always noteText) so the delete button can save ''.
-  // Failures keep the editor open and say why — an unhandled rejection here
-  // used to read as "Enter does nothing".
-  const saveNote = async (dateStr, tripId, title) => {
-    try {
-      await onUpsertDayNote?.({ date: dateStr, title, trip_id: tripId })
-      setEditingNoteDate(null)
-    } catch (err) {
-      toast.error(friendlyError(err))
-    }
-  }
-
   return (
     <div ref={scrollerRef} className={`h-full overflow-y-auto ${compact ? 'px-3 py-3' : 'px-3 sm:px-5 py-4'}`}>
       <div className="max-w-3xl mx-auto space-y-1">
@@ -219,11 +206,7 @@ export default function JourneyView({
               showTripName={showTripName}
               isLastSpanDay={isSameDay(seg.data.day, spanEndDay)}
               today={today}
-              editingNoteDate={editingNoteDate}
-              setEditingNoteDate={setEditingNoteDate}
-              noteText={noteText}
-              setNoteText={setNoteText}
-              saveNote={saveNote}
+              noteEditor={noteEditor}
               onBookingClick={onBookingClick}
               onUpsertDayNote={onUpsertDayNote}
               onSelectDate={onSelectDate}
@@ -239,9 +222,9 @@ export default function JourneyView({
 /** One content day: neutral date header, then a rail-marked row per booking. */
 function DaySection({
   data, highlighted = false, colorMap, tripNameById, showTripName, isLastSpanDay, today,
-  editingNoteDate, setEditingNoteDate, noteText, setNoteText, saveNote,
-  onBookingClick, onUpsertDayNote, onSelectDate, reminderProps,
+  noteEditor, onBookingClick, onUpsertDayNote, onSelectDate, reminderProps,
 }) {
+  const { editingNoteDate, setEditingNoteDate, noteText, setNoteText, saveNote, blurSave, deleteButtonProps } = noteEditor
   const { day, dateStr, dayBookings, continuing, dayTodos, dayNote, dayRems, owners, covered } = data
   const isToday = isSameDay(day, today)
   const isEditingThis = editingNoteDate === dateStr
@@ -312,24 +295,20 @@ function DaySection({
       {isEditingThis && (
         <form
           className="mb-2 flex items-center gap-1.5"
-          onSubmit={(e) => { e.preventDefault(); saveNote(dateStr, noteTripId, noteText) }}
+          onSubmit={(e) => { e.preventDefault(); saveNote(dateStr, noteText, noteTripId) }}
         >
           <input
             type="text"
             autoFocus
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
-            onBlur={() => saveNote(dateStr, noteTripId, noteText)}
+            onBlur={(e) => blurSave(e, dateStr, noteText, noteTripId)}
             placeholder="Day title (optional)"
             className="flex-1 min-w-0 px-3 py-1.5 text-xs italic text-on-surface-variant bg-surface-container border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           {dayNote && (
             <button
-              type="button"
-              // preventDefault on pointerdown: otherwise the input blurs first
-              // and the blur-save races the delete.
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => saveNote(dateStr, noteTripId, '')}
+              {...deleteButtonProps(dateStr, noteTripId)}
               title="Delete day title"
               className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-on-surface-variant hover:text-red-500 hover:bg-surface-container transition-colors"
             >

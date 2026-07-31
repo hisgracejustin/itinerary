@@ -3,7 +3,7 @@ import { getMonthGrid, getBookingsForDate, isSameDay, TYPE_COLORS, TYPE_ICONS, f
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
 import { useToast } from './Toast'
-import { friendlyError } from '../lib/friendlyError'
+import useDayNoteEditor from '../hooks/useDayNoteEditor'
 
 const DAY_NAMES = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
@@ -25,8 +25,6 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
   }, [selectedTrip, tripMeta])
 
   const [selectedDay, setSelectedDay] = useState(getDefaultDay)
-  const [editingNoteDate, setEditingNoteDate] = useState(null)
-  const [noteText, setNoteText] = useState('')
   const { toast } = useToast()
 
   // Day notes are trip-scoped (trip_id NOT NULL). This view never passed one,
@@ -46,16 +44,10 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
     return pool.find(covers)?.id ?? selectedTrip ?? null
   }
 
-  // `title` explicit so the delete button can save ''. Failures keep the
-  // editor open and surface why.
-  const saveNote = async (dateStr, title) => {
-    try {
-      await onUpsertDayNote?.({ date: dateStr, title, trip_id: noteTripFor(dateStr) })
-      setEditingNoteDate(null)
-    } catch (err) {
-      toast.error(friendlyError(err))
-    }
-  }
+  const {
+    editingNoteDate, setEditingNoteDate, noteText, setNoteText, saveNote, blurSave, deleteButtonProps,
+  } = useDayNoteEditor(onUpsertDayNote, (msg) => toast.error(msg))
+
   const [isCollapsed, setIsCollapsed] = useState(false)
   const calendarRef = useRef(null)
   const expandedHeight = useRef(0)
@@ -796,24 +788,20 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                 {isEditingThis ? (
                   <form
                     className="mb-2 flex items-center gap-1.5"
-                    onSubmit={(e) => { e.preventDefault(); saveNote(dateStr, noteText) }}
+                    onSubmit={(e) => { e.preventDefault(); saveNote(dateStr, noteText, noteTripFor(dateStr)) }}
                   >
                     <input
                       type="text"
                       autoFocus
                       value={noteText}
                       onChange={(e) => setNoteText(e.target.value)}
-                      onBlur={() => saveNote(dateStr, noteText)}
+                      onBlur={(e) => blurSave(e, dateStr, noteText, noteTripFor(dateStr))}
                       placeholder="Day title (optional)"
                       className="flex-1 min-w-0 px-3 py-1.5 text-xs italic text-on-surface-variant bg-surface-container border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                     />
                     {dayNote && (
                       <button
-                        type="button"
-                        // preventDefault on pointerdown: otherwise the input
-                        // blurs first and the blur-save races the delete.
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => saveNote(dateStr, '')}
+                        {...deleteButtonProps(dateStr, noteTripFor(dateStr))}
                         title="Delete day title"
                         className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-on-surface-variant hover:text-red-500 hover:bg-surface-container transition-colors"
                       >
