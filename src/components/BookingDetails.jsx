@@ -96,6 +96,46 @@ export default function BookingDetails({ booking }) {
   // Re-sanitized on read: seeded and legacy rows never passed through the Zod layer.
   const policy = sanitizeCancellationPolicy(details.cancellation_policy)
 
+  // A merged layover flight keeps its per-leg data in details.layovers
+  // ({ airport, arrival, departure, flight_number-of-the-inbound-leg }).
+  // Reconstruct the legs for display; the merge doesn't store the final
+  // leg's flight number, so that one renders without it.
+  const layovers = Array.isArray(details.layovers) ? details.layovers : []
+  const legs =
+    layovers.length > 0
+      ? [
+          ...layovers.map((lo, i) => ({
+            from: i === 0 ? details.departure_airport : layovers[i - 1].airport,
+            to: lo.airport,
+            depart: i === 0 ? booking.start_date : layovers[i - 1].departure,
+            arrive: lo.arrival,
+            flight: lo.flight_number,
+            stopAfter: lo,
+          })),
+          {
+            from: layovers[layovers.length - 1].airport,
+            to: details.arrival_airport,
+            depart: layovers[layovers.length - 1].departure,
+            arrive: booking.end_date,
+            flight: null,
+            stopAfter: null,
+          },
+        ]
+      : []
+  const legTime = (iso) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d)) return ''
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  }
+  const stopDuration = (lo) => {
+    const ms = new Date(lo.departure) - new Date(lo.arrival)
+    if (!Number.isFinite(ms) || ms <= 0) return ''
+    const h = Math.floor(ms / 3600000)
+    const m = Math.round((ms % 3600000) / 60000)
+    return h > 0 ? (m > 0 ? `${h}h${m}m` : `${h}h`) : `${m}m`
+  }
+
   return (
     <div className="space-y-4 min-w-0">
       <div>
@@ -150,6 +190,41 @@ export default function BookingDetails({ booking }) {
                 </Row>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {legs.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">Flight legs</h3>
+          <div className="rounded-xl border border-outline/20 px-4 py-1">
+            {legs.map((leg, i) => (
+              <div key={i} className={i > 0 ? 'border-t border-outline/10' : ''}>
+                <div className="flex items-center justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-on-surface">
+                      {leg.from || '—'} → {leg.to || '—'}
+                      {leg.flight && (
+                        <span className="ml-2 text-xs font-mono font-normal bg-surface-container px-1.5 py-0.5 rounded">
+                          {leg.flight}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-xs text-on-surface-variant text-right shrink-0 whitespace-nowrap">
+                    {legTime(leg.depart)}
+                    <span className="opacity-60"> → </span>
+                    {legTime(leg.arrive)}
+                  </div>
+                </div>
+                {leg.stopAfter && (
+                  <div className="pb-2 text-[11px] text-amber-600">
+                    {stopDuration(leg.stopAfter) && `${stopDuration(leg.stopAfter)} layover`}
+                    {leg.stopAfter.airport && ` in ${leg.stopAfter.airport}`}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
