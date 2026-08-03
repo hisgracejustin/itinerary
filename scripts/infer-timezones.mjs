@@ -22,7 +22,7 @@
  * itself IS imported — it has no imports of its own, so it loads cleanly, and
  * duplicating 91 entries is how the two copies would drift.
  */
-import "dotenv/config";
+import "./load-env.mjs";
 import { getAirportTimezone } from "../src/lib/airports.js";
 import { pgOptions, explainPgError } from "./pg-connect.mjs";
 

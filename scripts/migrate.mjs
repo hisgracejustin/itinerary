@@ -12,7 +12,7 @@
 // The advisory lock is ours because drizzle's migrator has none: two runners
 // (a redeploy racing another build) would otherwise apply the same migration
 // twice. The key is an arbitrary constant, shared only with this script.
-import "dotenv/config";
+import "./load-env.mjs";
 import { pgOptions, explainPgError } from "./pg-connect.mjs";
 
 const LOCK_KEY = 727144907;

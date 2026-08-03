@@ -125,13 +125,27 @@ function sanitizeDetails(details: Record<string, unknown>) {
 // one is read as fact by every cancellation-cutoff comparison on the booking.
 const SUPPORTED_ZONES = new Set<string>(Intl.supportedValuesOf("timeZone"));
 
+// Booking dates are naive wall clock — the clock on the wall where the booking
+// happens, with the zone carried separately in `timezone`. A trailing Z or
+// ±HH:MM turns the value into an absolute instant, which then renders as a
+// different time (sometimes a different DAY) for every viewer, and which the
+// edit form would rewrite to the editing device's clock on the next save.
+// Three rows entered before this was enforced had to be repaired by hand; this
+// is the boundary that stops a fourth.
+const OFFSET_SUFFIX = /(Z|[+-]\d{2}:?\d{2})$/;
+const wallClock = (schema: z.ZodString) =>
+  schema.refine(
+    (s) => !OFFSET_SUFFIX.test(s),
+    "Dates are stored as wall clock — drop the timezone suffix and set the booking's timezone instead",
+  );
+
 const bookingBaseShape = {
   id: z.string().optional(),
   trip_id: z.string().uuid(),
   type: bookingTypeSchema,
   title: z.string().min(1),
-  start_date: z.string().min(1),
-  end_date: z.string().nullish(),
+  start_date: wallClock(z.string().min(1)),
+  end_date: wallClock(z.string()).nullish(),
   // The provider's clock for this booking's times and cutoffs. Required on
   // create — a booking with no zone is one whose cancellation deadline we can
   // only guess at, and the form always arrives pre-filled, so there is no case
