@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:migrate:deploy": "node scripts/migrate.mjs"
+    "db:migrate:deploy": "node scripts/migrate.mjs",
+    "db:infer-timezones": "node scripts/infer-timezones.mjs"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",

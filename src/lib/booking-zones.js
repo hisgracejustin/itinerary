@@ -9,9 +9,12 @@ import { parseDetails } from './bookingStats'
  * seat over the Pacific. Resolving it against the device clock is what let a
  * HK→Vancouver flight roll "now" back ~15h and resurrect a lapsed refund tier.
  *
- * Only airports carry a zone in this app, so the resolution is a chain of
- * proxies ending in null — and null is a legitimate answer, meaning "we cannot
- * place this booking on the map", which callers read as the device's own clock.
+ * A booking may CARRY its zone (bookings.timezone), which is the only answer
+ * that isn't a guess — nothing else in the row places a Kyoto ryokan or a
+ * Eurostar hop across the Channel. The rest of the chain infers from airports,
+ * the one thing in this app that geolocates itself, and ends in null: a
+ * legitimate answer meaning "we cannot place this booking on the map", which
+ * callers read as the device's own clock.
  */
 
 /**
@@ -49,11 +52,47 @@ export function tripZone(trip, bookings) {
 }
 
 /**
- * The zone to read a booking's dates in: its own if it has one, otherwise its
- * trip's destination, otherwise null (the caller falls back to device-local).
+ * Where the traveller was last put down: the arrival airport of the most recent
+ * flight that had already LANDED when this booking starts. Deliberately searched
+ * across every booking handed in, not just this booking's trip — a journey is
+ * often split into several trips with different rosters, so the flight that
+ * placed you in the country can live on a trip this booking doesn't belong to.
+ *
+ * Beats tripZone on the two cases it exists for: a multi-zone trip (you flew on
+ * again, so the trip's FIRST landing is stale) and a return-leg trip holding
+ * only the flight home and the last night's hotel (no landing on that trip yet).
+ *
+ * @param {Array} bookings every booking in scope, any trip
+ * @returns {string | null} IANA zone
+ */
+export function chronologicalZone(booking, bookings) {
+  if (!booking?.start_date || !Array.isArray(bookings)) return null
+  const start = String(booking.start_date)
+  let latest = null
+  for (const b of bookings) {
+    // Self-exclusion is load-bearing, not defensive: an eastbound flight over
+    // the dateline lands at a wall-clock time BEFORE it departs, so a flight
+    // would otherwise qualify as its own preceding landing.
+    if (!b || b.id === booking.id || b.type !== 'flight' || !b.end_date) continue
+    const landed = String(b.end_date)
+    if (landed > start) continue
+    if (!latest || landed > String(latest.end_date)) latest = b
+  }
+  return latest ? getAirportTimezone(parseDetails(latest).arrival_airport) : null
+}
+
+/**
+ * The zone to read a booking's dates in: the one it carries, else its own
+ * departure airport, else wherever the last flight put us down, else the trip's
+ * destination, else null (the caller falls back to device-local).
+ *
+ * tripZone stays last rather than being retired — it still answers when a trip's
+ * only flight lands AFTER the booking starts, which chronologicalZone can't see.
  *
  * @returns {string | null} IANA zone
  */
 export function resolveZone(booking, trip, bookings) {
-  return bookingZone(booking) ?? tripZone(trip, bookings)
+  const stored = booking?.timezone
+  if (typeof stored === 'string' && stored) return stored
+  return bookingZone(booking) ?? chronologicalZone(booking, bookings) ?? tripZone(trip, bookings)
 }

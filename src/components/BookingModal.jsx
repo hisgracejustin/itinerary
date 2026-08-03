@@ -63,7 +63,7 @@ function mergeAsLayover(legs) {
   }
 }
 
-export default function BookingModal({ booking, onClose, onSave, onDelete, selectedTrip, tripName }) {
+export default function BookingModal({ booking, onClose, onSave, onDelete, selectedTrip, tripName, allBookings = null }) {
   const [saving, setSaving] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [mode, setMode] = useState('manual') // 'manual' | 'upload' | 'multi-review'
@@ -368,6 +368,9 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
                 saving={saving}
                 formRef={formRef}
                 selectedTrip={selectedTrip}
+                // Unfiltered on purpose: the flight that placed the traveller in
+                // a zone is often on a different trip (see chronologicalZone).
+                allBookings={allBookings}
               />
               {/* Hidden while stepping through separate legs (the document is
                   attached to each automatically), but shown for a layover since

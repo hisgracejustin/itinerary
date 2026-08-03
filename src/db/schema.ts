@@ -149,6 +149,13 @@ export const bookings = pgTable(
     title: text("title").notNull(),
     start_date: text("start_date").notNull(),
     end_date: text("end_date"),
+    // The PROVIDER's clock that start/end and every cancellation cutoff on this
+    // booking are written in — an IANA zone id. Stored rather than derived from
+    // airport codes: no code can place a Kyoto ryokan, a Eurostar hop across the
+    // Channel, or a trip with no flights at all (see src/lib/booking-zones.js).
+    // Nullable only until the existing rows are reviewed and backfilled with
+    // scripts/infer-timezones.mjs; NOT NULL is the follow-up migration.
+    timezone: text("timezone"),
     confirmation_number: text("confirmation_number"),
     provider: text("provider"),
     details: jsonb("details").$type<Record<string, unknown>>(),

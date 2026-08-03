@@ -824,6 +824,7 @@ export default function Settle({
         <BookingModal
           booking={editingBooking}
           selectedTrip={selectedTrip}
+          allBookings={allBookings}
           tripName={tripMeta?.name}
           onClose={() => setBookingModalOpen(false)}
           onSave={async (data, existingId) => {

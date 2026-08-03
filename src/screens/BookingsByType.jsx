@@ -114,6 +114,7 @@ export default function BookingsByType({ type, bookings: allBookings }) {
         <BookingModal
           booking={editingBooking}
           selectedTrip={selectedTrip}
+          allBookings={allBookings}
           tripName={tripMeta?.name}
           onClose={() => setModalOpen(false)}
           onSave={async (data, existingId) => {

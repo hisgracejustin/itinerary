@@ -433,6 +433,7 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
         <BookingModal
           booking={editingBooking}
           selectedTrip={selectedTrip}
+          allBookings={initialBookings}
           tripName={tripMeta?.name}
           onClose={() => setModalOpen(false)}
           onSave={async (data, existingId) => {

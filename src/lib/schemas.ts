@@ -120,6 +120,11 @@ function sanitizeDetails(details: Record<string, unknown>) {
   return next;
 }
 
+// The same guard the AI parser applies (src/app/api/parse-booking/route.ts):
+// only a zone this runtime actually knows may reach the column, because a bad
+// one is read as fact by every cancellation-cutoff comparison on the booking.
+const SUPPORTED_ZONES = new Set<string>(Intl.supportedValuesOf("timeZone"));
+
 const bookingBaseShape = {
   id: z.string().optional(),
   trip_id: z.string().uuid(),
@@ -127,6 +132,12 @@ const bookingBaseShape = {
   title: z.string().min(1),
   start_date: z.string().min(1),
   end_date: z.string().nullish(),
+  // The provider's clock for this booking's times and cutoffs. Editable like any
+  // other field — bookingUpdateSchema only omits `id`.
+  timezone: z
+    .string()
+    .refine((tz) => SUPPORTED_ZONES.has(tz), "Unknown timezone")
+    .nullish(),
   confirmation_number: z.string().nullish(),
   provider: z.string().nullish(),
   details: z.record(z.string(), z.unknown()).transform(sanitizeDetails).nullish(),

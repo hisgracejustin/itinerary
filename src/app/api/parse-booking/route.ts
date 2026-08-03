@@ -49,6 +49,7 @@ Return ONLY valid JSON with this exact structure:
       "provider": "Airline, hotel chain, train operator, etc. or null",
       "cost_amount": 1250.00,
       "cost_currency": "USD",
+      "timezone": "IANA timezone identifier for where this booking happens, or null",
       "details": { ... type-specific fields ... }
     }
   ]
@@ -79,6 +80,11 @@ Layover / connecting flight handling:
 - The app will let the user merge legs into a single layover booking on the client side.
 - Make sure each leg has its own departure_airport, arrival_airport, flight_number, start_date, and end_date.
 - If the document shows a connection/layover time between legs, that info is captured by the leg end_date and next leg start_date.
+
+Timezone:
+- "timezone" is the IANA identifier for the LOCATION this booking happens in — a Paris hotel is "Europe/Paris", a Kyoto ryokan "Asia/Tokyo", a Lisbon walking tour "Europe/Lisbon". For a flight, use the DEPARTURE airport's zone; for a train or bus, the departure station's.
+- It is metadata ABOUT the times you transcribe, describing which clock they were printed on. It does NOT license converting them: every time you emit still comes out exactly as printed (see the rule below).
+- If the document gives no location you can place — no city, no address, no airport or station — return null. Do NOT pick a plausible-sounding zone.
 
 Rules:
 - Use null for any field you cannot find in the document. NEVER hallucinate data.
@@ -116,6 +122,24 @@ function normalizeAmount(value: unknown): number | null {
   }
   const n = parseFloat(s);
   return Number.isFinite(n) ? n : null;
+}
+
+// Built once per instance, not per request: ~400 entries, and every parse walks
+// it. Whatever this runtime's ICU actually knows is the only honest definition
+// of "a zone we can use" — the value ends up in Intl.DateTimeFormat.
+const SUPPORTED_ZONES = new Set<string>(Intl.supportedValuesOf("timeZone"));
+
+/**
+ * Coerce a model-emitted timezone to a usable IANA id or null.
+ *
+ * Strict membership, no repair: an invented or abbreviated zone ("Mars/Olympus",
+ * "EST") that survived would be read as fact by every cancellation-cutoff
+ * comparison on that booking, silently shifting deadlines by hours. Null is not
+ * a loss — it means "no answer", and the derivation chain in
+ * src/lib/booking-zones.js answers instead.
+ */
+function normalizeTimezone(value: unknown): string | null {
+  return typeof value === "string" && SUPPORTED_ZONES.has(value) ? value : null;
 }
 
 function json(body: unknown, status: number) {
@@ -282,6 +306,7 @@ export async function POST(req: Request) {
       // would total into silently wrong money. Normalize here so every consumer
       // (merge, form, per-leg save) sees a clean number or null.
       b.cost_amount = normalizeAmount(b.cost_amount);
+      b.timezone = normalizeTimezone(b.timezone);
       // Same details sanitation the Zod layer applies on save — a hallucinated
       // tier shape or a stringified port list would otherwise reach the form and
       // (for the policy) render as [object Object].

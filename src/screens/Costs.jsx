@@ -5,7 +5,7 @@ import { useTripContext } from '../lib/trip-context'
 import { updateBooking, deleteBooking } from '@/lib/client-actions'
 import { toHKD, formatCurrency } from '../lib/currencies'
 import { wallClockInZone } from '../lib/airports'
-import { bookingZone, tripZone } from '../lib/booking-zones'
+import { bookingZone, chronologicalZone, tripZone } from '../lib/booking-zones'
 import {
   sanitizeCancellationPolicy,
   refundableAsOf,
@@ -94,7 +94,8 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   // resolving one scans every booking and the refund list asks once per row.
   const tripZones = new Map()
   const zoneOf = (booking) => {
-    const own = bookingZone(booking)
+    // Same chain as resolveZone, kept open here only so tripZone stays memoized.
+    const own = booking.timezone || bookingZone(booking) || chronologicalZone(booking, allBookings || [])
     if (own) return own
     if (!tripZones.has(booking.trip_id)) {
       tripZones.set(booking.trip_id, tripZone(booking.trip_id, allBookings || []))
@@ -724,6 +725,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
         <BookingModal
           booking={editingBooking}
           selectedTrip={selectedTrip}
+          allBookings={allBookings}
           tripName={tripMeta?.name}
           onClose={() => setModalOpen(false)}
           onSave={async (data, existingId) => {
