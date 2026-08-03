@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
 import { updateBooking, deleteBooking } from '@/lib/client-actions'
 import { toHKD, formatCurrency } from '../lib/currencies'
+import { wallClockInZone } from '../lib/airports'
+import { bookingZone, tripZone } from '../lib/booking-zones'
 import {
   sanitizeCancellationPolicy,
   refundableAsOf,
   localNow,
+  nowInstant,
   formatCutoff,
   formatExpiry,
   daysUntilCutoff,
@@ -52,9 +55,13 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   // 'all' | <tripId>. Only offered on the All Trips view — with a sidebar
   // selection the list is already scoped by it, so chips would be dead.
   const [tripFilter, setTripFilter] = useState('all')
-  // "What comes back if I cancel at this moment" — naive 'YYYY-MM-DDTHH:mm'
-  // throughout, so a same-day cancellation deadline resolves to the right side.
-  const [asOf, setAsOf] = useState(localNow)
+  // "What comes back if I cancel at this moment", as the picker holds it: the
+  // viewer's own naive 'YYYY-MM-DDTHH:mm', which is what a datetime-local means.
+  // Null until mounted — seeding it here would run on the UTC server and hand
+  // the input a value the client disagrees with on hydration. The math below
+  // works off the instant, which needs no such wait.
+  const [asOf, setAsOf] = useState(null)
+  useEffect(() => setAsOf(localNow()), [])
   // DESELECTED refundable rows, not selected ones: everything is counted by
   // default, including rows that appear later when the chips, trip filter or
   // as-of moment change. Ids of rows that fall out of the list linger here
@@ -69,6 +76,31 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   const expenses = (allExpenses || []).filter((e) => inSel(e.trip_id))
 
   const tripById = new Map((trips || []).map((t) => [t.id, t]))
+
+  // The as-of as an INSTANT. A cancellation cutoff belongs to the provider's
+  // wall clock, so the one thing that travels between the picker and a booking
+  // is the moment itself; each booking then reads it on its own clock below.
+  const picked = asOf ? new Date(asOf).getTime() : NaN
+  // Whether a booking has already started is the same provider-zone question,
+  // but about NOW rather than the picked moment — which is also what the as-of
+  // falls back to before the picker has a device clock to seed it from.
+  const nowMs = nowInstant()
+  const asOfMs = Number.isFinite(picked) ? picked : nowMs
+  // Countdowns stay in the READER's days (see daysUntilCutoff) — the deliberate
+  // asymmetry with tier selection, which is provider-zone.
+  const readerAsOf = asOf ?? wallClockInZone(asOfMs, null)
+
+  // A booking's provider zone. Trip zones are memoized for the render because
+  // resolving one scans every booking and the refund list asks once per row.
+  const tripZones = new Map()
+  const zoneOf = (booking) => {
+    const own = bookingZone(booking)
+    if (own) return own
+    if (!tripZones.has(booking.trip_id)) {
+      tripZones.set(booking.trip_id, tripZone(booking.trip_id, allBookings || []))
+    }
+    return tripZones.get(booking.trip_id)
+  }
 
   // Unify cost-bearing bookings + ad-hoc expenses into one item shape. Effective
   // cost = amount × share for bookings (share is 1 for expenses).
@@ -180,15 +212,18 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   let noPolicyHKD = 0
   filteredItems.forEach((it) => {
     if (it.kind !== 'booking') return
+    // Everything this row decides is read on the provider's clock, so the two
+    // sides of every compare below are that clock's wall time.
+    const asOfThere = wallClockInZone(asOfMs, zoneOf(it.booking))
     // Already underway at the as-of moment — there's nothing left to cancel.
-    // start_date is 'YYYY-MM-DDTHH:mm:ss'; slicing to 16 aligns it with asOf.
-    if (String(it.booking.start_date).slice(0, 16) < asOf) return
+    // start_date is 'YYYY-MM-DDTHH:mm:ss'; slicing to 16 aligns it with asOfThere.
+    if (String(it.booking.start_date).slice(0, 16) < asOfThere) return
     const base = scope === 'everyone' ? it.effective : contribution(it)
     // Under Me/Us, no share means no stake — mirror `scoped` below, which also
     // drops zero-contribution items rather than listing them at $0.00.
     if (base == null || (scope !== 'everyone' && base <= 0)) return
     const policy = sanitizeCancellationPolicy(it.booking.details?.cancellation_policy)
-    const r = refundableAsOf(policy, it.effective, asOf)
+    const r = refundableAsOf(policy, it.effective, asOfThere)
     // No policy on file is UNKNOWN, not zero — its own bucket, never summed into
     // the non-refundable figure. A policy of 'non_refundable' is a real zero and
     // falls through to the non-refundable total below.
@@ -208,11 +243,12 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     // Deadline pressure: what these terms turn into when the applicable tier's
     // cutoff passes, surfaced only once that's inside a week. The next tier down
     // the sorted array is what takes over; nothing after the last one means
-    // non-refundable. `days` is calendar-day DISPLAY math (see daysUntilCutoff)
-    // — which tier applies is still decided by string compare, above.
+    // non-refundable. `days` is calendar-day DISPLAY math in the READER's zone
+    // (see daysUntilCutoff) — which tier applies is still decided by a string
+    // compare on the provider's clock, above.
     const warning = (() => {
       if (!r.tier) return null
-      const days = daysUntilCutoff(r.tier.cutoff, asOf)
+      const days = daysUntilCutoff(r.tier.cutoff, readerAsOf)
       if (days == null || days < 0 || days > 7) return null
       const next = policy[policy.indexOf(r.tier) + 1]
       const becomes = next ? `drops to ${tierLabel(next, it.currency)}` : 'becomes non-refundable'
@@ -287,11 +323,10 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   // Which costs still have a cancellation decision to make: an upcoming booking
   // with nothing recorded. Same set the amber note counts (minus its scope
   // nuances), flagged inline so the culprits are findable.
-  const nowStamp = localNow()
   const missingPolicy = (it) =>
     it.kind === 'booking' &&
     !sanitizeCancellationPolicy(it.booking.details?.cancellation_policy) &&
-    String(it.booking.start_date).slice(0, 16) >= nowStamp
+    String(it.booking.start_date).slice(0, 16) >= wallClockInZone(nowMs, zoneOf(it.booking))
   const toggleRow = (id) =>
     setDeselected((prev) => {
       const next = new Set(prev)
@@ -426,7 +461,8 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                 </div>
                 <input
                   type="datetime-local"
-                  value={asOf}
+                  // Empty until mount, when the device clock becomes available.
+                  value={asOf ?? ''}
                   // Clearing the field would leave every tier looking expired —
                   // fall back to now rather than showing a silent all-zero.
                   onChange={(e) => setAsOf(e.target.value || localNow())}

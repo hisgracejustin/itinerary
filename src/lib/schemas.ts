@@ -198,6 +198,12 @@ export const expenseUpdateSchema = z
 // A recorded pay-back, person-to-person. Same-person is nonsensical.
 export const settlementInsertSchema = z
   .object({
+    // Minted by the client, once per form submission, so a retry of the SAME
+    // payment (lost response on flaky data, a Server Action retry, a
+    // back-forward re-post) collides with the row it already wrote instead of
+    // recording the payback twice. INSERT only — an update still addresses its
+    // row by the action's id argument (see bookingUpdateSchema).
+    id: z.string().uuid().optional(),
     trip_id: z.string().uuid(),
     from_user: z.string().min(1),
     to_user: z.string().min(1),

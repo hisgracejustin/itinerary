@@ -39,13 +39,15 @@ export default function DaySheet({
   dayReminders,
   attachments,
   generatedAt,
-  today,
+  activeFrom,
 }) {
   // Default: every trip that hasn't ended yet (naive date strings, lexicographic
-  // compare). `today` comes from the server so the first paint matches the HTML.
+  // compare). `activeFrom` is the oldest end_date that still counts as running,
+  // and comes from the server so the first paint matches the HTML — it is NOT
+  // plain "today"; see src/app/sheet/page.tsx for the slack it carries.
   const defaultIds = useMemo(
-    () => trips.filter((t) => t.end_date >= today).map((t) => t.id),
-    [trips, today],
+    () => trips.filter((t) => t.end_date >= activeFrom).map((t) => t.id),
+    [trips, activeFrom],
   )
   const [selected, setSelected] = useState(defaultIds)
   const [pickerOpen, setPickerOpen] = useState(false)

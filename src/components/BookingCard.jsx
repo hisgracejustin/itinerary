@@ -1,8 +1,9 @@
 import { Fragment } from 'react'
 import { TYPE_COLORS, TYPE_ICONS, formatTime, getRentalIcon } from '../lib/calendar'
-import { getFlightDuration } from '../lib/airports'
+import { getFlightDuration, wallClockInZone } from '../lib/airports'
+import { resolveZone } from '../lib/booking-zones'
 import { formatCurrency } from '../lib/currencies'
-import { sanitizeCancellationPolicy, applicableTier, localToday, formatCutoff } from '../lib/cancellation'
+import { sanitizeCancellationPolicy, applicableTier, nowInstant, formatCutoff } from '../lib/cancellation'
 
 function layoverDuration(arrivalISO, departureISO) {
   const arr = new Date(arrivalISO)
@@ -375,7 +376,12 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
     const policy = sanitizeCancellationPolicy(details.cancellation_policy)
     // No ↩ here: the arrow means money coming back, and none is.
     if (policy === 'non_refundable') return 'Non-refundable'
-    const tier = policy && applicableTier(policy, localToday())
+    // Today in the PROVIDER's zone, so the card reads the same in the departure
+    // lounge as it did at home (see cancellation.js). The card gets no trip
+    // context, so a non-flight falls back to the device clock. Date-only on
+    // purpose — the optimistic same-day reading documented in cancellation.js.
+    const asOf = wallClockInZone(nowInstant(), resolveZone(booking)).slice(0, 10)
+    const tier = policy && applicableTier(policy, asOf)
     if (!tier) return null
     const money = formatCurrency(tier.value, booking.cost_currency || 'USD')
     // The minus keeps a fee from reading as the amount coming back.

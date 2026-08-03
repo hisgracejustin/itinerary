@@ -85,6 +85,17 @@
  *    at-a-glance hint) a same-day timed cutoff still counts as applicable, which
  *    is deliberately optimistic — it assumes you would cancel before that day's
  *    deadline rather than after it.
+ *  - WHOSE clock the as-of is on: the PROVIDER's. A cutoff is a term of the
+ *    contract — a Kyoto hotel's "free until 18:00 on Sep 5" is 18:00 in Kyoto,
+ *    read from Kyoto or from a seat over the Pacific — so callers must convert
+ *    the as-of INSTANT into the booking's own zone before comparing (see
+ *    resolveZone in lib/booking-zones.js and wallClockInZone in lib/airports.js).
+ *    Feeding this module a device-local clock is what let a HK→Vancouver flight
+ *    roll "now" back ~15h and resurrect a lapsed tier, which is exactly the
+ *    same-answer-for-every-viewer invariant above being broken. Where no zone is
+ *    derivable the device clock is the only reading available and callers fall
+ *    back to it; daysUntilCutoff's countdown stays reader-local on purpose (see
+ *    there).
  */
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -183,7 +194,8 @@ export function sanitizeCancellationPolicy(raw) {
  * midnight onwards. Timed cutoffs compare as-is.
  *
  * @param {Tier[] | 'non_refundable' | null} policy
- * @param {string} asOfDate 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:mm'
+ * @param {string} asOfDate 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:mm', already read in
+ *   the booking's PROVIDER zone (see the header)
  */
 export function applicableTier(policy, asOfDate) {
   if (!Array.isArray(policy) || policy.length === 0 || !asOfDate) return null
@@ -258,6 +270,17 @@ export function localNow() {
 }
 
 /**
+ * Now as an INSTANT (ms). The zone-aware counterpart of localNow: an as-of that
+ * will be read on a booking's own clock has to travel as a moment, because the
+ * wall clock it becomes differs per booking (see the header). Kept here with the
+ * other clock readings so every "now" this module's callers use comes from one
+ * place — the reading is the same moment either way.
+ */
+export function nowInstant() {
+  return Date.now()
+}
+
+/**
  * 'Sep 5' for a date-only cutoff, 'Sep 5, 18:00' for a timed one. Both parse
  * through a seconds-bearing local datetime string: a bare 'YYYY-MM-DD' is parsed
  * as UTC and renders a day early west of Greenwich, and 'YYYY-MM-DDTHH:mm' with
@@ -287,6 +310,11 @@ export function formatCutoff(cutoff) {
  * resolve identically for every viewer in every timezone. A countdown rendered
  * for one reader on one device carries no such obligation — and reads more
  * naturally in that reader's own days.
+ *
+ * That asymmetry is deliberate: tier SELECTION is resolved in the provider's
+ * zone, this countdown in the reader's. "In 3 days" is a phrase about the
+ * reader's calendar, so a traveller three days out from a Kyoto deadline should
+ * read "in 3 days" wherever they are, even when Kyoto is already on tomorrow.
  *
  * Both sides drop to their date part before diffing, so this counts calendar
  * days rather than 24-hour periods: 23:00 tonight to 01:00 tomorrow is 1 day,

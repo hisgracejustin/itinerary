@@ -4,7 +4,26 @@
  * navigations through the worker, but the Cache API is readable from any page.
  */
 
-const SHEET_CACHE = 'itinerary-sheet-v1'
+export const SHEET_CACHE = 'itinerary-sheet-v1'
+
+/**
+ * Drop the cached sheet and its attachments, from the PAGE.
+ *
+ * Deliberately not the service worker's `purge-sheet` message: that no-ops
+ * whenever there is no controller (no SW support, private mode, a fresh install
+ * still racing clients.claim()), and this cache is read straight from the page
+ * by readAttachment/handleOfflineSheetClick, so a skipped purge serves the
+ * previous account's whole itinerary to the next one. Awaitable for the same
+ * reason — callers must not record the purge, or re-cache over it, until the
+ * delete has actually landed.
+ */
+export async function purgeSheetCache() {
+  try {
+    await window.caches?.delete(SHEET_CACHE)
+  } catch {
+    /* no Cache API — nothing cached to purge */
+  }
+}
 
 /**
  * Click handler for links to the offline sheet.

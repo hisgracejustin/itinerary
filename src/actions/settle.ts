@@ -36,9 +36,15 @@ export async function recordSettlementAction(input: unknown) {
       throw new AppError("Those two are in the same party — settling between them has no effect");
     }
 
-    const [row] = await db
+    // The client sends one id per submission attempt, so a retry lands on the
+    // primary key it already wrote and does nothing rather than duplicating a
+    // payback — which would silently shift every downstream balance with no way
+    // to tell it apart from a genuine second payment.
+    const id = data.id ?? crypto.randomUUID();
+    const [inserted] = await db
       .insert(tables.settlements)
       .values({
+        id,
         trip_id: data.trip_id,
         from_user: data.from_user,
         to_user: data.to_user,
@@ -46,7 +52,17 @@ export async function recordSettlementAction(input: unknown) {
         currency: data.currency,
         note: data.note ?? null,
       })
+      .onConflictDoNothing({ target: tables.settlements.id })
       .returning();
+    // A swallowed insert returns no row; hand back the payment already on record
+    // so a retry is indistinguishable from the attempt that got through.
+    const [row] = inserted
+      ? [inserted]
+      : await db
+          .select()
+          .from(tables.settlements)
+          .where(eq(tables.settlements.id, id))
+          .limit(1);
     revalidateApp();
     return row;
   });

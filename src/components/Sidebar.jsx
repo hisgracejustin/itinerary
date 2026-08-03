@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOutAction } from "../actions/auth";
 import { useTripContext } from "../lib/trip-context";
 import { tripColorMap } from "../lib/calendar";
-import { handleOfflineSheetClick } from "../lib/offline-sheet";
+import { handleOfflineSheetClick, purgeSheetCache } from "../lib/offline-sheet";
 
 const BOOKING_TYPES = [
   { id: "flight", label: "Flights", color: "bg-flight", icon: "✈️" },
@@ -229,15 +229,17 @@ export default function Sidebar({ user, trips, onNavigate }) {
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-on-surface-variant truncate max-w-[160px]">{user.email}</span>
             <button
-              onClick={() => {
-                // The cached day sheet is this user's itinerary — drop it (and
-                // the ownership marker) before the session goes away.
+              onClick={async () => {
+                // The cached day sheet is this user's itinerary — it has to be
+                // gone before the session is, so the purge is awaited rather
+                // than left racing the sign-out navigation, and the ownership
+                // marker only clears once the cache actually has.
+                await purgeSheetCache();
                 try {
-                  navigator.serviceWorker?.controller?.postMessage({ type: "purge-sheet" });
                   window.localStorage.removeItem("sheet-owner");
                   window.localStorage.removeItem("sheet-synced-at");
                 } catch {
-                  /* no SW / no storage — nothing cached to purge */
+                  /* no storage — nothing to clear */
                 }
                 signOutAction();
               }}

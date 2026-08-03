@@ -33,36 +33,38 @@ export async function addTripMemberAction(input: unknown) {
     const data = addMemberSchema.parse(input);
     await requireTripAccess(user.id, data.trip_id, [...OWNER_ONLY]);
 
-    const [found] = await db
-      .select({ id: tables.users.id })
-      .from(tables.users)
-      .where(eq(tables.users.email, data.email))
-      .limit(1);
+    // The placeholder account only exists to be put on this trip, so it must not
+    // outlive a failed membership insert as a hollow row.
+    const targetId = await transaction(async (tx) => {
+      const [found] = await tx
+        .select({ id: tables.users.id })
+        .from(tables.users)
+        .where(eq(tables.users.email, data.email))
+        .limit(1);
 
-    let targetId = found?.id;
-    if (!targetId) {
-      const [created] = await db
-        .insert(tables.users)
-        .values({ email: data.email, name: data.email.split("@")[0] })
-        .returning();
-      targetId = created.id;
-    }
+      let id = found?.id;
+      if (!id) {
+        const [created] = await tx
+          .insert(tables.users)
+          .values({ email: data.email, name: data.email.split("@")[0] })
+          .returning();
+        id = created.id;
+      }
 
-    const [already] = await db
-      .select({ user_id: tables.tripMembers.user_id })
-      .from(tables.tripMembers)
-      .where(
-        and(
-          eq(tables.tripMembers.trip_id, data.trip_id),
-          eq(tables.tripMembers.user_id, targetId),
-        ),
-      )
-      .limit(1);
-    if (already) throw new AppError("They're already on this trip");
+      const [already] = await tx
+        .select({ user_id: tables.tripMembers.user_id })
+        .from(tables.tripMembers)
+        .where(
+          and(eq(tables.tripMembers.trip_id, data.trip_id), eq(tables.tripMembers.user_id, id)),
+        )
+        .limit(1);
+      if (already) throw new AppError("They're already on this trip");
 
-    await db
-      .insert(tables.tripMembers)
-      .values({ trip_id: data.trip_id, user_id: targetId, role: data.role });
+      await tx
+        .insert(tables.tripMembers)
+        .values({ trip_id: data.trip_id, user_id: id, role: data.role });
+      return id;
+    });
     revalidateApp();
     return { id: targetId, email: data.email };
   });
@@ -273,21 +275,26 @@ export async function createPartyAction(input: unknown) {
     await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
     await requireTripMembers(data.trip_id, data.member_ids);
 
-    const [party] = await db
-      .insert(tables.tripParties)
-      .values({ trip_id: data.trip_id, name: data.name })
-      .returning();
-    if (data.member_ids.length > 0) {
-      await db
-        .update(tables.tripMembers)
-        .set({ party_id: party.id })
-        .where(
-          and(
-            eq(tables.tripMembers.trip_id, data.trip_id),
-            inArray(tables.tripMembers.user_id, data.member_ids),
-          ),
-        );
-    }
+    // A party is only meaningful as its membership: created without the
+    // assignment it's an empty settlement unit nothing nets against.
+    const party = await transaction(async (tx) => {
+      const [created] = await tx
+        .insert(tables.tripParties)
+        .values({ trip_id: data.trip_id, name: data.name })
+        .returning();
+      if (data.member_ids.length > 0) {
+        await tx
+          .update(tables.tripMembers)
+          .set({ party_id: created.id })
+          .where(
+            and(
+              eq(tables.tripMembers.trip_id, data.trip_id),
+              inArray(tables.tripMembers.user_id, data.member_ids),
+            ),
+          );
+      }
+      return created;
+    });
     revalidateApp();
     return party;
   });

@@ -71,8 +71,12 @@ function flightStats(bookings) {
   let layovers = 0
   let flyingMin = 0
   let layoverMin = 0
-  let approx = false
+  let unknownZone = false
+  // Two distinct reasons a leg contributes no flying time, kept apart because
+  // they say different things to the reader: one is data they can go and fill
+  // in, the other is a pair of times we couldn't turn into a span.
   let missingTime = 0
+  let noDuration = 0
 
   for (const b of bookings) {
     const d = parseDetails(b)
@@ -98,10 +102,11 @@ function flightStats(bookings) {
       d.arrival_airport,
     )
     if (!span) {
-      missingTime += 1
+      if (!b.start_date || !b.end_date) missingTime += 1
+      else noDuration += 1
       continue
     }
-    if (span.approx) approx = true
+    if (span.approx) unknownZone = true
     // The stored span covers the whole journey including time on the ground,
     // so flying time is the span minus the stops.
     flyingMin += Math.max(0, span.minutes - thisLayover)
@@ -115,10 +120,13 @@ function flightStats(bookings) {
       key: 'flying_time',
       label: 'Flying time',
       value: flying,
-      approx,
+      // A leg that contributed nothing makes the total an undercount, not just
+      // an imprecise one, so it earns the '~' as much as a missing zone does.
+      approx: unknownZone || missingTime > 0 || noDuration > 0,
       hint: [
-        approx ? 'Approximate — some airports have no timezone data' : null,
-        missingTime ? `${plural(missingTime, 'booking')} missing an arrival time` : null,
+        unknownZone ? 'Approximate — some airports have no timezone data' : null,
+        missingTime ? `${plural(missingTime, 'booking')} missing a departure or arrival time` : null,
+        noDuration ? `${plural(noDuration, 'booking')} whose duration couldn't be computed` : null,
       ]
         .filter(Boolean)
         .join('. ') || undefined,

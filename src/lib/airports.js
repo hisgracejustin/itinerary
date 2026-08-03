@@ -133,6 +133,8 @@ export function getFlightDurationMinutes(startIso, endIso, departureAirport, arr
   if (!depUTC || !arrUTC) return null
 
   const ms = arrUTC - depUTC
+  // Offset resolution can no longer produce a negative span, so a non-positive
+  // one here is a genuine data error (arrival typed before departure).
   if (ms <= 0) return null
   return { minutes: Math.round(ms / 60000), approx: false }
 }
@@ -154,53 +156,92 @@ function stripTimezone(iso) {
   return iso.replace(/Z$/, '').replace(/[+-]\d{2}:\d{2}$/, '').slice(0, 16)
 }
 
+const NAIVE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
+
+/**
+ * A timestamp reduced to the naive 'YYYY-MM-DDTHH:mm:ss' the app stores, or null
+ * if there is no wall-clock time in it to keep.
+ *
+ * The DB holds booking times as naive wall clock on purpose (a 07:30 departure
+ * is 07:30 at the gate, for every viewer on earth), so any offset a source
+ * attaches — an AI parser's stray 'Z' most of all — is noise that would make the
+ * value shift as the reader travels.
+ */
+export function naiveStamp(value) {
+  if (typeof value !== 'string') return null
+  const wall = stripTimezone(value.trim())
+  return NAIVE_RE.test(wall) ? `${wall}:00` : null
+}
+
+const ZONE_FORMATTERS = new Map()
+
+/**
+ * A zone's calendar/clock fields at an instant, read off Intl. Formatters are
+ * cached because /costs resolves a zone per booking on every render.
+ */
+function zonedParts(ts, timeZone) {
+  let f = ZONE_FORMATTERS.get(timeZone)
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    })
+    ZONE_FORMATTERS.set(timeZone, f)
+  }
+  const p = Object.fromEntries(f.formatToParts(new Date(ts)).map((x) => [x.type, x.value]))
+  // %24 keeps the hour-24 midnight spelling some locales emit from overflowing.
+  return {
+    year: +p.year, month: +p.month, day: +p.day,
+    hour: +p.hour % 24, minute: +p.minute, second: +p.second,
+  }
+}
+
+/** The zone's offset from UTC at a given instant, in ms. */
+function tzOffsetMs(ts, timeZone) {
+  const p = zonedParts(ts, timeZone)
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - ts
+}
+
+const pad = (n) => String(n).padStart(2, '0')
+
+/**
+ * The naive 'YYYY-MM-DDTHH:mm' an instant reads as in `timeZone` — the wall
+ * clock someone standing there would see, in the same shape the app stores its
+ * booking times and cancellation cutoffs in, so the two compare directly.
+ *
+ * A null zone falls back to the device's own clock: for data we can't place on
+ * the map, the reader's local reading is the only one available.
+ */
+export function wallClockInZone(instantMs, timeZone) {
+  if (!Number.isFinite(instantMs)) return null
+  if (timeZone) {
+    const p = zonedParts(instantMs, timeZone)
+    return `${p.year}-${pad(p.month)}-${pad(p.day)}T${pad(p.hour)}:${pad(p.minute)}`
+  }
+  const d = new Date(instantMs)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 /**
  * Convert a local datetime string (YYYY-MM-DDTHH:MM) to a UTC timestamp
  * by treating it as local time in the given IANA timezone.
  */
 function localToUTC(localStr, timezone) {
   try {
-    // Create a formatter that gives us the UTC offset for this timezone at this date
     const [datePart, timePart] = localStr.split('T')
     const [year, month, day] = datePart.split('-').map(Number)
     const [hour, minute] = timePart.split(':').map(Number)
-
-    // Use Intl to figure out what UTC offset applies at this date/time in this timezone
-    const probe = new Date(Date.UTC(year, month - 1, day, hour, minute))
-
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: false,
-    })
-
-    // Binary search for the UTC instant that corresponds to the local time
-    // Simple approach: compute offset by comparing formatted output
-    const parts = formatter.formatToParts(probe)
-    const get = (type) => parseInt(parts.find(p => p.type === type).value)
-    const probeLocalH = get('hour') === 24 ? 0 : get('hour')
-    const probeLocalM = get('minute')
-    const probeLocalD = get('day')
-    const probeLocalMo = get('month')
-
-    // Offset in minutes = (probe UTC time) - (what it looks like in timezone)
-    // We know probe is hour:minute UTC, and it shows as probeLocalH:probeLocalM in tz
-    const utcMinutes = hour * 60 + minute
-    const localMinutes = probeLocalH * 60 + probeLocalM
-
-    // Day difference adjustment
-    let dayDiff = 0
-    if (probeLocalD !== day || probeLocalMo !== month) {
-      // Rough: if local day is ahead, offset is positive (east of UTC)
-      if (probeLocalD > day || probeLocalMo > month) dayDiff = 1
-      else dayDiff = -1
-    }
-
-    const offsetMinutes = (localMinutes + dayDiff * 1440) - utcMinutes
-
-    // The actual UTC time = local time - offset
-    return new Date(Date.UTC(year, month - 1, day, hour, minute) - offsetMinutes * 60000).getTime()
+    const guess = Date.UTC(year, month - 1, day, hour, minute)
+    // Two passes: the first offset is approximate because it's sampled at the
+    // wrong instant; re-sampling at that instant lands on the true offset, which
+    // is what makes DST transitions and month boundaries come out right. No date
+    // arithmetic is done on the formatted fields — comparing day-of-month digits
+    // inverts across a month boundary, which is what this replaced.
+    let ts = guess - tzOffsetMs(guess, timezone)
+    ts = guess - tzOffsetMs(ts, timezone)
+    return ts
   } catch {
     return null
   }

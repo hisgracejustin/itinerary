@@ -4,6 +4,7 @@ import BookingDetails from './BookingDetails'
 import AttachmentsSection from './AttachmentsSection'
 import UploadBooking from './UploadBooking'
 import { useToast } from './Toast'
+import { naiveStamp } from '../lib/airports'
 import { friendlyError } from '../lib/friendlyError'
 
 /** Upload files staged in the browser to a saved booking. Best-effort per file. */
@@ -28,8 +29,12 @@ function mergeAsLayover(legs) {
   for (let i = 0; i < legs.length - 1; i++) {
     layovers.push({
       airport: legs[i].details?.arrival_airport || '',
-      arrival: legs[i].end_date,
-      departure: legs[i + 1].start_date,
+      // These two are the only dates that go to the DB without passing through
+      // the form's wall-clock laundering, so they're normalized here as well as
+      // in the parse route: a stray offset would make a stored ground time
+      // shift as the reader flies.
+      arrival: naiveStamp(legs[i].end_date),
+      departure: naiveStamp(legs[i + 1].start_date),
       flight_number: legs[i].details?.flight_number || '',
     })
   }

@@ -2,7 +2,7 @@
 
 import { eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { db, tables } from "@/db";
+import { db, tables, transaction } from "@/db";
 import { runAction } from "@/lib/action-utils";
 import { requireAssignable, requireTripAccess, WRITE_ROLES } from "@/lib/authz";
 import { todoInsertSchema, todoMoveSchema, todoUpdateSchema } from "@/lib/schemas";
@@ -136,29 +136,34 @@ export async function moveTodoAction(input: unknown) {
         .select({ id: tables.todos.id, trip_id: tables.todos.trip_id })
         .from(tables.todos)
         .where(inArray(tables.todos.id, orderedIds));
-      const tripIds = [...new Set(rows.map((r) => r.trip_id).filter(Boolean) as string[])];
+      const tripIds = [...new Set(rows.map((r) => r.trip_id))];
       for (const tripId of tripIds) await requireTripAccess(user.id, tripId, WRITE_ROLES);
 
-      // Set the moved row's status first (a small dedicated write keeps the
-      // CASE position statement simple and untangled from the status change).
-      await db.update(tables.todos).set({ status }).where(eq(tables.todos.id, id));
-
-      // Reassign positions in one statement: position = the id's index in the
-      // destination order. Rows not present keep their current position.
       const known = new Set(rows.map((r) => r.id));
       const present = orderedIds.filter((x) => known.has(x));
-      if (present.length > 0) {
-        const cases = sql.join(
-          present.map((x, i) => sql`when ${x} then ${i}`),
-          sql` `,
-        );
-        await db
-          .update(tables.todos)
-          .set({
-            position: sql`case ${tables.todos.id} ${cases} else ${tables.todos.position} end`,
-          })
-          .where(inArray(tables.todos.id, present));
-      }
+      // Both writes or neither: the status move and the positions that describe
+      // where the card landed are one drop, and half of it leaves the card in
+      // the new column at a stale slot.
+      await transaction(async (tx) => {
+        // Set the moved row's status first (a small dedicated write keeps the
+        // CASE position statement simple and untangled from the status change).
+        await tx.update(tables.todos).set({ status }).where(eq(tables.todos.id, id));
+
+        // Reassign positions in one statement: position = the id's index in the
+        // destination order. Rows not present keep their current position.
+        if (present.length > 0) {
+          const cases = sql.join(
+            present.map((x, i) => sql`when ${x} then ${i}`),
+            sql` `,
+          );
+          await tx
+            .update(tables.todos)
+            .set({
+              position: sql`case ${tables.todos.id} ${cases} else ${tables.todos.position} end`,
+            })
+            .where(inArray(tables.todos.id, present));
+        }
+      });
     } else {
       // Append semantics: land at the end of the table (same convention as
       // createTodoAction), so the moved card sits at the bottom of its column.

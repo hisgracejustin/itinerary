@@ -9,6 +9,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -243,6 +244,11 @@ export const dayNotes = pgTable(
   (t) => [
     index("idx_day_notes_date").on(t.date),
     index("idx_day_notes_trip_id").on(t.trip_id),
+    // A day has at most one title. Without this, two members editing the same
+    // day both see no existing row and both insert: the UI then shows whichever
+    // read comes back first and deleting one leaves the other behind. The upsert
+    // in src/actions/dayNotes.ts conflict-targets exactly these two columns.
+    uniqueIndex("uq_day_notes_trip_date").on(t.trip_id, t.date),
   ],
 );
 

@@ -161,15 +161,21 @@ export async function deleteBookingAction(id: string) {
 export async function createTripAction(input: unknown) {
   return runAction(async (user) => {
     const data = tripInsertSchema.parse(input);
-    const [trip] = await db
-      .insert(tables.trips)
-      .values({ name: data.name, start_date: data.start_date, end_date: data.end_date })
-      .returning();
-    // Auto-assign the creator as owner.
-    await db.insert(tables.tripMembers).values({
-      trip_id: trip.id,
-      user_id: user.id,
-      role: "owner",
+    // Atomic with the ownership row: a trip that lost its owner insert is
+    // visible to nobody and can't even be deleted through the app, since trip
+    // delete requires owner membership.
+    const trip = await transaction(async (tx) => {
+      const [created] = await tx
+        .insert(tables.trips)
+        .values({ name: data.name, start_date: data.start_date, end_date: data.end_date })
+        .returning();
+      // Auto-assign the creator as owner.
+      await tx.insert(tables.tripMembers).values({
+        trip_id: created.id,
+        user_id: user.id,
+        role: "owner",
+      });
+      return created;
     });
     revalidateApp();
     return trip;

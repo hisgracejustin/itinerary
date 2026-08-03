@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { SHEET_CACHE, purgeSheetCache } from "@/lib/offline-sheet";
 
 /**
  * Keeps the offline day sheet fresh: whenever the app is opened online, it
@@ -56,7 +57,12 @@ async function sync() {
   // itinerary, so drop it before caching this one.
   const previousOwner = read(OWNER_KEY);
   const switched = !!previousOwner && previousOwner !== manifest.userId;
-  if (switched) navigator.serviceWorker?.controller?.postMessage({ type: "purge-sheet" });
+  // Await the purge before anything below it. Writing OWNER_KEY first would
+  // record a purge that may never have happened (`switched` is then false
+  // forever, so it's never retried); and the gap-fill loop reads this same
+  // cache, so a delete still in flight makes it treat the previous user's
+  // entries as hits, skip them, and then lose them to the delete.
+  if (switched) await purgeSheetCache();
   write(OWNER_KEY, manifest.userId);
 
   // Attachments gap-fill on EVERY online open, outside the debounce: a file
@@ -91,7 +97,7 @@ async function sync() {
   // without caching anything — recording a sync then would debounce every
   // later session into skipping the retry, leaving offline empty for good.
   const cached = await window.caches
-    ?.open("itinerary-sheet-v1")
+    ?.open(SHEET_CACHE)
     .then((c) => c.match("/sheet", { ignoreVary: true }))
     .catch(() => undefined);
   if (!cached) return;

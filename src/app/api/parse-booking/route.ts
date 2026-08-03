@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { naiveStamp } from "@/lib/airports";
 import { sanitizeCancellationPolicy } from "@/lib/cancellation";
 
 export const runtime = "nodejs";
@@ -291,6 +292,22 @@ export async function POST(req: Request) {
         else delete d.cancellation_policy;
         if (d.ports_of_call !== undefined && (!Array.isArray(d.ports_of_call) || d.ports_of_call.length === 0)) delete d.ports_of_call;
         if (d.notes !== undefined && typeof d.notes !== "string") delete d.notes;
+        // Layover timestamps are the only parsed dates that reach the DB
+        // verbatim — start/end go through the form's wall-clock laundering,
+        // these are assembled straight into details at merge time. Storage is
+        // naive wall clock, so a hallucinated 'Z' would survive and then move
+        // with the reader; drop what can't be read as a wall-clock time rather
+        // than keep a stamp we'd have to guess the meaning of.
+        if (Array.isArray(d.layovers)) {
+          for (const lo of d.layovers) {
+            if (!lo || typeof lo !== "object") continue;
+            for (const key of ["arrival", "departure"]) {
+              const stamp = naiveStamp(lo[key]);
+              if (stamp) lo[key] = stamp;
+              else delete lo[key];
+            }
+          }
+        }
       }
     }
 

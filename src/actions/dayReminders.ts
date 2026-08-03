@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db, tables } from "@/db";
@@ -18,13 +18,15 @@ export async function createDayReminderAction(input: unknown) {
     // Append to the end of this day's list unless the client sent a position.
     let position = data.position;
     if (position == null) {
-      const tripMatch = data.trip_id
-        ? eq(tables.dayReminders.trip_id, data.trip_id)
-        : isNull(tables.dayReminders.trip_id);
       const [{ next } = { next: 0 }] = await db
         .select({ next: sql<number>`coalesce(max(${tables.dayReminders.position}), -1) + 1` })
         .from(tables.dayReminders)
-        .where(and(eq(tables.dayReminders.date, data.date), tripMatch));
+        .where(
+          and(
+            eq(tables.dayReminders.date, data.date),
+            eq(tables.dayReminders.trip_id, data.trip_id),
+          ),
+        );
       position = next;
     }
     const [row] = await db
@@ -87,7 +89,7 @@ export async function reorderDayRemindersAction(orderedIds: unknown) {
       .select({ id: tables.dayReminders.id, trip_id: tables.dayReminders.trip_id })
       .from(tables.dayReminders)
       .where(inArray(tables.dayReminders.id, ids));
-    const tripIds = [...new Set(rows.map((r) => r.trip_id).filter(Boolean) as string[])];
+    const tripIds = [...new Set(rows.map((r) => r.trip_id))];
     for (const tripId of tripIds) await requireTripAccess(user.id, tripId, WRITE_ROLES);
 
     const known = new Set(rows.map((r) => r.id));

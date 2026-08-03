@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, tables } from "@/db";
 import { runAction } from "@/lib/action-utils";
@@ -14,27 +14,18 @@ export async function upsertDayNoteAction(input: unknown) {
     const { date, title, trip_id } = dayNoteUpsertSchema.parse(input);
     await requireTripAccess(user.id, trip_id, WRITE_ROLES);
 
-    const match = trip_id
-      ? and(eq(tables.dayNotes.date, date), eq(tables.dayNotes.trip_id, trip_id))
-      : and(eq(tables.dayNotes.date, date), isNull(tables.dayNotes.trip_id));
-    const [existing] = await db.select().from(tables.dayNotes).where(match).limit(1);
-
     // Empty title deletes the note.
     if (!title.trim()) {
-      if (existing) await db.delete(tables.dayNotes).where(eq(tables.dayNotes.id, existing.id));
+      await db
+        .delete(tables.dayNotes)
+        .where(and(eq(tables.dayNotes.date, date), eq(tables.dayNotes.trip_id, trip_id)));
       revalidateApp();
       return null;
     }
 
-    if (existing) {
-      const [row] = await db
-        .update(tables.dayNotes)
-        .set({ title: title.trim() })
-        .where(eq(tables.dayNotes.id, existing.id))
-        .returning();
-      revalidateApp();
-      return row;
-    }
+    // One statement rather than check-then-insert: two members editing the same
+    // day (or one member on two devices) would both find no row and both insert.
+    // The uq_day_notes_trip_date index is what makes the conflict target valid.
     const [row] = await db
       .insert(tables.dayNotes)
       .values({
@@ -42,6 +33,10 @@ export async function upsertDayNoteAction(input: unknown) {
         date,
         title: title.trim(),
         trip_id,
+      })
+      .onConflictDoUpdate({
+        target: [tables.dayNotes.trip_id, tables.dayNotes.date],
+        set: { title: title.trim() },
       })
       .returning();
     revalidateApp();

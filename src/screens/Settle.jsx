@@ -266,6 +266,11 @@ export default function Settle({
   const blankSettle = { trip_id: selectedTrip ?? '', from_user: null, to_user: null, amount: '', currency: 'HKD', note: '' }
   const [settleForm, setSettleForm] = useState(blankSettle)
   const [showSettleForm, setShowSettleForm] = useState(false)
+  // Idempotency key for the payment being entered. Minted when the form OPENS,
+  // not per click: a retry after a lost response must reuse it so the server's
+  // conflict-do-nothing recognises the second attempt as the same payback. It's
+  // cleared on a confirmed success, so the next payment gets its own key.
+  const settleIdRef = useRef(null)
 
   const settleRoster = (trips.find((t) => t.id === settleForm.trip_id)?.members) ?? []
   // The "to" picker excludes anyone sharing the payer's party in that trip
@@ -279,6 +284,7 @@ export default function Settle({
 
   const openSettleForm = (values) => {
     setSettleForm({ ...blankSettle, ...values })
+    settleIdRef.current = crypto.randomUUID()
     setShowSettleForm(true)
     requestAnimationFrame(() => settleFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
   }
@@ -340,8 +346,10 @@ export default function Settle({
     if (!settleForm.trip_id) return toast.error('Pick a trip for this payment')
     if (!settleForm.from_user || !settleForm.to_user) return toast.error('Pick who paid and who received')
     if (!(amount > 0)) return toast.error('Enter an amount')
+    if (!settleIdRef.current) settleIdRef.current = crypto.randomUUID()
     const ok = await run(
       () => recordSettlement({
+        id: settleIdRef.current,
         trip_id: settleForm.trip_id,
         from_user: settleForm.from_user,
         to_user: settleForm.to_user,
@@ -352,6 +360,7 @@ export default function Settle({
       'Payment recorded',
     )
     if (ok) {
+      settleIdRef.current = null
       setSettleForm(blankSettle)
       setShowSettleForm(false)
     }
