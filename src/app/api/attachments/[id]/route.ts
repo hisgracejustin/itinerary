@@ -61,6 +61,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       "Content-Length": String(row.size_bytes),
       "Content-Disposition": contentDisposition(row.filename, download),
       "Cache-Control": "private, no-store",
+      // This route echoes a mime type the uploader supplied, and the "View"
+      // link opens it as a top-level document on our own origin. The upload
+      // allowlist (src/lib/attachments.ts) excludes html/svg today, so these
+      // two are for the day it widens: nosniff stops a mislabelled file being
+      // re-typed as markup, and the sandbox strips scripts and drops the
+      // document to an opaque origin so it can never touch the session.
+      // `allow-downloads` is required or the ?download=1 link silently fails.
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "sandbox allow-downloads",
     },
   });
 }

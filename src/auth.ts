@@ -2,7 +2,7 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, dbReady, tables } from "@/db";
 import { authConfig } from "@/auth.config";
 import { isAdmin } from "@/lib/authz";
@@ -50,16 +50,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
           if (!user?.password_hash) return null;
           const now = new Date();
           if (user.pin_locked_until && user.pin_locked_until > now) return null;
-          if (!verifyPin(pin, user.password_hash)) {
+          if (!(await verifyPin(pin, user.password_hash))) {
+            // Both columns are computed by the database from the row's own
+            // current values, never from the `user` we read a moment ago: with
+            // a JS read-modify-write, N guesses fired in parallel all read the
+            // same base count and all write the same result, so the 5-try lock
+            // never engages and brute force is a matter of concurrency. Count
+            // and lock move in one statement so there is no instant in which
+            // the count has reached the threshold but the lock is not yet set.
+            //
             // A fail after an expired lock starts a fresh count instead of
-            // instantly re-locking on the first typo.
-            const lockExpired = !!user.pin_locked_until && user.pin_locked_until <= now;
-            const attempts = lockExpired ? 1 : user.failed_pin_attempts + 1;
+            // instantly re-locking on the first typo. Postgres evaluates every
+            // SET expression against the pre-update row, so both CASEs see the
+            // old `pin_locked_until`.
+            const nextAttempts = sql`case when ${tables.users.pin_locked_until} is not null and ${tables.users.pin_locked_until} <= now() then 1 else ${tables.users.failed_pin_attempts} + 1 end`;
             await db
               .update(tables.users)
               .set({
-                failed_pin_attempts: attempts,
-                pin_locked_until: attempts >= 5 ? new Date(now.getTime() + 15 * 60 * 1000) : null,
+                failed_pin_attempts: nextAttempts,
+                pin_locked_until: sql`case when (${nextAttempts}) >= 5 then now() + interval '15 minutes' else null end`,
               })
               .where(eq(tables.users.id, user.id));
             return null;

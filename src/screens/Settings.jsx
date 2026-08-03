@@ -270,6 +270,22 @@ function PeopleSection({ people, trips, currentUserId, isAdmin, showsEveryone, t
 const AVATAR_ICONS = Array.from({ length: 16 }, (_, i) => `icon${i + 1}.png`)
 
 /**
+ * A suggested PIN. This is a login credential, so it comes from the CSPRNG and
+ * not Math.random(), whose output is predictable from a handful of observed
+ * values. Rejection sampling because 2^32 isn't a multiple of 900000 — plain
+ * modulo would make the lowest range of PINs measurably likelier.
+ */
+function generatePin() {
+  const RANGE = 900000
+  const ceiling = Math.floor(2 ** 32 / RANGE) * RANGE
+  const buf = new Uint32Array(1)
+  do {
+    window.crypto.getRandomValues(buf)
+  } while (buf[0] >= ceiling)
+  return String(100000 + (buf[0] % RANGE))
+}
+
+/**
  * One person in the global People card. Admins get the pencil (name/email) and
  * key (PIN) controls; the viewer's own row always gets the avatar picker.
  * Changing an email always unlinks their old login (and may absorb an unused
@@ -400,7 +416,7 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
             />
             <button
               type="button"
-              onClick={() => setPinDraft(String(Math.floor(100000 + Math.random() * 900000)))}
+              onClick={() => setPinDraft(generatePin())}
               className="mat-btn-outlined text-xs shrink-0"
             >
               Generate

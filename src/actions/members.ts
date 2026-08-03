@@ -573,10 +573,11 @@ export async function setMemberPinAction(input: unknown) {
     // takeover primitive, so trip ownership must not grant it.
     requireAdmin(user);
     if (data.trip_id) await requireTripMembers(data.trip_id, [data.user_id]);
+    const passwordHash = data.pin === null ? null : await hashPin(data.pin);
     await db
       .update(tables.users)
       .set({
-        password_hash: data.pin === null ? null : hashPin(data.pin),
+        password_hash: passwordHash,
         failed_pin_attempts: 0,
         pin_locked_until: null,
         // Any PIN change (set or clear) invalidates the old holder's sessions.
