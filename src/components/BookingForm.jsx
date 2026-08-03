@@ -346,9 +346,12 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         form.cost_amount && form.charged_currency && parseFloat(form.charged_rate) > 0
           ? parseFloat(form.charged_rate)
           : null,
-      // Never an empty string: the column takes a zone or nothing, and '' would
-      // fail the schema's supported-zone check rather than read as "unknown".
-      timezone: form.timezone || null,
+      // Create requires a zone, and the field is seeded on open (stored, then
+      // parsed, then derived), so this fallback should be unreachable. It exists
+      // so a form that somehow lost the value saves against this device's clock
+      // rather than failing validation with a message about a field the user
+      // never touched.
+      timezone: form.timezone || deviceZone(),
       details: Object.keys(details).length > 0 ? details : null,
     })
   }

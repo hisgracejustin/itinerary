@@ -132,12 +132,14 @@ const bookingBaseShape = {
   title: z.string().min(1),
   start_date: z.string().min(1),
   end_date: z.string().nullish(),
-  // The provider's clock for this booking's times and cutoffs. Editable like any
-  // other field — bookingUpdateSchema only omits `id`.
-  timezone: z
-    .string()
-    .refine((tz) => SUPPORTED_ZONES.has(tz), "Unknown timezone")
-    .nullish(),
+  // The provider's clock for this booking's times and cutoffs. Required on
+  // create — a booking with no zone is one whose cancellation deadline we can
+  // only guess at, and the form always arrives pre-filled, so there is no case
+  // where a person has to supply this from nothing. bookingUpdateSchema is
+  // `.partial()`, so an edit that doesn't mention it leaves it untouched.
+  // The COLUMN is still nullable: rows written before this existed are filled
+  // by scripts/infer-timezones.mjs, and NOT NULL follows that backfill.
+  timezone: z.string().refine((tz) => SUPPORTED_ZONES.has(tz), "Unknown timezone"),
   confirmation_number: z.string().nullish(),
   provider: z.string().nullish(),
   details: z.record(z.string(), z.unknown()).transform(sanitizeDetails).nullish(),
