@@ -5,11 +5,11 @@
 
 ---
 
-> **Update — 2026-08-03, post-fix:** all nine **P0 blockers are fixed and verified** (✅ below). Re-verified after the changes: `npm run lint` 0 errors / 3 pre-existing warnings, `tsc --noEmit` clean, `npm run build` exit 0, migrator skip-path exit 0, and the P0-1 guard confirmed firing at runtime (a `next start` with no `DATABASE_URL` returns 500 with `DATABASE_URL must be a postgres:// URL in production` instead of silently serving an empty PGlite). **P1 items remain open.**
+> **Update — 2026-08-03, post-fix:** all nine **P0 blockers** and the **entire P1 list are fixed, verified and pushed** (✅ below), together with a follow-up timezone review whose findings were folded into the P1 batch (§7). Commits `97fee13`, `f2d065b`, `3cb949a`. Re-verified after the changes: `npm run lint` 0 errors / 3 pre-existing warnings, `tsc --noEmit` clean, `npm run build` exit 0, migrator skip-path exit 0, and the P0-1 guard confirmed firing at runtime (a `next start` with no `DATABASE_URL` returns 500 with `DATABASE_URL must be a postgres:// URL in production` instead of silently serving an empty PGlite), the day-note migration exercised against a database pre-seeded with the duplicate rows it outlaws, the security headers confirmed on a live response, and the CSP checked in a real browser across every route. **Remaining: P2/P3 backlog plus two documented residuals — the `postcss`/`sharp` advisories that need a `next` major, and no IP rate limit on the credentials callback.**
 
-## Verdict: ~~NOT READY~~ → **P0-clear as of 2026-08-03; P1 open**
+## Verdict: ~~NOT READY~~ → **P0 and P1 clear as of 2026-08-03**
 
-*Original verdict (pre-fix) preserved below for context; the nine blockers it describes are now closed.*
+*Original verdict (pre-fix) preserved below for context; every blocker it describes is now closed.*
 
 The application core is genuinely well built. **Authorization is airtight**: all 24 server actions and 5 API routes check the session and derive trip scope from the stored row, read queries fold membership into an `innerJoin`, and the audit found **no IDOR and no unauthenticated write path**. The settlement math was executed against a multi-trip party scenario and **balances to exactly zero**. Migrations are fully in sync with the schema. There's a nightly Neon→R2 backup with restore drill, a thoughtfully engineered offline PWA sheet, and zero `TODO`/`any`/`console.log`/commented-out cruft in `src/`.
 
@@ -31,18 +31,18 @@ What's missing is the **operational layer** — the code that runs when things g
 
 **Deliberate deviations from the original recommendation:** (1) the **PDF** client-side cap stays at 10 MB — a PDF is never uploaded, only its extracted text, so the 4.5 MB body cap doesn't apply and lowering it would have been an unforced capability loss; images are 3 MB as specified. (2) `todos.ts` "Moved to-do missing from order" stays a plain `Error` — it's an invariant on our own client's payload, not something a user can act on, so it belongs in the logged-with-ref bucket.
 
-### First-week fixes (P1)
+### First-week fixes (P1) — ✅ all fixed 2026-08-03
 
 | # | Finding | Where |
 |---|---|---|
-| P1-1 | Settlements not idempotent — a retry silently duplicates a payback (money data) | `src/actions/settle.ts:38-48` |
-| P1-2 | Day-note upsert is check-then-insert with no unique `(trip_id, date)` constraint — concurrent edits duplicate rows | `src/actions/dayNotes.ts:17-46`, `schema.ts:232-247` |
-| P1-3 | Flight-duration timezone math off by ~2 days on month/year boundaries (**verified by execution**) | `src/lib/airports.js:193-198` |
-| P1-4 | `npm audit fix`: `@auth/core <=0.41.2` has a critical advisory chain (incl. email homoglyph bypass — this app keys identity on email equality with `allowDangerousEmailAccountLinking`); pin `next-auth` (currently `^` over a **beta**) | `package.json:24` |
-| P1-5 | No security headers at all (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`) | `next.config.ts`, `vercel.json` |
-| P1-6 | PIN lockout is a read-modify-write race — parallel guesses never trip the 5-try lock; PINs generated with `Math.random()` | `src/auth.ts:45-62`, `Settings.jsx:403` |
-| P1-7 | Four non-atomic multi-step writes — worst: `createTripAction` can leave an ownerless, undeletable, invisible trip | `bookings.ts:163-172`, `todos.ts:143-170`, `members.ts:275-289,35-64` |
-| P1-8 | Offline-sheet purge on account switch can silently no-op yet be recorded as done — next user on the browser can read the previous user's itinerary offline | `src/components/SheetSync.tsx:59-60`, `Sidebar.jsx:236` |
+| ✅ P1-1 | Settlements not idempotent — a retry silently duplicates a payback (money data) | `src/actions/settle.ts:38-48` |
+| ✅ P1-2 | Day-note upsert is check-then-insert with no unique `(trip_id, date)` constraint — concurrent edits duplicate rows | `src/actions/dayNotes.ts:17-46`, `schema.ts:232-247` |
+| ✅ P1-3 | Flight-duration timezone math off by ~2 days on month/year boundaries (**verified by execution**) | `src/lib/airports.js:193-198` |
+| ✅ P1-4 (partial) | `npm audit fix`: `@auth/core <=0.41.2` has a critical advisory chain (incl. email homoglyph bypass — this app keys identity on email equality with `allowDangerousEmailAccountLinking`); pin `next-auth` (currently `^` over a **beta**) | `package.json:24` |
+| ✅ P1-5 | No security headers at all (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`) | `next.config.ts`, `vercel.json` |
+| ✅ P1-6 | PIN lockout is a read-modify-write race — parallel guesses never trip the 5-try lock; PINs generated with `Math.random()` | `src/auth.ts:45-62`, `Settings.jsx:403` |
+| ✅ P1-7 | Four non-atomic multi-step writes — worst: `createTripAction` can leave an ownerless, undeletable, invisible trip | `bookings.ts:163-172`, `todos.ts:143-170`, `members.ts:275-289,35-64` |
+| ✅ P1-8 | Offline-sheet purge on account switch can silently no-op yet be recorded as done — next user on the browser can read the previous user's itinerary offline | `src/components/SheetSync.tsx:59-60`, `Sidebar.jsx:236` |
 
 **Manual pre-deploy checks:** Vercel project Node version is 24.x (`engines: >=24`, no pin); Neon project region matches `sin1`; `ADMIN_EMAILS` is set (read once at module scope — needs a **redeploy** to change, and unset means no one can perform admin actions); Vercel `AUTH_SECRET` is a fresh random value (local `.env.local` carries a known dev string).
 
@@ -223,3 +223,66 @@ A private, invite-only travel-itinerary PWA for a small circle of friends/family
 ---
 
 *Full per-pass reports (security, features, bugs, dead-code/quality, reliability) were generated by five independent Opus 5 review agents on 2026-08-03; this document is the deduplicated collation. Where passes disagreed on severity, the higher rating with the concrete failure scenario won. Findings marked "verified by execution" were reproduced with running code, not inferred from reading.*
+---
+
+## 7. Timezone review (added 2026-08-03)
+
+Prompted by a direct question: *if I fly from Hong Kong to Canada, does anything change about what I see?* Three independent passes — storage round-trip, "now"/"today" derivation, and flight/airport handling.
+
+### The good news: stored times are timezone-immune, and that is by design
+
+A booking that reads "14:30" in Hong Kong reads "14:30" in Vancouver. Verified end to end:
+
+- **Write** — `BookingForm`'s `wall()` helper passes the `datetime-local` value through verbatim and appends `T00:00:00` to date-only values; no `toISOString()`, no `Date.parse`, no UTC conversion anywhere on the path to the DB. The comment there names the reason: `toISOString()` "would bake in the entering device's offset".
+- **Storage** — `bookings.start_date`/`end_date`, trip dates, todo due dates, day-note dates, reminder times and expense dates are all `text`. The only `timestamptz` columns that reach a UI (`fx.fetched_at`, the sheet's `generatedAt`) are genuine instants, where shifting with the viewer is correct.
+- **Read** — `queries.ts` never transforms a date column.
+- **Render** — every formatter parses a naive string (which JS reads as local) and formats with no `timeZone` option (which renders local). Both halves move together, so the digits are invariant. There are **zero** `timeZone:` options in any render path; the only one in the codebase uses the *airport's* zone for flight math.
+
+Four separate view files independently build local `YYYY-MM-DD` day keys with comments citing the UTC off-by-one they are avoiding. This discipline is real and should be preserved.
+
+### What actually changed with the viewer — and why Canada specifically
+
+Vercel runs in UTC. Hong Kong is *ahead* of UTC; Vancouver is *behind* it. So every place that trusted a UTC "today" was **generous** in Hong Kong and **premature** in Vancouver. Flying doesn't create these bugs — it flips their sign from invisible to breaking.
+
+| Finding | Effect | Status |
+|---|---|---|
+| Offline sheet's `today` computed as a UTC date server-side; `DaySheet` selects trips with `end_date >= today` | On the evening of a trip's last day in Vancouver, the trip you are standing in deselects itself and the offline sheet — opened with the radio off — reads "No trips selected". The `localStorage` fallback only exists if the user previously opened the trip picker. | ✅ Fixed — one day of slack; over-including a just-ended trip beats an empty screen, and max real-world skew is ~26h |
+| `sheet-manifest` filtered upcoming attachments against the same UTC today | In that same Vancouver evening window, attachments on a booking ending *today* were excluded from the offline pre-cache — the traveler's hotel voucher. Bounded: nothing evicts, so it only bit a device whose *first* sync fell in that window. | ✅ Fixed — same slack; the comment claiming it followed the app's local-date convention was simply wrong |
+| Cancellation tiers evaluated against the *viewer's* device clock | Landing in Vancouver rolled "now" back ~15h and could resurrect a refund tier that had already lapsed. This contradicted the invariant `cancellation.js` states in its own header. | ✅ Fixed — see below |
+| SSR renders "today" on a UTC server, client corrects on hydration | First-paint flash on the wrong day for ~8h/day in each city, plus a console hydration error. Self-healing. | ✅ Partly — the `/costs` as-of input no longer mismatches; the calendar flash remains (P2) |
+
+### The design decision: a cutoff belongs to the provider
+
+Confirmed by the owner: **a Kyoto hotel's 18:00 deadline belongs to Kyoto, not to whichever airport the viewer is standing in.**
+
+Implemented as an architecture rather than a patch. The as-of now travels as an **instant**, and each booking converts it to its own provider's wall clock at comparison time:
+
+1. A **flight** resolves to its departure airport's zone (you cancel a flight where it leaves from).
+2. **Anything else** resolves to the trip's destination — the arrival airport of that trip's earliest flight.
+3. With **neither**, it falls back to device-local, exactly the old behaviour — so trips with no flights or unrecognized airport codes are never worse off than before.
+
+The `daysUntilCutoff` countdown ("in 3 days") deliberately stays reader-local — it is a display convenience, and the asymmetry is now documented at both the module and the call site. **Caveat:** step 2 is inference. A multi-country trip could resolve a few hours off, which is a rounding error against the ~16h device error it replaces, but it is a heuristic and not ground truth. Storing a per-trip or per-booking timezone would make it exact.
+
+### The flight-duration bug was worse than first reported
+
+`localToUTC` in `airports.js` had **two** independent defects, not one:
+
+1. **Month/year boundary sign inversion** — the day-rollover correction compared day-of-month and month-of-year *integers*, which invert against chronological order at a boundary, so the correction took the wrong sign: a 2-day (2880 min) error.
+2. **Wrong-instant DST probe** — the offset was sampled at an instant off by exactly the offset, so DST transitions landed an hour out.
+
+Brute-forced across 2026: **393 boundary errors + 72 DST errors over 10 airports — ~0.53% of wall-clock hours, so roughly 1% of flights** (two ends each). Concrete: SFO→JFK departing Oct 1 reported **53h 30m** instead of 5h 30m; HKG→NRT across New Year returned **null** and the flight silently vanished from the totals.
+
+The blast radius was made worse by the reporting around it. An inflated duration did **not** set the `approx` flag — both airports were in the table, the arithmetic was simply wrong — so `/bookings/flight` displayed a confidently wrong "Flying time" with no `~` marker, while the other stats on the same strip stayed correct. A nulled duration produced the hint *"1 booking missing an arrival time"*, which is false: the booking had both times and the conversion failed, sending the user to check data that was already right.
+
+✅ Fixed with two-pass offset resolution that never compares date digits. Verified by execution: all five named cases correct, plus a sweep of **87,840 cases** (every wall-clock hour of 2026 across ten zones) with zero failures. `bookingStats.js` now distinguishes "a time is missing" from "a duration couldn't be computed" and signals the latter honestly.
+
+### Also fixed
+
+AI-parsed `details.layovers[].arrival`/`.departure` bypassed all date normalization — the parse route normalized costs, policies and notes but never date fields, so a hallucinated trailing `Z` persisted verbatim and rendered in the viewer's zone. **This was the one value in the entire app that genuinely shifted when you flew.** Now normalized server-side at parse time and defensively at merge time.
+
+### Known and deliberately not changed
+
+- **Flight times are never labeled with a timezone.** `HKG 11:00 PM → YVR 7:00 PM` on the same date is genuinely ambiguous to a reader; the tiny "11h" duration is the only clue a date line was crossed. `getAirportTimezone` already exists and is already imported at both surfaces, so this is a UI decision, not a data problem. **Recommended P2.**
+- **Layover durations use naive subtraction, correctly** — both stamps are at the same airport so the offsets cancel, and the code says so. Only breaks for a connection straddling a DST change.
+- **`transitStats` has no timezone awareness** for trains/buses — right for domestic rail, silently wrong for a Eurostar, unflagged.
+- **Calendar "today" is device-local**, which is correct: flying the Pacific westbound, you genuinely re-live the day.
