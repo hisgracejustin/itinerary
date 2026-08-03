@@ -13,6 +13,7 @@
 // (a redeploy racing another build) would otherwise apply the same migration
 // twice. The key is an arbitrary constant, shared only with this script.
 import "dotenv/config";
+import { pgOptions, explainPgError } from "./pg-connect.mjs";
 
 const LOCK_KEY = 727144907;
 
@@ -28,7 +29,7 @@ if (!url || !url.startsWith("postgres")) {
 const { default: pg } = await import("pg");
 // A single Client, not a Pool — an advisory lock is session-scoped, so the
 // lock, the migration and the unlock must all run on the same connection.
-const client = new pg.Client({ connectionString: url });
+const client = new pg.Client(pgOptions(url));
 
 try {
   await client.connect();
@@ -42,7 +43,11 @@ try {
     await client.query("SELECT pg_advisory_unlock($1)", [LOCK_KEY]);
   }
 } catch (err) {
-  console.error("migrate: failed", err);
+  // A connection failure here fails the build, so it has to say what to check
+  // rather than only what threw — the operator is reading a Vercel build log.
+  console.error("migrate: failed");
+  console.error(explainPgError(err, url));
+  console.error(err);
   process.exitCode = 1;
 } finally {
   await client.end().catch(() => {});

@@ -24,6 +24,7 @@
  */
 import "dotenv/config";
 import { getAirportTimezone } from "../src/lib/airports.js";
+import { pgOptions, explainPgError } from "./pg-connect.mjs";
 
 const APPLY = process.argv.includes("--apply");
 const CSV = process.argv.includes("--csv");
@@ -37,8 +38,14 @@ const url = process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL;
 async function connect() {
   if (url && url.startsWith("postgres")) {
     const { default: pg } = await import("pg");
-    const client = new pg.Client({ connectionString: url });
-    await client.connect();
+    const client = new pg.Client(pgOptions(url));
+    try {
+      await client.connect();
+    } catch (err) {
+      await client.end().catch(() => {});
+      console.error(explainPgError(err, url));
+      process.exit(1);
+    }
     return {
       label: `postgres (${new URL(url).host})`,
       query: async (sql, params) => (await client.query(sql, params)).rows,
