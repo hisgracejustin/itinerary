@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { CURRENCIES, formatCurrency } from '../lib/currencies'
 import { sanitizeCancellationPolicy } from '../lib/cancellation'
-import { resolveZone } from '../lib/booking-zones'
+import { suggestZone } from '../lib/booking-zones'
+import { SUPPORTED_ZONES } from '../lib/timezones'
+import { FIELD_LABELS, FIELD_ORDER, focusFormField } from '../lib/booking-fields'
 import { useTripContext } from '../lib/trip-context'
 import SplitEditor from './SplitEditor'
 import ChargedRateEditor from './ChargedRateEditor'
@@ -82,7 +84,7 @@ const TYPE_FIELDS = {
 // module scope: the form re-renders on every keystroke.
 const ZONE_GROUPS = (() => {
   const byArea = new Map()
-  for (const zone of Intl.supportedValuesOf('timeZone')) {
+  for (const zone of SUPPORTED_ZONES) {
     const area = zone.includes('/') ? zone.slice(0, zone.indexOf('/')) : 'Other'
     if (!byArea.has(area)) byArea.set(area, [])
     byArea.get(area).push(zone)
@@ -107,7 +109,7 @@ function toLocalDatetime(isoString) {
   return local.toISOString().slice(0, 16)
 }
 
-export default function BookingForm({ booking, onSave, onDelete, onCancel, saving, formRef, selectedTrip, allBookings = null }) {
+export default function BookingForm({ booking, onSave, onDelete, onCancel, saving, formRef, selectedTrip, allBookings = null, onErrorsChange, serverError = null }) {
   const isEdit = !!booking
   const { trips } = useTripContext()
 
@@ -126,16 +128,14 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
     splits: [],
     charged_currency: '',
     charged_rate: '',
-    timezone: deviceZone(),
+    // Empty on purpose. The app suggests a zone (see `suggestion` below), the
+    // user picks it: a pre-filled inference is one nobody ever looks at, so a
+    // wrong guess used to sail through Save invisibly.
+    timezone: '',
     details: {},
   })
 
   const [errors, setErrors] = useState({})
-
-  // A stored (or AI-parsed) zone is an ANSWER; everything else in the field is a
-  // guess we keep refreshing. Pinned means "stop guessing over this" — set when
-  // the booking arrives carrying a zone, and the moment the user picks one.
-  const [zonePinned, setZonePinned] = useState(!!booking?.timezone)
 
   useEffect(() => {
     if (booking) {
@@ -160,9 +160,10 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
           : [],
         charged_currency: booking.charged_currency || '',
         charged_rate: booking.charged_rate != null ? String(booking.charged_rate) : '',
-        // Only what the booking actually carries; the derivation effect below
-        // fills the blank, and the device zone is the floor under both.
-        timezone: booking.timezone || deviceZone(),
+        // Only what the booking actually carries. A stored zone is an answer
+        // already given and a parsed one is what the document itself said —
+        // both are pre-selected; nothing else fills this field but a person.
+        timezone: booking.timezone || '',
         // ports_of_call is stored as an array (the cards join it), but the
         // generic detail input binds a string — an array would coerce to "a,b"
         // and save straight back as a string, breaking the .join() render.
@@ -175,17 +176,14 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
             }
           : {},
       })
-      setZonePinned(!!booking.timezone)
     }
   }, [booking])
 
-  // Keep the zone in step with the fields it's derived from, until the answer
-  // stops being a guess. The column is destined to be NOT NULL, so this field is
-  // never allowed to sit empty or make the user go hunting for a value: the
-  // chain is stored → own departure airport → last landing → trip destination,
-  // and the device zone (already in state) holds when none of them answer.
-  const derivedZone = resolveZone(
-    // Deliberately WITHOUT form.timezone — resolveZone reads a stored zone
+  // What the app would have guessed, offered as a one-tap suggestion instead of
+  // being written into the field. It tracks the fields it derives from (type,
+  // trip, dates, airports) so it stays honest while the form is filled in.
+  const inferred = suggestZone(
+    // Deliberately WITHOUT form.timezone — suggestZone reads a stored zone
     // first, so passing it back in would just echo the field at itself.
     {
       id: booking?.id,
@@ -198,10 +196,27 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
     form.trip_id,
     allBookings,
   )
-  useEffect(() => {
-    if (zonePinned || !derivedZone) return
-    setForm((prev) => (prev.timezone === derivedZone ? prev : { ...prev, timezone: derivedZone }))
-  }, [zonePinned, derivedZone])
+  // What the field offers, and why. Four sources, strongest first: the zone the
+  // booking was saved with (an answer already given — never re-derived), the one
+  // the parser read off the document, the inference chain, and the device clock.
+  // A parsed booking is the one with no id yet.
+  const suggestion = (() => {
+    if (booking?.id && booking.timezone) {
+      return { zone: booking.timezone, why: 'the zone saved on this booking', kind: 'stored' }
+    }
+    if (!booking?.id && booking?.timezone) {
+      return { zone: booking.timezone, why: 'read from the booking document', kind: 'document' }
+    }
+    if (inferred) return { ...inferred, kind: 'inferred' }
+    // Nothing on the trip places this booking. The device zone is still worth
+    // offering — it's right for a booking made where you are — but it has to say
+    // that's all it is.
+    return {
+      zone: deviceZone(),
+      why: "your device's clock — nothing on this trip places this booking",
+      kind: 'device',
+    }
+  })()
 
   // The split roster follows the booking's own trip, not the sidebar selection.
   const splitTrip = (trips || []).find((t) => t.id === form.trip_id) || null
@@ -235,6 +250,55 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
   const setDetail = (key, value) => {
     setForm((prev) => ({ ...prev, details: { ...prev.details, [key]: value } }))
   }
+
+  // The <form> node, shared with the modal (its Save button lives outside this
+  // component and submits through the same ref).
+  const formEl = useRef(null)
+  const attachForm = useCallback(
+    (node) => {
+      formEl.current = node
+      if (formRef) formRef.current = node
+    },
+    [formRef],
+  )
+
+  // The timezone row is collapsible, and a REQUIRED field hidden inside a
+  // collapsed row is a trap — so a form that opens with no zone opens the row
+  // too. Read from the booking, not from form.timezone, which is empty for one
+  // render while the seeding effect runs: an edit whose answer already exists
+  // keeps opening collapsed, as before. Failed saves re-open it (see below).
+  const [zoneOpen, setZoneOpen] = useState(!booking?.timezone)
+
+  // Lifted to the modal, which renders the summary chip beside Save. Serialized
+  // as the effect's dependency rather than passed as an array: setField rebuilds
+  // `errors` on every keystroke, and a fresh array each time would re-render the
+  // modal for nothing. The callback goes through a ref so an inline one from a
+  // caller can't turn "modal re-renders" into a render loop.
+  const errorsJson = JSON.stringify(
+    FIELD_ORDER.filter((f) => errors[f]).map((f) => ({
+      field: f,
+      label: FIELD_LABELS[f],
+      message: errors[f],
+    })),
+  )
+  const notifyErrors = useRef(onErrorsChange)
+  useEffect(() => {
+    notifyErrors.current = onErrorsChange
+  })
+  useEffect(() => {
+    notifyErrors.current?.(JSON.parse(errorsJson))
+  }, [errorsJson])
+
+  // A rejection from the server names a field too ("timezone: Unknown
+  // timezone"), and it belongs on that field — not only in a toast that's gone
+  // three seconds later.
+  useEffect(() => {
+    if (!serverError) return
+    setErrors((prev) => ({ ...prev, [serverError.field]: serverError.message }))
+    if (serverError.field === 'timezone') setZoneOpen(true)
+    const frame = requestAnimationFrame(() => focusFormField(formEl.current, serverError.field))
+    return () => cancelAnimationFrame(frame)
+  }, [serverError])
 
   // Cancellation policy: a tier array, the 'non_refundable' marker, or absent
   // (unknown). Array.isArray, not `|| []` — the marker is a string, and mapping
@@ -276,8 +340,16 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
       if (!(parseFloat(form.charged_rate) > 0)) errs.charged_rate = 'Enter the rate it was charged at'
       else if (form.charged_currency === form.cost_currency) errs.charged_rate = 'Charged currency must differ from the cost currency'
     }
+    // The zone is never inferred into the field any more, so an unanswered one
+    // reaches here. Checked against the set the Zod schema uses, so the client
+    // and the server can't disagree — the alternative feedback is a round-trip
+    // that returns "timezone: Unknown timezone" into a toast.
+    if (!form.timezone) errs.timezone = "Pick the timezone this booking's times are in"
+    else if (!SUPPORTED_ZONES.has(form.timezone)) {
+      errs.timezone = `“${form.timezone}” isn't a timezone this app knows — pick one from the list`
+    }
     setErrors(errs)
-    return Object.keys(errs).length === 0
+    return errs
   }
 
   // Nothing stops a booking from sitting outside its trip's dates, and that's
@@ -346,19 +418,26 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         form.cost_amount && form.charged_currency && parseFloat(form.charged_rate) > 0
           ? parseFloat(form.charged_rate)
           : null,
-      // Create requires a zone, and the field is seeded on open (stored, then
-      // parsed, then derived), so this fallback should be unreachable. It exists
-      // so a form that somehow lost the value saves against this device's clock
-      // rather than failing validation with a message about a field the user
-      // never touched.
-      timezone: form.timezone || deviceZone(),
+      // Whatever the user actually chose. No fallback: a zone nobody picked is
+      // exactly the invisible wrong guess this field exists to prevent, and
+      // validate() blocks the empty case before submitSave is ever reached.
+      timezone: form.timezone,
       details: Object.keys(details).length > 0 ? details : null,
     })
   }
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (!validate()) return
+    const errs = validate()
+    const firstBad = FIELD_ORDER.find((f) => errs[f])
+    if (firstBad) {
+      // The form is taller than the modal, so the field blocking the save is
+      // often off-screen — pressing Save then looks like it did nothing.
+      // requestAnimationFrame so the row this reveals is open before we scroll.
+      if (errs.timezone) setZoneOpen(true)
+      requestAnimationFrame(() => focusFormField(formEl.current, firstBad))
+      return
+    }
     if (outOfRange) {
       setRangeWarning(true)
       return
@@ -377,14 +456,13 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         Times &amp; deadlines are on this clock
       </label>
       <select
+        data-field="timezone"
         value={form.timezone}
-        onChange={(e) => {
-          setZonePinned(true)
-          setField('timezone', e.target.value)
-        }}
-        className="mat-select w-full"
+        onChange={(e) => setField('timezone', e.target.value)}
+        className={`mat-select w-full ${errors.timezone ? 'border-red-400 focus:ring-red-200' : ''}`}
       >
-        {!ZONE_GROUPS.some(([, zones]) => zones.includes(form.timezone)) && (
+        <option value="">Select a timezone…</option>
+        {form.timezone && !SUPPORTED_ZONES.has(form.timezone) && (
           <option value={form.timezone}>{form.timezone}</option>
         )}
         {ZONE_GROUPS.map(([area, zones]) => (
@@ -395,6 +473,47 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
           </optgroup>
         ))}
       </select>
+      {errors.timezone && <p className="text-xs text-red-500 mt-1">{errors.timezone}</p>}
+      {/* The suggestion, and above all the reason for it: a zone the user can't
+          check is one they can't catch us getting wrong. It stays on screen
+          after being accepted — as the justification for the value that's now
+          in the field — and turns back into a one-tap offer if they pick
+          something else. */}
+      {form.timezone === suggestion.zone ? (
+        <p className="text-xs text-on-surface-variant/70 mt-1.5">✓ {suggestion.why}</p>
+      ) : (
+        <div className="mt-1.5 flex items-start gap-2 rounded-xl border border-primary/30 bg-primary-light/50 px-3 py-2">
+          <div className="min-w-0 flex-1 text-xs leading-relaxed">
+            {suggestion.kind === 'device' ? (
+              <>
+                <p className="text-on-surface">No suggestion — nothing on this trip places this booking.</p>
+                <p className="text-on-surface-variant">
+                  Your device is on{' '}
+                  <span className="font-medium break-all">{suggestion.zone.replace(/_/g, ' ')}</span>. Only
+                  right if that&apos;s where the booking happens.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-on-surface">
+                  {suggestion.kind === 'stored' ? 'Saved on this booking:' : 'Suggested:'}{' '}
+                  <span className="font-medium break-all">{suggestion.zone.replace(/_/g, ' ')}</span>
+                </p>
+                {suggestion.kind !== 'stored' && (
+                  <p className="text-on-surface-variant">{suggestion.why}</p>
+                )}
+              </>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setField('timezone', suggestion.zone)}
+            className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-primary text-white hover:bg-primary-dark active:scale-[0.97] transition-all duration-150"
+          >
+            {suggestion.kind === 'stored' ? 'Restore' : 'Use this'}
+          </button>
+        </div>
+      )}
       <p className="text-xs text-on-surface-variant/60 mt-1">
         The provider&apos;s clock — the hotel&apos;s or airline&apos;s, not yours. A cutoff of
         18:00 means 18:00 there, wherever you read it from.
@@ -403,7 +522,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
   )
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} className="space-y-5 min-w-0">
+    <form ref={attachForm} onSubmit={handleSubmit} className="space-y-5 min-w-0">
       {/* Type selector */}
       <div>
         <label className="block text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">Booking Type</label>
@@ -443,6 +562,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         <div className="col-span-2">
           <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Title</label>
           <input
+            data-field="title"
             type="text"
             value={form.title}
             onChange={(e) => setField('title', e.target.value)}
@@ -455,6 +575,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         <div>
           <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Trip</label>
           <select
+            data-field="trip_id"
             value={form.trip_id}
             onChange={(e) => setField('trip_id', e.target.value)}
             className={`mat-input ${errors.trip_id ? 'border-red-400 focus:ring-red-200' : ''}`}
@@ -481,6 +602,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         <div className="col-span-2 sm:col-span-1">
           <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Start</label>
           <input
+            data-field="start_date"
             type={form.type === 'hotel' && form.details.informal ? 'date' : 'datetime-local'}
             value={form.type === 'hotel' && form.details.informal ? (form.start_date || '').slice(0, 10) : form.start_date}
             onChange={(e) => setField('start_date', e.target.value)}
@@ -492,6 +614,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         <div className="col-span-2 sm:col-span-1">
           <label className="block text-xs font-medium text-on-surface-variant mb-1.5">End</label>
           <input
+            data-field="end_date"
             type={form.type === 'hotel' && form.details.informal ? 'date' : 'datetime-local'}
             value={form.type === 'hotel' && form.details.informal ? (form.end_date || '').slice(0, 10) : form.end_date}
             onChange={(e) => setField('end_date', e.target.value)}
@@ -564,33 +687,39 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         {form.cost_amount && (
           <div className="col-span-2">
             <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Split</label>
-            <SplitEditor
-              members={splitMembers}
-              parties={splitParties}
-              amount={(parseFloat(form.cost_amount) || 0) * (parseFloat(form.cost_share) || 1)}
-              currency={form.cost_currency}
-              paidBy={form.paid_by || null}
-              splits={form.splits}
-              onChange={({ paid_by, splits }) => {
-                setForm((prev) => ({ ...prev, paid_by: paid_by || '', splits }))
-                if (paid_by) setErrors((prev) => ({ ...prev, paid_by: undefined }))
-              }}
-            />
+            {/* data-field wrappers: these two editors own no single input the
+                error summary could jump to. */}
+            <div data-field="paid_by">
+              <SplitEditor
+                members={splitMembers}
+                parties={splitParties}
+                amount={(parseFloat(form.cost_amount) || 0) * (parseFloat(form.cost_share) || 1)}
+                currency={form.cost_currency}
+                paidBy={form.paid_by || null}
+                splits={form.splits}
+                onChange={({ paid_by, splits }) => {
+                  setForm((prev) => ({ ...prev, paid_by: paid_by || '', splits }))
+                  if (paid_by) setErrors((prev) => ({ ...prev, paid_by: undefined }))
+                }}
+              />
+            </div>
             {errors.paid_by && <p className="text-xs text-red-500 mt-1">{errors.paid_by}</p>}
-            <ChargedRateEditor
-              nativeCurrency={form.cost_currency}
-              effective={(parseFloat(form.cost_amount) || 0) * (parseFloat(form.cost_share) || 1)}
-              chargedCurrency={form.charged_currency}
-              chargedRate={form.charged_rate}
-              onChange={({ charged_currency, charged_rate }) => {
-                setForm((prev) => ({
-                  ...prev,
-                  charged_currency: charged_currency ?? '',
-                  charged_rate: charged_rate ?? '',
-                }))
-                setErrors((prev) => ({ ...prev, charged_rate: undefined }))
-              }}
-            />
+            <div data-field="charged_rate">
+              <ChargedRateEditor
+                nativeCurrency={form.cost_currency}
+                effective={(parseFloat(form.cost_amount) || 0) * (parseFloat(form.cost_share) || 1)}
+                chargedCurrency={form.charged_currency}
+                chargedRate={form.charged_rate}
+                onChange={({ charged_currency, charged_rate }) => {
+                  setForm((prev) => ({
+                    ...prev,
+                    charged_currency: charged_currency ?? '',
+                    charged_rate: charged_rate ?? '',
+                  }))
+                  setErrors((prev) => ({ ...prev, charged_rate: undefined }))
+                }}
+              />
+            </div>
             {errors.charged_rate && <p className="text-xs text-red-500 mt-1">{errors.charged_rate}</p>}
           </div>
         )}
@@ -884,12 +1013,17 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
       </div>
 
       {/* Otherwise it stays reachable but out of the way — a hotel form should
-          not open on a timezone picker. Pre-filled either way, since the column
-          becomes NOT NULL and every booking needs a defensible answer. */}
+          not open on a timezone picker. Except while it's unanswered: the field
+          is required, so a collapsed row would hide the only thing blocking
+          Save (`zoneOpen` is forced open above whenever the value is empty). */}
       {(nonRefundable || tiers.length === 0) && (
-        <details className="rounded-xl border border-outline/20 px-3 py-2">
-          <summary className="text-xs font-medium text-on-surface-variant cursor-pointer">
-            Timezone — {form.timezone.replace(/_/g, ' ')}
+        <details
+          open={zoneOpen}
+          onToggle={(e) => setZoneOpen(e.currentTarget.open)}
+          className={`rounded-xl border px-3 py-2 ${errors.timezone ? 'border-red-400' : 'border-outline/20'}`}
+        >
+          <summary className={`text-xs font-medium cursor-pointer ${errors.timezone ? 'text-red-500' : 'text-on-surface-variant'}`}>
+            Timezone — {form.timezone ? form.timezone.replace(/_/g, ' ') : 'not chosen yet'}
           </summary>
           <div className="mt-3">{timezoneField}</div>
         </details>

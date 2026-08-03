@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { CURRENCIES } from "./currencies";
 import { sanitizeCancellationPolicy } from "./cancellation";
+// The same guard the AI parser and the booking form apply: only a zone this
+// runtime actually knows may reach the column, because a bad one is read as fact
+// by every cancellation-cutoff comparison on the booking.
+import { SUPPORTED_ZONES } from "./timezones";
 
 export const bookingTypeSchema = z.enum([
   "flight",
@@ -119,11 +123,6 @@ function sanitizeDetails(details: Record<string, unknown>) {
   else delete next.cancellation_policy;
   return next;
 }
-
-// The same guard the AI parser applies (src/app/api/parse-booking/route.ts):
-// only a zone this runtime actually knows may reach the column, because a bad
-// one is read as fact by every cancellation-cutoff comparison on the booking.
-const SUPPORTED_ZONES = new Set<string>(Intl.supportedValuesOf("timeZone"));
 
 // Booking dates are naive wall clock — the clock on the wall where the booking
 // happens, with the zone carried separately in `timezone`. A trailing Z or

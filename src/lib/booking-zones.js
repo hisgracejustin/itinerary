@@ -40,6 +40,12 @@ export function bookingZone(booking) {
  * @returns {string | null} IANA zone
  */
 export function tripZone(trip, bookings) {
+  const flight = arrivingFlight(trip, bookings)
+  return flight ? getAirportTimezone(parseDetails(flight).arrival_airport) : null
+}
+
+/** The flight tripZone reads, kept separate so a caller can name it. */
+function arrivingFlight(trip, bookings) {
   const tripId = typeof trip === 'string' ? trip : trip?.id
   if (!tripId || !Array.isArray(bookings)) return null
   let earliest = null
@@ -48,7 +54,7 @@ export function tripZone(trip, bookings) {
     // Naive wall-clock strings, so a lexicographic compare orders them.
     if (!earliest || String(b.start_date) < String(earliest.start_date)) earliest = b
   }
-  return earliest ? getAirportTimezone(parseDetails(earliest).arrival_airport) : null
+  return earliest
 }
 
 /**
@@ -66,6 +72,12 @@ export function tripZone(trip, bookings) {
  * @returns {string | null} IANA zone
  */
 export function chronologicalZone(booking, bookings) {
+  const flight = lastLandingBefore(booking, bookings)
+  return flight ? getAirportTimezone(parseDetails(flight).arrival_airport) : null
+}
+
+/** The flight chronologicalZone reads, kept separate so a caller can name it. */
+function lastLandingBefore(booking, bookings) {
   if (!booking?.start_date || !Array.isArray(bookings)) return null
   const start = String(booking.start_date)
   let latest = null
@@ -78,7 +90,7 @@ export function chronologicalZone(booking, bookings) {
     if (landed > start) continue
     if (!latest || landed > String(latest.end_date)) latest = b
   }
-  return latest ? getAirportTimezone(parseDetails(latest).arrival_airport) : null
+  return latest
 }
 
 /**
@@ -95,4 +107,61 @@ export function resolveZone(booking, trip, bookings) {
   const stored = booking?.timezone
   if (typeof stored === 'string' && stored) return stored
   return bookingZone(booking) ?? chronologicalZone(booking, bookings) ?? tripZone(trip, bookings)
+}
+
+/** An airport code as the traveller wrote it on the booking. */
+const code = (value) => String(value || '').trim().toUpperCase()
+
+/**
+ * A stored wall-clock date as "Aug 12". Sliced to the day before parsing: a bare
+ * "YYYY-MM-DD" is read as UTC and renders as the day before for half the world.
+ */
+function shortDay(value) {
+  const day = String(value || '').slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null
+  return new Date(`${day}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+/**
+ * resolveZone's answer plus the sentence that justifies it.
+ *
+ * The booking form offers this as a suggestion rather than pre-filling it: an
+ * inference nobody can check is how a wrong zone gets saved unnoticed, and the
+ * chain has four links that produce very different answers for the same row. A
+ * sibling of resolveZone rather than a wider return type, so the callers that
+ * only want the zone (Costs, BookingCard) keep receiving a bare string.
+ *
+ * @returns {{ zone: string, why: string } | null} null when nothing places the booking
+ */
+export function suggestZone(booking, trip, bookings) {
+  const stored = booking?.timezone
+  if (typeof stored === 'string' && stored) return { zone: stored, why: 'saved on this booking' }
+
+  const own = bookingZone(booking)
+  if (own) return { zone: own, why: `this flight departs ${code(parseDetails(booking).departure_airport)}` }
+
+  // Each link is re-resolved through the exported function rather than read off
+  // the flight directly, so the suggestion can never disagree with resolveZone —
+  // a landing at an airport this app can't place falls through here too.
+  const landed = chronologicalZone(booking, bookings)
+  if (landed) {
+    const flight = lastLandingBefore(booking, bookings)
+    const d = parseDetails(flight)
+    const when = shortDay(flight.end_date)
+    const number = d.flight_number ? `, ${d.flight_number}` : ''
+    return {
+      zone: landed,
+      why: `you land at ${code(d.arrival_airport)}${when ? ` on ${when}` : ''}${number} before this starts`,
+    }
+  }
+
+  const destination = tripZone(trip, bookings)
+  if (destination) {
+    const flight = arrivingFlight(trip, bookings)
+    return {
+      zone: destination,
+      why: `this trip's first flight lands at ${code(parseDetails(flight).arrival_airport)}`,
+    }
+  }
+  return null
 }

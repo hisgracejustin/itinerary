@@ -1,6 +1,10 @@
 import { auth } from "@/auth";
 import { naiveStamp } from "@/lib/airports";
 import { sanitizeCancellationPolicy } from "@/lib/cancellation";
+// Whatever this runtime's ICU actually knows is the only honest definition of "a
+// zone we can use" — the value ends up in Intl.DateTimeFormat. Shared with the
+// schema and the form so all three accept exactly the same set.
+import { SUPPORTED_ZONES } from "@/lib/timezones";
 
 export const runtime = "nodejs";
 // A vision call on a large screenshot regularly outruns the 15s default.
@@ -123,11 +127,6 @@ function normalizeAmount(value: unknown): number | null {
   const n = parseFloat(s);
   return Number.isFinite(n) ? n : null;
 }
-
-// Built once per instance, not per request: ~400 entries, and every parse walks
-// it. Whatever this runtime's ICU actually knows is the only honest definition
-// of "a zone we can use" — the value ends up in Intl.DateTimeFormat.
-const SUPPORTED_ZONES = new Set<string>(Intl.supportedValuesOf("timeZone"));
 
 /**
  * Coerce a model-emitted timezone to a usable IANA id or null.

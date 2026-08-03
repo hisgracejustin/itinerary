@@ -6,6 +6,7 @@ import UploadBooking from './UploadBooking'
 import { useToast } from './Toast'
 import { naiveStamp } from '../lib/airports'
 import { friendlyError } from '../lib/friendlyError'
+import { fieldFromServerMessage, focusFormField } from '../lib/booking-fields'
 
 /** Upload files staged in the browser to a saved booking. Best-effort per file. */
 async function uploadStagedFiles(bookingId, files) {
@@ -77,6 +78,16 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
   const [current, setCurrent] = useState(booking)
   const [editing, setEditing] = useState(!booking) // existing → view first; new → edit
   const [stagedFiles, setStagedFiles] = useState([]) // pending attachments for a not-yet-saved booking
+  // The form's own validation errors, lifted so the summary chip can sit beside
+  // the Save button — the one place the user is certainly looking when a save
+  // does nothing.
+  const [formErrors, setFormErrors] = useState([])
+  // A server rejection that names a form field, handed back down so it renders
+  // inline like any client error; `at` makes each rejection a fresh object, so
+  // the same complaint twice still lands.
+  const [serverError, setServerError] = useState(null)
+  // …and one that names nothing the form shows (permissions, a driver failure).
+  const [saveError, setSaveError] = useState(null)
   const { toast } = useToast()
   const formRef = useRef(null)
   const isEdit = !!booking
@@ -100,6 +111,7 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
 
   const handleSave = async (formData) => {
     setSaving(true)
+    setSaveError(null)
     try {
       // BookingForm is provenance-agnostic (it only emits its own fields), so
       // stamp AI-parsed saves here — layover, per-leg and single-parse alike.
@@ -164,7 +176,14 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
         }
       }
     } catch (err) {
-      toast.error(friendlyError(err))
+      // The toast stays — it's how "the server said no" reads. But a toast is
+      // gone in seconds and says nothing about where the problem is, so a
+      // rejection that names a field is threaded back into the form.
+      const message = friendlyError(err)
+      const mapped = fieldFromServerMessage(message)
+      if (mapped) setServerError({ ...mapped, at: Date.now() })
+      else setSaveError(message)
+      toast.error(message)
     } finally {
       setSaving(false)
     }
@@ -371,6 +390,8 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
                 // Unfiltered on purpose: the flight that placed the traveller in
                 // a zone is often on a different trip (see chronologicalZone).
                 allBookings={allBookings}
+                onErrorsChange={setFormErrors}
+                serverError={serverError}
               />
               {/* Hidden while stepping through separate legs (the document is
                   attached to each automatically), but shown for a layover since
@@ -398,53 +419,83 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
 
         {/* Fixed footer */}
         {!viewMode && !showDelete && !(mode === 'upload' && !current) && (
-          <div className="border-t border-outline/20 px-6 py-4 flex items-center justify-between shrink-0 rounded-b-2xl">
-            <div>
-              {current && (
+          <div className="border-t border-outline/20 px-6 py-4 shrink-0 rounded-b-2xl">
+            {/* Why it's here and not only under the offending field: the form is
+                taller than the modal, so an inline error can be scrolled out of
+                sight, and pressing Save then looks like nothing happened. */}
+            {(formErrors.length > 0 || saveError) && (
+              <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {formErrors.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0">
+                    <span className="font-medium">
+                      ⚠ {formErrors.length} field{formErrors.length > 1 ? 's' : ''} need
+                      {formErrors.length > 1 ? '' : 's'} attention —
+                    </span>
+                    {formErrors.map((e, i) => (
+                      <button
+                        key={e.field}
+                        type="button"
+                        onClick={() => focusFormField(formRef.current, e.field)}
+                        title={e.message}
+                        className="underline decoration-red-300 underline-offset-2 hover:text-red-900 max-w-full truncate"
+                      >
+                        {e.label}
+                        {i < formErrors.length - 1 ? ',' : ''}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {saveError && <p className={formErrors.length > 0 ? 'mt-1' : undefined}>{saveError}</p>}
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <div>
+                {current && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDelete(true)}
+                    className="text-sm text-red-600 hover:text-red-700 font-medium hover:bg-red-50 px-3 py-1.5 rounded-full transition-all duration-150"
+                  >
+                    Delete Booking
+                  </button>
+                )}
+                {mode === 'multi-review' && !treatAsLayover && savedCount > 0 && (
+                  <span className="text-xs text-on-surface-variant">
+                    {savedCount} of {parsedBookings.length} saved
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowDelete(true)}
-                  className="text-sm text-red-600 hover:text-red-700 font-medium hover:bg-red-50 px-3 py-1.5 rounded-full transition-all duration-150"
+                  onClick={onClose}
+                  className="mat-btn-outlined"
                 >
-                  Delete Booking
+                  Cancel
                 </button>
-              )}
-              {mode === 'multi-review' && !treatAsLayover && savedCount > 0 && (
-                <span className="text-xs text-on-surface-variant">
-                  {savedCount} of {parsedBookings.length} saved
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="mat-btn-outlined"
-              >
-                Cancel
-              </button>
-              {/* One save path for every mode: submit the form, so validation,
-                  the out-of-trip-dates warning and the attachment upload all
-                  apply to layovers too. */}
-              <button
-                type="button"
-                onClick={() => formRef.current?.requestSubmit()}
-                disabled={
-                  saving ||
-                  (mode === 'multi-review' && !treatAsLayover && savedIndices.has(currentIndex))
-                }
-                className={`mat-btn-filled disabled:opacity-50 disabled:shadow-none ${mode === 'multi-review' && !treatAsLayover && savedIndices.has(currentIndex) ? 'bg-green-600 hover:bg-green-600' : ''}`}
-              >
-                {saving
-                  ? 'Saving...'
-                  : current
-                  ? 'Update'
-                  : treatAsLayover
-                  ? 'Save as 1 Flight'
-                  : mode === 'multi-review'
-                  ? savedIndices.has(currentIndex) ? `✓ Saved` : `Save Booking ${currentIndex + 1}`
-                  : 'Add Booking'}
-              </button>
+                {/* One save path for every mode: submit the form, so validation,
+                    the out-of-trip-dates warning and the attachment upload all
+                    apply to layovers too. */}
+                <button
+                  type="button"
+                  onClick={() => formRef.current?.requestSubmit()}
+                  disabled={
+                    saving ||
+                    (mode === 'multi-review' && !treatAsLayover && savedIndices.has(currentIndex))
+                  }
+                  className={`mat-btn-filled disabled:opacity-50 disabled:shadow-none ${mode === 'multi-review' && !treatAsLayover && savedIndices.has(currentIndex) ? 'bg-green-600 hover:bg-green-600' : ''}`}
+                >
+                  {saving
+                    ? 'Saving...'
+                    : current
+                    ? 'Update'
+                    : treatAsLayover
+                    ? 'Save as 1 Flight'
+                    : mode === 'multi-review'
+                    ? savedIndices.has(currentIndex) ? `✓ Saved` : `Save Booking ${currentIndex + 1}`
+                    : 'Add Booking'}
+                </button>
+              </div>
             </div>
           </div>
         )}
