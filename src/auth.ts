@@ -5,6 +5,7 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { eq } from "drizzle-orm";
 import { db, dbReady, tables } from "@/db";
 import { authConfig } from "@/auth.config";
+import { isAdmin } from "@/lib/authz";
 import { verifyPin } from "@/lib/pin";
 
 /** Dev-only password-less login, active only when Google creds are absent. */
@@ -23,8 +24,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
     providers: [
       // Link a Google login to an existing `users` row by email — this is how a
       // placeholder member (added to a trip by email) claims their account on
-      // first sign-in. Safe with open signup because Google only asserts emails
-      // it has verified; any future provider must do the same.
+      // first sign-in. Safe because Google only asserts emails it has verified
+      // AND the signIn callback below requires that row to already exist; any
+      // future provider must satisfy both.
       ...(process.env.AUTH_GOOGLE_ID
         ? [Google({ allowDangerousEmailAccountLinking: true })]
         : []),
@@ -94,10 +96,26 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
           ]
         : []),
     ],
-    // Open signup: anyone who can sign in gets an (empty) account. Access to
-    // actual data stays gated per-trip via trip_members (see src/lib/authz.ts).
+    // Invite-only: sign-in requires an existing account, and access to data
+    // stays gated per-trip via trip_members (see src/lib/authz.ts).
     callbacks: {
       ...authConfig.callbacks,
+      // Google may only sign in an email that already has a `users` row (created
+      // when a trip owner adds that person by email) or a configured admin —
+      // the bootstrap case, where the first admin has no row yet. The pin
+      // provider already requires an existing row with a hash; dev login is
+      // dev-only. Without this, Google sign-in is open registration.
+      async signIn({ user, account }) {
+        if (account?.provider !== "google") return true;
+        const email = user.email?.trim().toLowerCase();
+        if (!email) return false;
+        if (isAdmin({ email })) return true;
+        const existing = await db.query.users.findFirst({
+          where: eq(tables.users.email, email),
+          columns: { id: true },
+        });
+        return !!existing;
+      },
       // JWT session revocation (H6). Sessions are stateless, so an admin changing
       // a user's email/PIN can't otherwise reach their live cookie. Here we revoke
       // any token issued before the user's `sessions_valid_after` cutoff. On the

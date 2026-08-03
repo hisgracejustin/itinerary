@@ -3,7 +3,12 @@
 // Kept separate from the AI-parse allowlist (image+PDF only) in parseBooking.ts,
 // since attachments accept far more document types than the LLM can read.
 
-export const ATTACHMENT_MAX_SIZE = 10 * 1024 * 1024; // 10MB
+// Vercel rejects request bodies over 4.5MB before the route handler runs, so a
+// larger ceiling here would only produce an unexplained platform error.
+export const ATTACHMENT_MAX_SIZE = 4 * 1024 * 1024;
+
+/** The size cap as UI copy, e.g. "4MB" — keep every message derived from this. */
+export const ATTACHMENT_MAX_LABEL = `${ATTACHMENT_MAX_SIZE / (1024 * 1024)}MB`;
 
 /** MIME types users may attach to a booking. */
 export const ATTACHMENT_ALLOWED_TYPES = [

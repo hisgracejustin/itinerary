@@ -3,6 +3,7 @@ import { getBookingAttachmentsAction } from '@/actions/attachments'
 import { unwrap } from '@/lib/friendlyError'
 import {
   ATTACHMENT_ACCEPT,
+  ATTACHMENT_MAX_LABEL,
   ATTACHMENT_MAX_SIZE,
   isAllowedAttachmentType,
   formatBytes,
@@ -51,7 +52,7 @@ export default function AttachmentsSection({ bookingId, mode = 'view', stagedFil
       return false
     }
     if (file.size > ATTACHMENT_MAX_SIZE) {
-      toast.error(`"${file.name}" is too large (max 10MB)`)
+      toast.error(`"${file.name}" is too large (max ${ATTACHMENT_MAX_LABEL})`)
       return false
     }
     return true
@@ -63,7 +64,13 @@ export default function AttachmentsSection({ bookingId, mode = 'view', stagedFil
     body.append('file', file)
     const res = await fetch('/api/attachments', { method: 'POST', body })
     const data = await res.json().catch(() => null)
-    if (!res.ok) throw new Error(data?.error || `Upload failed (${res.status})`)
+    if (!res.ok) {
+      // A 413 can come from the platform before the route runs, with no JSON body.
+      const fallback = res.status === 413
+        ? `That file is too large to upload (max ${ATTACHMENT_MAX_LABEL}).`
+        : `Upload failed (${res.status})`
+      throw new Error(data?.error || fallback)
+    }
     return data
   }
 
@@ -217,7 +224,7 @@ export default function AttachmentsSection({ bookingId, mode = 'view', stagedFil
             {uploading ? 'Uploading…' : 'Add attachment'}
           </button>
           <p className="text-[10px] text-on-surface-variant/60">
-            PDF, images, Word, Excel, CSV, etc. · Max 10MB each
+            PDF, images, Word, Excel, CSV, etc. · Max {ATTACHMENT_MAX_LABEL} each
           </p>
         </>
       )}

@@ -23,6 +23,7 @@ async function loadAttachment(id: string) {
       id: tables.bookingAttachments.id,
       filename: tables.bookingAttachments.filename,
       mime_type: tables.bookingAttachments.mime_type,
+      size_bytes: tables.bookingAttachments.size_bytes,
       content: tables.bookingAttachments.content,
       trip_id: tables.bookings.trip_id,
     })
@@ -50,12 +51,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   const download = new URL(req.url).searchParams.get("download") === "1";
-  // node-postgres returns Buffer, PGlite returns Uint8Array — both are valid BodyInit.
-  const body = row.content as unknown as Uint8Array;
-  return new Response(new Uint8Array(body), {
+  // node-postgres returns Buffer, PGlite returns Uint8Array — both are valid
+  // BodyInit, so pass the bytes straight through rather than copying the whole
+  // file a second time into the function's heap.
+  return new Response(row.content as unknown as BodyInit, {
     status: 200,
     headers: {
       "Content-Type": row.mime_type || "application/octet-stream",
+      "Content-Length": String(row.size_bytes),
       "Content-Disposition": contentDisposition(row.filename, download),
       "Cache-Control": "private, no-store",
     },

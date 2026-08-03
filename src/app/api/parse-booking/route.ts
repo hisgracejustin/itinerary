@@ -2,9 +2,37 @@ import { auth } from "@/auth";
 import { sanitizeCancellationPolicy } from "@/lib/cancellation";
 
 export const runtime = "nodejs";
+// A vision call on a large screenshot regularly outruns the 15s default.
+export const maxDuration = 60;
 
 const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/webp", "application/pdf"];
-const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10MB base64 ≈ ~7.5MB original
+// Vercel caps request bodies at 4.5MB; base64 inflates the source file by ~33%,
+// so this ceiling on the encoded string means a ~3MB original.
+const MAX_SIZE_BYTES = 4 * 1024 * 1024;
+// Extracted PDF text. Beyond this the model's context (and the bill) is wasted
+// on a document that isn't a booking confirmation. Mirrored client-side.
+const MAX_TEXT_LENGTH = 200_000;
+// Headroom over MAX_SIZE_BYTES for the JSON envelope; rejects an oversized body
+// from its Content-Length before we buffer it.
+const MAX_BODY_BYTES = 15 * 1024 * 1024;
+
+// Per-user parse budget. In-memory ⇒ per-warm-instance, so this is a deterrent
+// (it bounds the burn rate of the paid Poe key), not a hard quota.
+const parseLog = new Map<string, number[]>();
+const PARSE_LIMIT = 20;
+const PARSE_WINDOW_MS = 60 * 60 * 1000;
+
+function overParseLimit(userId: string): boolean {
+  const now = Date.now();
+  const recent = (parseLog.get(userId) ?? []).filter((t) => now - t < PARSE_WINDOW_MS);
+  if (recent.length >= PARSE_LIMIT) {
+    parseLog.set(userId, recent);
+    return true;
+  }
+  recent.push(now);
+  parseLog.set(userId, recent);
+  return false;
+}
 
 const SYSTEM_PROMPT = `You are a booking document parser. Extract structured booking data from the provided booking confirmation (image or PDF).
 
@@ -98,8 +126,23 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) return json({ error: "Unauthorized" }, 401);
 
+  if (overParseLimit(session.user.id)) {
+    return json({ error: "Parse limit reached — try again in a while." }, 429);
+  }
+
+  if (Number(req.headers.get("content-length") || 0) > MAX_BODY_BYTES) {
+    return json({ error: "That upload is too large to parse. Maximum size is 3MB." }, 413);
+  }
+
   try {
     const { file, mimeType, trip, text } = await req.json();
+
+    if (file != null && typeof file !== "string") {
+      return json({ error: "'file' must be a base64 string" }, 400);
+    }
+    if (text != null && typeof text !== "string") {
+      return json({ error: "'text' must be a string" }, 400);
+    }
 
     const isTextMode = !!text && text.length > 0;
     const isImageMode = !!file && !!mimeType;
@@ -108,12 +151,19 @@ export async function POST(req: Request) {
       return json({ error: "Missing required fields: provide either 'text' or 'file' + 'mimeType'" }, 400);
     }
 
+    if (isTextMode && text.length > MAX_TEXT_LENGTH) {
+      return json(
+        { error: "That document's text is too long to parse — try a screenshot of the booking section instead." },
+        413,
+      );
+    }
+
     if (isImageMode) {
       if (!ALLOWED_TYPES.includes(mimeType)) {
         return json({ error: `Unsupported file type: ${mimeType}. Accepted: PNG, JPG, WebP, PDF` }, 400);
       }
       if (file.length > MAX_SIZE_BYTES) {
-        return json({ error: "File too large. Maximum size is 10MB." }, 400);
+        return json({ error: "File too large. Maximum size is 3MB." }, 413);
       }
     }
 
@@ -147,22 +197,34 @@ export async function POST(req: Request) {
       ];
     }
 
-    const poeResponse = await fetch("https://api.poe.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4.5",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userContent },
-        ],
-        stream: false,
-        temperature: 0,
-      }),
-    });
+    let poeResponse: Response;
+    try {
+      poeResponse = await fetch("https://api.poe.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4.5",
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: userContent },
+          ],
+          stream: false,
+          temperature: 0,
+        }),
+        // Abort short of maxDuration so a hung upstream returns a real message
+        // instead of the platform's opaque function timeout.
+        signal: AbortSignal.timeout(45_000),
+      });
+    } catch (err) {
+      const name = err instanceof Error ? err.name : "";
+      if (name === "TimeoutError" || name === "AbortError") {
+        return json({ error: "The parsing service took too long — try again." }, 504);
+      }
+      throw err;
+    }
 
     if (!poeResponse.ok) {
       const errBody = await poeResponse.text();

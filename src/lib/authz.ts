@@ -1,5 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db, tables } from "@/db";
+import { AppError } from "./errors";
 import type { TripRole } from "@/db/schema";
 
 const ALL_ROLES: TripRole[] = ["owner", "editor", "viewer"];
@@ -25,7 +26,7 @@ export function isAdmin(user: { email?: string | null }) {
  * to another person's account identity, which trip ownership must never confer.
  */
 export function requireAdmin(user: { email?: string | null }) {
-  if (!isAdmin(user)) throw new Error("Forbidden");
+  if (!isAdmin(user)) throw new AppError("Forbidden");
 }
 
 /**
@@ -46,7 +47,7 @@ export async function requireTripAccess(
     .where(and(eq(tables.tripMembers.trip_id, tripId), eq(tables.tripMembers.user_id, userId)))
     .limit(1);
   const member = rows[0];
-  if (!member || !roles.includes(member.role)) throw new Error("Forbidden");
+  if (!member || !roles.includes(member.role)) throw new AppError("Forbidden");
   return member;
 }
 
@@ -73,7 +74,7 @@ export async function requireAssignable(
         and(eq(tables.tripMembers.trip_id, tripId), eq(tables.tripMembers.user_id, assigneeId)),
       )
       .limit(1);
-    if (!rows[0]) throw new Error("That person isn't a member of this trip");
+    if (!rows[0]) throw new AppError("That person isn't a member of this trip");
     return;
   }
 
@@ -83,7 +84,7 @@ export async function requireAssignable(
     .from(tables.tripMembers)
     .where(eq(tables.tripMembers.user_id, actorId));
   const tripIds = mine.map((r) => r.trip_id);
-  if (tripIds.length === 0) throw new Error("That person isn't on any of your trips");
+  if (tripIds.length === 0) throw new AppError("That person isn't on any of your trips");
   const shared = await db
     .select({ user_id: tables.tripMembers.user_id })
     .from(tables.tripMembers)
@@ -94,7 +95,7 @@ export async function requireAssignable(
       ),
     )
     .limit(1);
-  if (!shared[0]) throw new Error("That person isn't on any of your trips");
+  if (!shared[0]) throw new AppError("That person isn't on any of your trips");
 }
 
 /**
@@ -118,5 +119,5 @@ export async function requireTripMembers(
     );
   const found = new Set(rows.map((r) => r.user_id));
   const missing = ids.filter((id) => !found.has(id));
-  if (missing.length) throw new Error("That person isn't a member of this trip");
+  if (missing.length) throw new AppError("That person isn't a member of this trip");
 }

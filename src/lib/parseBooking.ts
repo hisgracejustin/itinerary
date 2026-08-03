@@ -2,7 +2,14 @@
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const PDF_TYPE = "application/pdf";
 const ALLOWED_TYPES = [...IMAGE_TYPES, PDF_TYPE];
-const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+// Vercel caps request bodies at 4.5MB and base64 inflates by ~33%, so an image
+// larger than this can't reach the route at all. The route enforces the same.
+const MAX_SIZE = 3 * 1024 * 1024;
+// A PDF is never uploaded — only the text extracted from it — so its ceiling is
+// about how much pdf.js should chew through on a phone, not the body cap.
+const MAX_PDF_SIZE = 10 * 1024 * 1024;
+// Matches MAX_TEXT_LENGTH in the route, which rejects anything longer.
+const MAX_TEXT_LENGTH = 200_000;
 
 /** Extract text from a PDF file using pdf.js (lazy-loaded). */
 async function extractTextFromPDF(file: File): Promise<string> {
@@ -35,19 +42,21 @@ export async function parseBookingFromImage(file: File, trip?: string | null) {
   if (!ALLOWED_TYPES.includes(file.type)) {
     throw new Error(`Unsupported file type: ${file.type}. Please upload a PNG, JPG, WebP, or PDF.`);
   }
-  if (file.size > MAX_SIZE) {
-    throw new Error("File is too large. Maximum size is 10MB.");
+  const isPdf = file.type === PDF_TYPE;
+  const maxSize = isPdf ? MAX_PDF_SIZE : MAX_SIZE;
+  if (file.size > maxSize) {
+    throw new Error(`File is too large. Maximum size is ${isPdf ? "10MB" : "3MB"}.`);
   }
 
   let payload: Record<string, unknown>;
 
-  if (file.type === PDF_TYPE) {
+  if (isPdf) {
     // PDF: extract text client-side (Poe vision doesn't accept PDF), send as text.
     const text = await extractTextFromPDF(file);
     if (!text || text.trim().length < 20) {
       throw new Error("Could not extract text from PDF. Try taking a screenshot instead.");
     }
-    payload = { text, trip: trip || null };
+    payload = { text: text.slice(0, MAX_TEXT_LENGTH), trip: trip || null };
   } else {
     const base64 = await fileToBase64(file);
     payload = { file: base64, mimeType: file.type, trip: trip || null };
@@ -62,7 +71,14 @@ export async function parseBookingFromImage(file: File, trip?: string | null) {
   const data = await res.json().catch(() => null);
 
   if (!res.ok || !data || data.error) {
-    throw new Error(data?.error || `Parse failed (${res.status})`);
+    // The route always sends an `error` field; these fallbacks cover the cases
+    // where the platform rejects the request before it reaches the route.
+    const fallback =
+      res.status === 413 ? "That file is too large to parse — try a smaller screenshot."
+      : res.status === 429 ? "Parse limit reached — try again in a while."
+      : res.status === 504 ? "The parsing service took too long — try again."
+      : `Parse failed (${res.status})`;
+    throw new Error(data?.error || fallback);
   }
 
   return (data.bookings as Array<Record<string, unknown>>).map((booking) => ({

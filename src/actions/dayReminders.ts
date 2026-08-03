@@ -7,6 +7,7 @@ import { db, tables } from "@/db";
 import { runAction } from "@/lib/action-utils";
 import { requireTripAccess, WRITE_ROLES } from "@/lib/authz";
 import { dayReminderInsertSchema, dayReminderUpdateSchema } from "@/lib/schemas";
+import { AppError } from "@/lib/errors";
 
 const revalidateApp = () => revalidatePath("/", "layout");
 
@@ -50,7 +51,7 @@ export async function updateDayReminderAction(id: string, input: unknown) {
       .from(tables.dayReminders)
       .where(eq(tables.dayReminders.id, id))
       .limit(1);
-    if (!existing) throw new Error("Reminder not found");
+    if (!existing) throw new AppError("Reminder not found");
     await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     const [row] = await db
       .update(tables.dayReminders)

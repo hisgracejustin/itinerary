@@ -153,7 +153,11 @@ export const bookingInsertSchema = bookingBase
   .superRefine(requirePayerWhenSplit)
   .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "cost_currency"));
 
+// `id` is omitted (not just optional): the row to update is addressed by the
+// action's own id argument, so an `id` in the payload could only rewrite a
+// primary key from the client.
 export const bookingUpdateSchema = bookingBase
+  .omit({ id: true })
   .partial()
   .superRefine(requirePayerWhenSplit)
   .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "cost_currency"));
@@ -228,7 +232,8 @@ export const todoInsertSchema = z.object({
   position: z.number().int().optional(),
 });
 
-export const todoUpdateSchema = todoInsertSchema.partial();
+// See bookingUpdateSchema — the id argument addresses the row, never the body.
+export const todoUpdateSchema = todoInsertSchema.omit({ id: true }).partial();
 
 // Payload for moving a to-do between board columns (and reordering within one).
 export const todoMoveSchema = z.object({

@@ -6,6 +6,7 @@ import { db, tables } from "@/db";
 import { runAction } from "@/lib/action-utils";
 import { requireAssignable, requireTripAccess, WRITE_ROLES } from "@/lib/authz";
 import { todoInsertSchema, todoMoveSchema, todoUpdateSchema } from "@/lib/schemas";
+import { AppError } from "@/lib/errors";
 
 const revalidateApp = () => revalidatePath("/", "layout");
 
@@ -48,7 +49,7 @@ export async function updateTodoAction(id: string, input: unknown) {
       .from(tables.todos)
       .where(eq(tables.todos.id, id))
       .limit(1);
-    if (!existing) throw new Error("To-do not found");
+    if (!existing) throw new AppError("To-do not found");
     await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     // Moving a todo onto a different trip requires write access to the target
     // trip too — otherwise the existing-trip check alone would let a member of
@@ -123,7 +124,7 @@ export async function moveTodoAction(input: unknown) {
       .from(tables.todos)
       .where(eq(tables.todos.id, id))
       .limit(1);
-    if (!existing) throw new Error("To-do not found");
+    if (!existing) throw new AppError("To-do not found");
     await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
 
     if (orderedIds) {

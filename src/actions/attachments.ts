@@ -4,6 +4,7 @@ import { asc, eq } from "drizzle-orm";
 import { db, tables } from "@/db";
 import { runAction } from "@/lib/action-utils";
 import { requireTripAccess } from "@/lib/authz";
+import { AppError } from "@/lib/errors";
 
 /**
  * Attachment metadata for a booking (never returns `content` — the bytes are
@@ -17,7 +18,7 @@ export async function getBookingAttachmentsAction(bookingId: string) {
       .from(tables.bookings)
       .where(eq(tables.bookings.id, bookingId))
       .limit(1);
-    if (!booking) throw new Error("Booking not found");
+    if (!booking) throw new AppError("Booking not found");
     await requireTripAccess(user.id, booking.trip_id);
     return db
       .select({

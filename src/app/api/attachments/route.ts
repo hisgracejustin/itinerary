@@ -2,7 +2,11 @@ import { eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db, dbReady, tables } from "@/db";
 import { requireTripAccess, WRITE_ROLES } from "@/lib/authz";
-import { ATTACHMENT_MAX_SIZE, isAllowedAttachmentType } from "@/lib/attachments";
+import {
+  ATTACHMENT_MAX_LABEL,
+  ATTACHMENT_MAX_SIZE,
+  isAllowedAttachmentType,
+} from "@/lib/attachments";
 
 export const runtime = "nodejs";
 
@@ -20,6 +24,13 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) return json({ error: "Unauthorized" }, 401);
   await dbReady();
+
+  // Reject an oversized body before buffering the multipart form; ~1MB of
+  // headroom covers multipart framing overhead.
+  const contentLength = Number(req.headers.get("content-length") || 0);
+  if (contentLength > ATTACHMENT_MAX_SIZE + 1024 * 1024) {
+    return json({ error: `File too large. Maximum size is ${ATTACHMENT_MAX_LABEL}.` }, 413);
+  }
 
   let form: FormData;
   try {
@@ -41,7 +52,7 @@ export async function POST(req: Request) {
     return json({ error: `Unsupported file type: ${file.type || "unknown"}` }, 400);
   }
   if (file.size > ATTACHMENT_MAX_SIZE) {
-    return json({ error: "File too large. Maximum size is 10MB." }, 400);
+    return json({ error: `File too large. Maximum size is ${ATTACHMENT_MAX_LABEL}.` }, 413);
   }
   if (file.size === 0) {
     return json({ error: "File is empty." }, 400);

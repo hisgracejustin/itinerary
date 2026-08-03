@@ -8,6 +8,7 @@ import { runAction } from "@/lib/action-utils";
 import { requireAdmin, requireTripAccess, requireTripMembers } from "@/lib/authz";
 import { partySchema } from "@/lib/schemas";
 import { hashPin } from "@/lib/pin";
+import { AppError } from "@/lib/errors";
 
 const revalidateApp = () => revalidatePath("/", "layout");
 
@@ -57,7 +58,7 @@ export async function addTripMemberAction(input: unknown) {
         ),
       )
       .limit(1);
-    if (already) throw new Error("They're already on this trip");
+    if (already) throw new AppError("They're already on this trip");
 
     await db
       .insert(tables.tripMembers)
@@ -92,7 +93,7 @@ export async function setTripMemberRoleAction(input: unknown) {
         ),
       )
       .limit(1);
-    if (!target) throw new Error("They're not on this trip");
+    if (!target) throw new AppError("They're not on this trip");
     if (target.role === data.role) return { user_id: data.user_id, role: data.role };
 
     if (target.role === "owner" && data.role !== "owner") {
@@ -102,7 +103,7 @@ export async function setTripMemberRoleAction(input: unknown) {
         .where(
           and(eq(tables.tripMembers.trip_id, data.trip_id), eq(tables.tripMembers.role, "owner")),
         );
-      if (owners.length <= 1) throw new Error("A trip needs at least one owner");
+      if (owners.length <= 1) throw new AppError("A trip needs at least one owner");
     }
 
     await db
@@ -152,7 +153,7 @@ export async function removeTripMemberAction(input: unknown) {
             eq(tables.tripMembers.role, "owner"),
           ),
         );
-      if (owners.length <= 1) throw new Error("A trip needs at least one owner");
+      if (owners.length <= 1) throw new AppError("A trip needs at least one owner");
     }
 
     // H2: never silently rewrite balances. A member's split rows aren't "their
@@ -218,7 +219,7 @@ export async function removeTripMemberAction(input: unknown) {
       )
       .limit(1);
     if (bSplit || eSplit || bPaid || ePaid || settled) {
-      throw new Error(
+      throw new AppError(
         "This person still has shared costs or settlements on this trip. Remove or reassign their expenses and settlements first, then remove them.",
       );
     }
@@ -258,7 +259,7 @@ async function partyInTrip(tripId: string, partyId: string) {
     .from(tables.tripParties)
     .where(and(eq(tables.tripParties.id, partyId), eq(tables.tripParties.trip_id, tripId)))
     .limit(1);
-  if (!row) throw new Error("That party isn't on this trip");
+  if (!row) throw new AppError("That party isn't on this trip");
 }
 
 /**
@@ -464,7 +465,7 @@ export async function updateMemberProfileAction(input: unknown) {
       .from(tables.users)
       .where(eq(tables.users.id, data.user_id))
       .limit(1);
-    if (!current) throw new Error("That person no longer has an account");
+    if (!current) throw new AppError("That person no longer has an account");
 
     const updates: {
       name?: string;
@@ -490,7 +491,7 @@ export async function updateMemberProfileAction(input: unknown) {
         .limit(1);
       if (clash && clash.id !== current.id) {
         if (await userHasFootprint(clash.id)) {
-          throw new Error("That email already belongs to another person");
+          throw new AppError("That email already belongs to another person");
         }
         absorbId = clash.id;
       }
@@ -646,18 +647,18 @@ export async function deleteUserAction(input: unknown) {
     requireAdmin(user);
     // Deleting yourself would sign you out mid-request and orphan the admin
     // seat; that's a DB-level operation, not a settings-screen one.
-    if (data.user_id === user.id) throw new Error("You can't delete your own account");
+    if (data.user_id === user.id) throw new AppError("You can't delete your own account");
 
     const [target] = await db
       .select({ id: tables.users.id, name: tables.users.name, email: tables.users.email })
       .from(tables.users)
       .where(eq(tables.users.id, data.user_id))
       .limit(1);
-    if (!target) throw new Error("That account no longer exists");
+    if (!target) throw new AppError("That account no longer exists");
 
     const blockers = await userFootprint(data.user_id);
     if (blockers.length > 0) {
-      throw new Error(
+      throw new AppError(
         `${target.name ?? target.email} still has ${blockers.join(", ")} — remove those first, or delete the row directly in the database`,
       );
     }

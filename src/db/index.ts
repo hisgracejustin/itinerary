@@ -7,7 +7,8 @@ import * as schema from "./schema";
  *  - DATABASE_URL set (postgres://… → node-postgres Pool): production/preview,
  *    pointed at Neon (use the pooled `-pooler` connection string on Vercel).
  *  - No DATABASE_URL: embedded PGlite persisted under .data/pglite — zero-setup
- *    local dev. Migrations are applied automatically on first touch via dbReady().
+ *    local dev. Migrations are applied on first touch via dbReady(); in
+ *    production they're applied at deploy time by scripts/migrate.mjs instead.
  */
 export type Db = NodePgDatabase<typeof schema> | PgliteDatabase<typeof schema>;
 
@@ -27,8 +28,20 @@ function createDb(): Db {
       connectionString: url,
       max: 5,
       idleTimeoutMillis: 10_000,
+      // Fail fast instead of hanging until the function timeout when Neon's
+      // compute is unreachable.
+      connectionTimeoutMillis: 5_000,
     });
+    // An idle client emitting an error would otherwise crash the process.
+    pool.on("error", (err: Error) => console.error("[db] idle client error", err));
     return drizzleNode(pool, { schema, casing: "snake_case" });
+  }
+  // Never silently fall back to an ephemeral in-container PGlite in production —
+  // that "works" (an empty DB per instance) and loses every write on cold start.
+  // `next build` sets NEXT_PHASE, so a local build without DATABASE_URL still
+  // passes page-data collection; at serve time a missing URL is a hard error.
+  if (process.env.NODE_ENV === "production" && process.env.NEXT_PHASE !== "phase-production-build") {
+    throw new Error("DATABASE_URL must be a postgres:// URL in production");
   }
   // Local dev fallback — persistent embedded Postgres.
   const dir = process.env.PGLITE_DIR ?? ".data/pglite";
@@ -43,15 +56,16 @@ export const db: Db = globalThis.__itinDb ?? (globalThis.__itinDb = createDb());
 
 /**
  * Await before queries. Applies pending migrations from ./drizzle exactly once
- * per process (memoized): node-postgres in production, PGlite in local dev.
- * The static import specifiers let Next trace both migrators into the build, and
- * `drizzle/` ships with it so a cold serverless instance can self-migrate.
+ * per process (memoized) for dev databases. Production skips it entirely:
+ * migrations are applied as a deploy step by scripts/migrate.mjs, so a request
+ * never races DDL and a cold instance never runs a migration under a timeout.
  */
 export function dbReady(): Promise<void> {
   if (globalThis.__itinDbReady) return globalThis.__itinDbReady;
   const url = process.env.DATABASE_URL;
   const run = async () => {
     if (url && url.startsWith("postgres")) {
+      if (process.env.NODE_ENV === "production") return;
       const { migrate } = await import("drizzle-orm/node-postgres/migrator");
       await migrate(db as NodePgDatabase<typeof schema>, { migrationsFolder: "./drizzle" });
     } else {

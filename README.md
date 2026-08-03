@@ -47,6 +47,7 @@ npm run dev                  # http://localhost:3000
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | prod | Google OAuth client |
 | `AUTH_URL` | prod | Public `https://itinerary.pondlab.app` (correct OAuth callbacks on the custom domain) |
 | `DATABASE_URL` | prod | Neon Postgres connection string (use the pooled `-pooler` host); unset → PGlite dev DB |
+| `DIRECT_DATABASE_URL` | to migrate on deploy | Neon **direct** (non-pooler) host, used only by `scripts/migrate.mjs`. No fallback — unset means the migrate step skips. Scope to Production only so previews never run DDL |
 | `POE_API_KEY` | for AI parse | Key for the `/api/parse-booking` route (Poe API) |
 | `NEXT_PUBLIC_APP_VERSION` | no | Version shown in the sidebar (build-time inlined) |
 
@@ -58,10 +59,16 @@ Schema lives in [`src/db/schema.ts`](src/db/schema.ts); generated SQL migrations
 `drizzle/`.
 
 - `npm run db:generate` — generate a migration after changing the schema
-- `npm run db:migrate` — apply migrations (drizzle-kit)
-- At runtime, `dbReady()` ([`src/db/index.ts`](src/db/index.ts)) applies pending
-  migrations once per process on first DB touch — so a fresh container
-  self-migrates on boot; no separate migrate step is needed.
+- `npm run db:migrate` — apply migrations locally (drizzle-kit)
+- `npm run db:migrate:deploy` — apply migrations as a deploy step
+  ([`scripts/migrate.mjs`](scripts/migrate.mjs)). It takes an advisory lock so
+  concurrent deploys can't apply the same migration twice, and no-ops with a
+  skip message unless `DIRECT_DATABASE_URL` is set. `vercel.json` runs it ahead
+  of `next build`.
+- Locally (PGlite, no `DATABASE_URL`), `dbReady()` ([`src/db/index.ts`](src/db/index.ts))
+  still applies pending migrations once per process on first DB touch. In
+  production it does nothing — the deploy step above owns migrations, so a
+  request never races DDL.
 
 ## Deployment (Vercel + Neon)
 
@@ -76,7 +83,18 @@ Schema lives in [`src/db/schema.ts`](src/db/schema.ts); generated SQL migrations
    the domain in the Vercel project.
 5. Register the Google redirect URI:
    `https://itinerary.pondlab.app/api/auth/callback/google`.
-6. Deploy. Migrations run automatically on first request (`dbReady`).
+6. Set `DIRECT_DATABASE_URL` to Neon's **direct** (non-pooler) host, scoped to
+   the **Production environment only**. Migrations then bypass PgBouncer (whose
+   transaction pooling breaks the session-scoped advisory lock the migrate
+   script relies on), and preview builds — which are builds, not deploys — skip
+   the migrate step instead of running DDL against whatever DB they can reach.
+7. Deploy. The build command runs `scripts/migrate.mjs` before `next build`, so
+   migrations are applied once per deploy, never on a request.
+
+   Note the tradeoff this accepts: DDL commits at *build* time, so a build that
+   is never promoted still leaves the schema ahead of the running code. That is
+   safe for additive migrations and not for destructive ones — drop/rename a
+   column in its own deploy, after the code that stopped using it is live.
 
 ## Docs
 

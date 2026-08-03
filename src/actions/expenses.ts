@@ -6,6 +6,7 @@ import { db, tables, transaction, type Db } from "@/db";
 import { runAction } from "@/lib/action-utils";
 import { requireTripAccess, requireTripMembers, WRITE_ROLES } from "@/lib/authz";
 import { expenseInsertSchema, expenseUpdateSchema } from "@/lib/schemas";
+import { AppError } from "@/lib/errors";
 
 const revalidateApp = () => revalidatePath("/", "layout");
 
@@ -73,7 +74,7 @@ export async function updateExpenseAction(id: string, input: unknown) {
       .from(tables.expenses)
       .where(eq(tables.expenses.id, id))
       .limit(1);
-    if (!existing) throw new Error("Expense not found");
+    if (!existing) throw new AppError("Expense not found");
     await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     const movingTrip = !!updates.trip_id && updates.trip_id !== existing.trip_id;
     if (movingTrip) {

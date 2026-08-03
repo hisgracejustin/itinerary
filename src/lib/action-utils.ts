@@ -1,10 +1,11 @@
 import { auth } from "@/auth";
 import { dbReady } from "@/db";
+import { AppError } from "./errors";
 import { ZodError } from "zod";
 
 export async function requireUser() {
   const session = await auth();
-  if (!session?.user?.id) throw new Error("Unauthorized");
+  if (!session?.user?.id) throw new AppError("Unauthorized");
   await dbReady();
   return session.user as typeof session.user & { id: string };
 }
@@ -19,6 +20,10 @@ export type ActionResult<T = undefined> =
  * Uniform action wrapper: resolves the user once, hands it to `fn`, and maps
  * validation errors → friendly messages. Actions no longer call `requireUser()`
  * themselves — they receive the resolved `user`.
+ *
+ * Only AppError messages reach the client verbatim. Everything else is a bug or
+ * a driver failure whose message may carry internals, so it's logged with a
+ * short ref the user can quote and replaced with a generic line.
  */
 export async function runAction<T = undefined>(
   fn: (user: SessionUser) => Promise<T>,
@@ -33,6 +38,9 @@ export async function runAction<T = undefined>(
       const first = err.issues[0];
       return { ok: false, error: `${first.path.join(".")}: ${first.message}` };
     }
-    return { ok: false, error: err instanceof Error ? err.message : "Something went wrong" };
+    if (err instanceof AppError) return { ok: false, error: err.message };
+    const ref = crypto.randomUUID().slice(0, 8);
+    console.error(`[action:${ref}]`, err);
+    return { ok: false, error: `Something went wrong (ref ${ref})` };
   }
 }

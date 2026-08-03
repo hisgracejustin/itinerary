@@ -149,7 +149,7 @@ export default function UploadBooking({ trip, onParsed }) {
               Drop a file, paste a screenshot, or click to browse
             </p>
             <p className="text-xs text-gray-400 mt-1">
-              PNG, JPG, WebP, or PDF • Max 10MB
+              PNG, JPG, WebP, or PDF • Max 3MB (PDF 10MB)
             </p>
           </div>
         </div>

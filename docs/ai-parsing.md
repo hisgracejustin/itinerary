@@ -21,8 +21,11 @@ Client (browser)                         /api/parse-booking (Next route, nodejs)
 - **PDF**: text is extracted **client-side** with pdf.js (the Poe vision endpoint
   doesn't take PDFs), then sent as `text`.
 - **Image** (PNG/JPG/WebP): sent as base64 `file` + `mimeType` for the vision model.
-- Max 10 MB; the route is `runtime = "nodejs"` and rejected with `401` when
-  unauthenticated (this replaces the old Supabase RLS/JWT check).
+- Max 3 MB for images (base64 inflates by ~33% and Vercel caps bodies at 4.5 MB)
+  and 10 MB for PDFs, of which only the extracted text — capped at 200k chars —
+  is ever uploaded. The route is `runtime = "nodejs"` with `maxDuration = 60`,
+  rejects unauthenticated callers with `401` (this replaces the old Supabase
+  RLS/JWT check), and rate-limits each user to 20 parses per hour per instance.
 
 ## Files
 

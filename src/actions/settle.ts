@@ -6,6 +6,7 @@ import { db, tables } from "@/db";
 import { runAction } from "@/lib/action-utils";
 import { requireTripAccess, WRITE_ROLES } from "@/lib/authz";
 import { settlementInsertSchema } from "@/lib/schemas";
+import { AppError } from "@/lib/errors";
 
 const revalidateApp = () => revalidatePath("/", "layout");
 
@@ -30,9 +31,9 @@ export async function recordSettlementAction(input: unknown) {
       );
     const from = rows.find((r) => r.user_id === data.from_user);
     const to = rows.find((r) => r.user_id === data.to_user);
-    if (!from || !to) throw new Error("Both people must be members of this trip");
+    if (!from || !to) throw new AppError("Both people must be members of this trip");
     if (from.party_id && to.party_id && from.party_id === to.party_id) {
-      throw new Error("Those two are in the same party — settling between them has no effect");
+      throw new AppError("Those two are in the same party — settling between them has no effect");
     }
 
     const [row] = await db

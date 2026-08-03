@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db, tables, transaction, type Db } from "@/db";
 import { runAction } from "@/lib/action-utils";
 import { requireTripAccess, requireTripMembers, WRITE_ROLES } from "@/lib/authz";
+import { AppError } from "@/lib/errors";
 import {
   bookingInsertSchema,
   bookingUpdateSchema,
@@ -95,7 +96,7 @@ export async function updateBookingAction(id: string, input: unknown) {
       .from(tables.bookings)
       .where(eq(tables.bookings.id, id))
       .limit(1);
-    if (!existing) throw new Error("Booking not found");
+    if (!existing) throw new AppError("Booking not found");
     await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     // If the booking is being reassigned to another trip, require write there too.
     const movingTrip = !!updates.trip_id && updates.trip_id !== existing.trip_id;
