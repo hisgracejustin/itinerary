@@ -153,9 +153,9 @@ export const bookings = pgTable(
     // booking are written in — an IANA zone id. Stored rather than derived from
     // airport codes: no code can place a Kyoto ryokan, a Eurostar hop across the
     // Channel, or a trip with no flights at all (see src/lib/booking-zones.js).
-    // Nullable only until the existing rows are reviewed and backfilled with
-    // scripts/infer-timezones.mjs; NOT NULL is the follow-up migration.
-    timezone: text("timezone"),
+    // NOT NULL because a cancellation deadline read in the wrong clock is off by
+    // hours and looks right: every booking must say which clock it is written in.
+    timezone: text("timezone").notNull(),
     confirmation_number: text("confirmation_number"),
     provider: text("provider"),
     details: jsonb("details").$type<Record<string, unknown>>(),

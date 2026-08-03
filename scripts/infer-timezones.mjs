@@ -2,10 +2,11 @@
 /**
  * What would `bookings.timezone` be filled in with?
  *
- * The column is nullable today. Before it can be required, every existing row
- * needs a zone — and a wrong zone is worse than no zone: it silently moves every
- * cancellation deadline on that booking by hours. So this prints the inference,
- * row by row, with the reason for each, and writes NOTHING unless asked.
+ * The column is NOT NULL as of drizzle/0017, which a database still carrying a
+ * null cannot take — this is the tool for emptying that set first. A wrong zone
+ * is worse than no zone: it silently moves every cancellation deadline on that
+ * booking by hours. So this prints the inference, row by row, with the reason
+ * for each, and writes NOTHING unless asked.
  *
  * Usage:
  *   DIRECT_DATABASE_URL='postgres://…' node scripts/infer-timezones.mjs
@@ -78,7 +79,7 @@ const RULES = {
 
 const RULE_BLURB = {
   own: "the flight's own departure airport",
-  landed: "arrival airport of the last flight that landed before it",
+  landed: "arrival airport of the last flight that had taken off before it",
   trip: "arrival airport of the trip's earliest flight",
   none: "nothing in the row or its trip places this booking",
 };
@@ -123,14 +124,24 @@ function infer(booking, all) {
   }
 
   const start = String(booking.start_date ?? "");
+  // TAKEOFF splits a travel day, not landing: a check-in time is nominal (16:00,
+  // 18:00, midnight for a date-only booking) and routinely earlier in the day
+  // than the plane touches down, so "which flight had LANDED by then?" skipped
+  // the flight that brought you there and reached back to the city you left that
+  // morning. A date-only start means the whole day, so there the test is the
+  // landing DAY. A real 00:00 departure reads as date-only; accepted.
+  const wholeDay = /T00:00(:00)?$/.test(start);
   let latest = null;
   for (const b of all) {
     // Self-exclusion matters: an eastbound flight over the dateline lands at a
     // wall-clock time BEFORE it departs, and would otherwise precede itself.
-    if (b.id === booking.id || b.type !== "flight" || !b.end_date) continue;
-    const landed = String(b.end_date);
-    if (!start || landed > start) continue;
-    if (!latest || landed > String(latest.end_date)) latest = b;
+    if (b.id === booking.id || b.type !== "flight" || !b.start_date || !b.end_date) continue;
+    if (!start) continue;
+    const qualifies = wholeDay ? day(b.end_date) <= day(start) : String(b.start_date) <= start;
+    if (!qualifies) continue;
+    // Latest LANDING among the qualifiers: with two flights the same day it is
+    // the second one that says where you ended up.
+    if (!latest || String(b.end_date) > String(latest.end_date)) latest = b;
   }
   if (latest) {
     const arr = details(latest).arrival_airport;
@@ -139,6 +150,8 @@ function infer(booking, all) {
       const gap = daysBetween(latest.end_date, booking.start_date);
       const when =
         gap === 0 ? "same day" : gap === 1 ? "the day before" : gap != null ? `${gap}d earlier` : "";
+      const arrival = String(arr).toUpperCase().trim();
+      const departure = String(details(latest).departure_airport ?? "").toUpperCase().trim();
       return {
         zone,
         rule: "landed",
@@ -146,7 +159,15 @@ function infer(booking, all) {
         // could have crossed a seam by train or bus since, which nothing here
         // can see. Flag the stale ones rather than quietly trusting them.
         weak: gap == null || gap > 2,
-        why: `landed at ${String(arr).toUpperCase().trim()} ${day(latest.end_date)}${when ? ` (${when})` : ""}`,
+        // Name the fact that actually qualified the flight: on a travel day the
+        // plane is still in the air when the booking's nominal time passes, and
+        // "landed before it" would contradict the dates printed alongside.
+        why:
+          String(latest.end_date) <= start
+            ? `landed at ${arrival} ${day(latest.end_date)}${when ? ` (${when})` : ""}`
+            : wholeDay
+              ? `lands at ${arrival} ${day(latest.end_date)} (the same day)`
+              : `departed ${departure} ${day(latest.start_date)} before this starts, lands ${arrival}`,
       };
     }
   }

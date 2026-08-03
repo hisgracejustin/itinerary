@@ -64,7 +64,7 @@ export async function createBookingAction(input: unknown) {
           title: data.title,
           start_date: data.start_date,
           end_date: data.end_date ?? null,
-          timezone: data.timezone ?? null,
+          timezone: data.timezone,
           confirmation_number: data.confirmation_number ?? null,
           provider: data.provider ?? null,
           details: data.details ?? null,

@@ -150,8 +150,8 @@ const bookingBaseShape = {
   // only guess at, and the form always arrives pre-filled, so there is no case
   // where a person has to supply this from nothing. bookingUpdateSchema is
   // `.partial()`, so an edit that doesn't mention it leaves it untouched.
-  // The COLUMN is still nullable: rows written before this existed are filled
-  // by scripts/infer-timezones.mjs, and NOT NULL follows that backfill.
+  // The column is NOT NULL too (drizzle/0017), so a create that omits this is a
+  // validation error here rather than a constraint violation three layers down.
   timezone: z.string().refine((tz) => SUPPORTED_ZONES.has(tz), "Unknown timezone"),
   confirmation_number: z.string().nullish(),
   provider: z.string().nullish(),

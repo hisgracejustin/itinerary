@@ -58,11 +58,23 @@ function arrivingFlight(trip, bookings) {
 }
 
 /**
- * Where the traveller was last put down: the arrival airport of the most recent
- * flight that had already LANDED when this booking starts. Deliberately searched
- * across every booking handed in, not just this booking's trip — a journey is
- * often split into several trips with different rosters, so the flight that
- * placed you in the country can live on a trip this booking doesn't belong to.
+ * Where the traveller is headed: the arrival airport of the last flight that had
+ * already taken off when this booking starts. Deliberately searched across every
+ * booking handed in, not just this booking's trip — a journey is often split
+ * into several trips with different rosters, so the flight that placed you in
+ * the country can live on a trip this booking doesn't belong to.
+ *
+ * TAKEOFF, not landing, is what splits a travel day in two. A check-in time is
+ * nominal — 16:00, 18:00, midnight for a date-only booking — and routinely
+ * earlier in the day than the plane touches down, so asking "which flight had
+ * LANDED by then?" skipped the flight that brought you there and reached back to
+ * the city you left that morning.
+ *
+ * Known residual: a date-only booking at the ORIGIN of a departure day still
+ * resolves to the destination — a lounge breakfast entered as "Aug 1" before
+ * flying out reads as the arrival city. Nothing in the row separates it from the
+ * hotel you sleep in that night, so no rule here can; the form offering this as
+ * a suggestion rather than a fact is what catches it.
  *
  * Beats tripZone on the two cases it exists for: a multi-zone trip (you flew on
  * again, so the trip's FIRST landing is stale) and a return-leg trip holding
@@ -72,23 +84,38 @@ function arrivingFlight(trip, bookings) {
  * @returns {string | null} IANA zone
  */
 export function chronologicalZone(booking, bookings) {
-  const flight = lastLandingBefore(booking, bookings)
+  const flight = placingFlight(booking, bookings)
   return flight ? getAirportTimezone(parseDetails(flight).arrival_airport) : null
 }
 
+/**
+ * A stored start with no time of day. "Aug 29" means the whole of Aug 29, not
+ * literally 00:00, so such a booking is placed by the day a flight lands rather
+ * than by the minute it took off. A real 00:00 departure looks identical to this
+ * and gets the day-wide reading too — accepted, not overlooked.
+ */
+const DATE_ONLY = /T00:00(:00)?$/
+
 /** The flight chronologicalZone reads, kept separate so a caller can name it. */
-function lastLandingBefore(booking, bookings) {
+function placingFlight(booking, bookings) {
   if (!booking?.start_date || !Array.isArray(bookings)) return null
   const start = String(booking.start_date)
+  const wholeDay = DATE_ONLY.test(start)
+  const startDay = start.slice(0, 10)
   let latest = null
   for (const b of bookings) {
     // Self-exclusion is load-bearing, not defensive: an eastbound flight over
     // the dateline lands at a wall-clock time BEFORE it departs, so a flight
     // would otherwise qualify as its own preceding landing.
-    if (!b || b.id === booking.id || b.type !== 'flight' || !b.end_date) continue
-    const landed = String(b.end_date)
-    if (landed > start) continue
-    if (!latest || landed > String(latest.end_date)) latest = b
+    if (!b || b.id === booking.id || b.type !== 'flight' || !b.start_date || !b.end_date) continue
+    // Naive wall-clock strings, so a lexicographic compare orders them.
+    const qualifies = wholeDay
+      ? String(b.end_date).slice(0, 10) <= startDay
+      : String(b.start_date) <= start
+    if (!qualifies) continue
+    // Latest LANDING among the qualifiers: with two flights the same day it is
+    // the second one that says where you ended up.
+    if (!latest || String(b.end_date) > String(latest.end_date)) latest = b
   }
   return latest
 }
@@ -145,14 +172,22 @@ export function suggestZone(booking, trip, bookings) {
   // a landing at an airport this app can't place falls through here too.
   const landed = chronologicalZone(booking, bookings)
   if (landed) {
-    const flight = lastLandingBefore(booking, bookings)
+    const flight = placingFlight(booking, bookings)
     const d = parseDetails(flight)
-    const when = shortDay(flight.end_date)
+    const arrival = code(d.arrival_airport)
     const number = d.flight_number ? `, ${d.flight_number}` : ''
-    return {
-      zone: landed,
-      why: `you land at ${code(d.arrival_airport)}${when ? ` on ${when}` : ''}${number} before this starts`,
-    }
+    const on = (value) => (shortDay(value) ? ` on ${shortDay(value)}` : '')
+    // The sentence has to name the fact that actually qualified the flight. On a
+    // travel day the plane is still in the air when a 16:00 check-in or a
+    // date-only midnight passes, and "you land … before this starts" would then
+    // read as a contradiction of the times printed on the same screen.
+    const why =
+      String(flight.end_date) <= String(booking.start_date)
+        ? `you land at ${arrival}${on(flight.end_date)}${number} before this starts`
+        : DATE_ONLY.test(String(booking.start_date))
+          ? `you land at ${arrival}${on(flight.end_date)}${number}, the day this starts`
+          : `you take off for ${arrival}${on(flight.start_date)}${number} before this starts`
+    return { zone: landed, why }
   }
 
   const destination = tripZone(trip, bookings)
