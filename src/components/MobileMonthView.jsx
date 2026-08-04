@@ -46,6 +46,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
 
   const {
     editingNoteDate, setEditingNoteDate, noteText, setNoteText, saveNote, blurSave, deleteButtonProps,
+    confirmDialog: dayNoteConfirmDialog,
   } = useDayNoteEditor(onUpsertDayNote, (msg) => toast.error(msg))
 
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -489,6 +490,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
+      {dayNoteConfirmDialog}
       {/* Compact month calendar - top section */}
       <div
         ref={calendarRef}

@@ -11,6 +11,7 @@ import { useToast } from '../components/Toast'
 import { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
 import AuditFeed from '../components/AuditFeed'
 import FilterChip from '../components/FilterChip'
+import { useConfirmDanger } from '../components/ConfirmDanger'
 
 const ROLES = [
   { value: 'owner', label: 'Owner', hint: 'Full control, including people and deleting the trip' },
@@ -303,6 +304,7 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
   const [mode, setMode] = useState(null)
   const [draft, setDraft] = useState({ name: p.name || '', email: p.email || '' })
   const [pinDraft, setPinDraft] = useState('')
+  const { ask, dialog: confirmDialog } = useConfirmDanger()
 
   // Admin, not trip owner: every write behind these controls is `requireAdmin`
   // server-side (trip ownership is self-granted, so it must never confer the
@@ -316,9 +318,11 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
   // Safe delete: an admin, someone else, and on no trip at all.
   const canDelete = canManage && !isSelf && (p.trips?.length ?? 0) === 0
   const deleteAccount = async () => {
-    const ok = window.confirm(
-      `Delete ${memberLabel(p)} (${p.email})? Their account and any sign-in are removed for good. Only possible while they're on no trip and have no costs, splits or to-dos — otherwise this refuses and nothing changes.`,
-    )
+    const ok = await ask({
+      title: `Delete ${memberLabel(p)}?`,
+      message: `Their account (${p.email}) and any sign-in are removed for good. Only possible while they're on no trip and have no costs, splits or to-dos — otherwise this refuses and nothing changes.`,
+      confirmLabel: 'Delete account',
+    })
     if (!ok) return
     await run(() => deleteUser({ user_id: p.id }), `${memberLabel(p)} deleted`)
   }
@@ -392,6 +396,12 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
       if (done) close()
     }
     const clearPin = async () => {
+      const ok = await ask({
+        title: `Remove PIN for ${memberLabel(p)}?`,
+        message: 'They will no longer be able to sign in with a PIN until a new one is set.',
+        confirmLabel: 'Remove PIN',
+      })
+      if (!ok) return
       const done = await run(
         () => setMemberPin({ ...tripArgs, user_id: p.id, pin: null }),
         `PIN removed for ${memberLabel(p)}`,
@@ -400,6 +410,7 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
     }
     return (
       <li className="py-1.5">
+        {confirmDialog}
         <form onSubmit={savePin} className="space-y-2">
           <p className="text-[11px] text-on-surface-variant leading-relaxed">
             {p.has_pin
@@ -512,6 +523,7 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
 
   return (
     <li className="flex items-center gap-2.5 py-1">
+      {confirmDialog}
       <Avatar member={p} />
       <span className="flex-1 min-w-0">
         <span className="block text-sm text-on-surface truncate">
@@ -957,8 +969,10 @@ function TripHistory({ tripId }) {
  * (name/email/PIN/avatar) lives in the global People card up top.
  */
 function MemberRow({ m, trip, currentUserId, isOwner, lastOwner, partyById, busy, run }) {
+  const { ask, dialog: confirmDialog } = useConfirmDanger()
   return (
     <li className="flex items-center gap-2.5 py-1">
+      {confirmDialog}
       <Avatar member={m} />
       <span className="flex-1 min-w-0">
         <span className="block text-sm text-on-surface truncate">
@@ -997,12 +1011,18 @@ function MemberRow({ m, trip, currentUserId, isOwner, lastOwner, partyById, busy
       )}
       {isOwner && (
         <button
-          onClick={() =>
+          onClick={async () => {
+            const ok = await ask({
+              title: `Remove ${memberLabel(m)} from ${trip.name}?`,
+              message: 'They will lose access to this trip. Their account stays — only this trip membership is removed.',
+              confirmLabel: 'Remove',
+            })
+            if (!ok) return
             run(
               () => removeTripMember({ trip_id: trip.id, user_id: m.id }),
               `${memberLabel(m)} removed`,
             )
-          }
+          }}
           disabled={busy || lastOwner}
           aria-label={`Remove ${memberLabel(m)}`}
           title={lastOwner ? 'A trip needs at least one owner' : 'Remove from trip'}
@@ -1028,6 +1048,7 @@ function PartyManager({ trip, busy, run }) {
   const [name, setName] = useState('')
   const [renaming, setRenaming] = useState(null) // party_id being renamed
   const [renameValue, setRenameValue] = useState('')
+  const { ask, dialog: confirmDialog } = useConfirmDanger()
 
   const memberById = new Map(trip.members.map((m) => [m.id, m]))
   const ungrouped = trip.members.filter((m) => !m.party_id)
@@ -1065,6 +1086,7 @@ function PartyManager({ trip, busy, run }) {
 
   return (
     <div className="border-t border-outline/20 pt-3 mb-3">
+      {confirmDialog}
       <h5 className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
         Couples &amp; groups
       </h5>
@@ -1105,7 +1127,15 @@ function PartyManager({ trip, busy, run }) {
                       Rename
                     </button>
                     <button
-                      onClick={() => run(() => deleteParty({ trip_id: trip.id, party_id: p.id }), 'Group removed')}
+                      onClick={async () => {
+                        const ok = await ask({
+                          title: `Ungroup ${p.name}?`,
+                          message: 'Members will settle individually again. This does not remove anyone from the trip.',
+                          confirmLabel: 'Ungroup',
+                        })
+                        if (!ok) return
+                        run(() => deleteParty({ trip_id: trip.id, party_id: p.id }), 'Group removed')
+                      }}
                       disabled={busy}
                       className="text-[11px] text-on-surface-variant hover:text-red-500 font-medium disabled:opacity-40 shrink-0"
                     >

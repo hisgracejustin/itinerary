@@ -10,6 +10,7 @@ import {
   iconForMime,
 } from '@/lib/attachments'
 import { useToast } from './Toast'
+import { useConfirmDanger } from './ConfirmDanger'
 
 /**
  * Attachments list + uploader for a booking.
@@ -24,6 +25,7 @@ export default function AttachmentsSection({ bookingId, mode = 'view', stagedFil
   const [uploading, setUploading] = useState(false)
   const inputRef = useRef(null)
   const { toast } = useToast()
+  const { ask, dialog: confirmDialog } = useConfirmDanger()
   const editable = mode === 'edit'
 
   const load = useCallback(async () => {
@@ -97,6 +99,15 @@ export default function AttachmentsSection({ bookingId, mode = 'view', stagedFil
   }
 
   const handleDelete = async (id) => {
+    const target = attachments.find((a) => a.id === id)
+    const ok = await ask({
+      title: 'Delete this attachment?',
+      message: target?.filename
+        ? `"${target.filename}" will be permanently removed. This cannot be undone.`
+        : 'This file will be permanently removed. This cannot be undone.',
+      confirmLabel: 'Delete',
+    })
+    if (!ok) return
     try {
       const res = await fetch(`/api/attachments/${id}`, { method: 'DELETE' })
       if (!res.ok) {
@@ -118,6 +129,7 @@ export default function AttachmentsSection({ bookingId, mode = 'view', stagedFil
 
   return (
     <div className="space-y-2">
+      {confirmDialog}
       <h3 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">
         Attachments
       </h3>

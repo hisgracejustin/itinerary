@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef, useState } from 'react'
+import ConfirmDanger from '../components/ConfirmDanger'
 import { friendlyError } from '../lib/friendlyError'
 
 /**
@@ -41,6 +42,10 @@ export default function useDayNoteEditor(onUpsertDayNote, onError) {
   // ran. So the delete fires on mousedown and claims the gesture here; the
   // blur-save and the trailing click both no-op while this holds a date.
   const deletingRef = useRef(null)
+  // Pending trash confirm — holds { dateStr, tripId } while the danger dialog
+  // is open. deletingRef stays set the whole time so a blur during the dialog
+  // can't re-save the title underneath.
+  const [pendingDelete, setPendingDelete] = useState(null)
 
   // `title` is explicit (not always noteText) so the delete can pass ''.
   const saveNote = async (dateStr, title, tripId) => {
@@ -52,22 +57,39 @@ export default function useDayNoteEditor(onUpsertDayNote, onError) {
     }
   }
 
-  const deleteNote = (dateStr, tripId) => {
+  const requestDelete = (dateStr, tripId) => {
     if (deletingRef.current === dateStr) return
     deletingRef.current = dateStr
-    saveNote(dateStr, '', tripId).finally(() => { deletingRef.current = null })
+    setPendingDelete({ dateStr, tripId })
   }
 
-  /** Spread onto the trash button — the delete runs before any blur can. */
+  const confirmDelete = () => {
+    const pending = pendingDelete
+    setPendingDelete(null)
+    if (!pending) {
+      deletingRef.current = null
+      return
+    }
+    saveNote(pending.dateStr, '', pending.tripId).finally(() => {
+      deletingRef.current = null
+    })
+  }
+
+  const cancelDelete = () => {
+    setPendingDelete(null)
+    deletingRef.current = null
+  }
+
+  /** Spread onto the trash button — the confirm opens before any blur can. */
   const deleteButtonProps = (dateStr, tripId) => ({
     type: 'button',
     onMouseDown: (e) => {
       if (e.button !== 0) return
       e.preventDefault()
-      deleteNote(dateStr, tripId)
+      requestDelete(dateStr, tripId)
     },
     // Keyboard activation (and any engine that skips mousedown) still lands here.
-    onClick: () => deleteNote(dateStr, tripId),
+    onClick: () => requestDelete(dateStr, tripId),
   })
 
   /** Blur-save, skipped when a delete owns the gesture or focus stayed in the form. */
@@ -77,6 +99,16 @@ export default function useDayNoteEditor(onUpsertDayNote, onError) {
     saveNote(dateStr, title, tripId)
   }
 
+  const confirmDialog = pendingDelete ? (
+    <ConfirmDanger
+      title="Delete this day title?"
+      message="The title for this day will be permanently removed. This cannot be undone."
+      confirmLabel="Delete"
+      onCancel={cancelDelete}
+      onConfirm={confirmDelete}
+    />
+  ) : null
+
   return {
     editingNoteDate,
     setEditingNoteDate,
@@ -85,5 +117,6 @@ export default function useDayNoteEditor(onUpsertDayNote, onError) {
     saveNote,
     blurSave,
     deleteButtonProps,
+    confirmDialog,
   }
 }

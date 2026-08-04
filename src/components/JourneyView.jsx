@@ -176,6 +176,7 @@ export default function JourneyView({
 
   return (
     <div ref={scrollerRef} className={`h-full overflow-y-auto ${compact ? 'px-3 py-3' : 'px-3 sm:px-5 py-4'}`}>
+      {noteEditor.confirmDialog}
       <div className="max-w-3xl mx-auto space-y-1">
         {segments.map((seg) =>
           seg.type === 'run' ? (

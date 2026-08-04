@@ -123,6 +123,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
   // handler only falls back to a date-derived trip for a brand-new note.
   const {
     editingNoteDate, setEditingNoteDate, noteText, setNoteText, saveNote, blurSave, deleteButtonProps,
+    confirmDialog: dayNoteConfirmDialog,
   } = useDayNoteEditor(onUpsertDayNote, (msg) => toast.error(msg))
 
   // Rail scroll requests — a token forces re-scroll even for the same day.
@@ -455,6 +456,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
 
   return (
     <div className="h-full flex">
+      {dayNoteConfirmDialog}
       {/* Calendar grid column — always fits the viewport, never scrolls */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Day headers */}

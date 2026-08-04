@@ -12,6 +12,7 @@ import SplitEditor from '../components/SplitEditor'
 import ChargedRateEditor from '../components/ChargedRateEditor'
 import BookingModal from '../components/BookingModal'
 import { useToast } from '../components/Toast'
+import { useConfirmDanger } from '../components/ConfirmDanger'
 import { friendlyError } from '../lib/friendlyError'
 import {
   createExpense, updateExpense, deleteExpense,
@@ -46,6 +47,7 @@ export default function Settle({
   const { selectedTrips, selectedTrip, tripMeta, trips, fx } = useTripContext()
   const rates = fx?.rates
   const { toast } = useToast()
+  const { ask, dialog: confirmDialog } = useConfirmDanger()
   const [busy, setBusy] = useState(false)
   // Booking modal for "Needs attention" rows — same local wiring as Costs.jsx.
   const [bookingModalOpen, setBookingModalOpen] = useState(false)
@@ -368,6 +370,7 @@ export default function Settle({
 
   return (
     <div className="w-full max-w-3xl lg:max-w-5xl mx-auto">
+      {confirmDialog}
       <div className="space-y-4 pb-10">
         {/* 1 — Hero: your position. */}
         <section className="rounded-2xl bg-gradient-to-br from-primary to-primary-dark text-white p-6">
@@ -711,6 +714,7 @@ export default function Settle({
           busy={busy}
           run={run}
           toast={toast}
+          ask={ask}
         />
 
         {/* 7 — Settlement history + record a payment */}
@@ -803,7 +807,15 @@ export default function Settle({
                   </span>
                   <button
                     type="button"
-                    onClick={() => run(() => deleteSettlement(s.id), 'Payment deleted')}
+                    onClick={async () => {
+                      const ok = await ask({
+                        title: 'Delete this payment?',
+                        message: `${personLabel(s.from_user)} → ${personLabel(s.to_user)} (${formatCurrency(Number(s.amount) || 0, s.currency)}) will be permanently removed. This cannot be undone.`,
+                        confirmLabel: 'Delete',
+                      })
+                      if (!ok) return
+                      run(() => deleteSettlement(s.id), 'Payment deleted')
+                    }}
                     disabled={busy}
                     aria-label="Delete payment"
                     className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 shrink-0"
@@ -1131,7 +1143,7 @@ function TripSelect({ trips, value, onChange }) {
   )
 }
 
-function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNetOf, busy, run, toast }) {
+function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNetOf, busy, run, toast, ask }) {
   const blank = () => ({ id: null, trip_id: selectedTrip ?? '', title: '', amount: '', currency: 'HKD', date: '', paid_by: null, splits: [], charged_currency: '', charged_rate: '' })
   const [form, setForm] = useState(null) // null = closed
 
@@ -1328,7 +1340,17 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNet
               </button>
               <button
                 type="button"
-                onClick={() => run(() => deleteExpense(e.id), 'Expense deleted')}
+                onClick={async () => {
+                  const ok = await ask({
+                    title: 'Delete this expense?',
+                    message: e.title
+                      ? `"${e.title}" will be permanently removed. This cannot be undone.`
+                      : 'This expense will be permanently removed. This cannot be undone.',
+                    confirmLabel: 'Delete',
+                  })
+                  if (!ok) return
+                  run(() => deleteExpense(e.id), 'Expense deleted')
+                }}
                 disabled={busy}
                 aria-label={`Delete ${e.title}`}
                 className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 shrink-0"

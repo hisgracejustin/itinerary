@@ -9,6 +9,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useToast } from './Toast'
+import { useConfirmDanger } from './ConfirmDanger'
 import { friendlyError } from '../lib/friendlyError'
 
 // Lock drag to the vertical axis (one-line modifier — no extra package).
@@ -35,6 +36,7 @@ export function formatReminderTime(hhmm) {
  */
 export default function DayReminders({ reminders = [], date, tripId, onAdd, onEdit, onRemove, onReorder, readOnly = false, variant = 'panel' }) {
   const { toast } = useToast()
+  const { ask, dialog: confirmDialog } = useConfirmDanger()
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const compact = variant === 'cell'
@@ -73,6 +75,15 @@ export default function DayReminders({ reminders = [], date, tripId, onAdd, onEd
   }
 
   const submitRemove = async (id) => {
+    const target = ordered.find((r) => r.id === id)
+    const ok = await ask({
+      title: 'Delete this note?',
+      message: target?.text
+        ? `"${target.text}" will be permanently removed. This cannot be undone.`
+        : 'This note will be permanently removed. This cannot be undone.',
+      confirmLabel: 'Delete',
+    })
+    if (!ok) return
     setEditingId(null)
     try {
       await onRemove(id)
@@ -117,6 +128,7 @@ export default function DayReminders({ reminders = [], date, tripId, onAdd, onEd
 
   return (
     <div className={compact ? 'space-y-0.5' : 'space-y-1'} onClick={(e) => e.stopPropagation()}>
+      {confirmDialog}
       {!compact && (ordered.length > 0 || adding) && (
         <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Notes</div>
       )}

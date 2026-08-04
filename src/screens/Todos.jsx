@@ -17,6 +17,7 @@ import { useToast } from '../components/Toast'
 import useMediaQuery from '../hooks/useMediaQuery'
 import FilterChip from '../components/FilterChip'
 import AssigneePicker, { Avatar, memberLabel } from '../components/AssigneePicker'
+import { useConfirmDanger } from '../components/ConfirmDanger'
 
 // The board's three columns, in board order. `status` values match the DB enum.
 const COLUMNS = [
@@ -53,6 +54,7 @@ const pointerFirstCollision = (args) => {
 export default function Todos({ initialTodos, members: membersProp, currentUserId }) {
   const { selectedTrip, tripMeta, trips, selectedTrips, tripMetas } = useTripContext()
   const { toast } = useToast()
+  const { ask, dialog: confirmDialog } = useConfirmDanger()
 
   // Props carry the union (all trips' todos, everyone you share a trip with);
   // the client-side selection filters both. Tripless todos only show on All
@@ -234,6 +236,19 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
     })
   }
 
+  const handleRemove = async (id) => {
+    const target = todos.find((t) => t.id === id)
+    const ok = await ask({
+      title: 'Delete this to-do?',
+      message: target?.title
+        ? `"${target.title}" will be permanently removed. This cannot be undone.`
+        : 'This to-do will be permanently removed. This cannot be undone.',
+      confirmLabel: 'Delete',
+    })
+    if (!ok) return
+    remove(id)
+  }
+
   // Shared per-card props (everything except drag wiring, which differs).
   const cardProps = (todo) => ({
     todo,
@@ -246,7 +261,7 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
     onCancelEdit: () => setEditingId(null),
     onSaveEdit: handleSaveEdit,
     onSetStatus: setStatus,
-    onRemove: remove,
+    onRemove: handleRemove,
   })
 
   return (
@@ -254,6 +269,7 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
     // remaining viewport height via flex-basis — the percentage chain broke in
     // Safari and let columns grow past the bottom of the window.
     <div className="flex-1 min-h-0 flex flex-col w-full max-w-6xl mx-auto">
+      {confirmDialog}
       {/* Add form — needs at least one trip to attach a to-do to. */}
       {trips.length === 0 ? (
         <div className="mat-surface p-5 mb-4 shrink-0 text-center">
