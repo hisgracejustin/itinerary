@@ -13,6 +13,14 @@ import {
   tripInsertSchema,
   tripUpdateSchema,
 } from "@/lib/schemas";
+import {
+  bookingAuditChanges,
+  bookingLabel,
+  recordChanges,
+  recordCreated,
+  recordDeleted,
+  type BookingSnapshot,
+} from "@/lib/audit";
 
 // Reads are done server-side in RSC pages via @/lib/queries; these actions are
 // the write path. Each revalidates the app layout so every screen re-renders
@@ -72,6 +80,7 @@ export async function createBookingAction(input: unknown) {
           cost_currency: data.cost_currency ?? null,
           cost_share: data.cost_share ?? null,
           paid_by: data.paid_by ?? null,
+          created_by: user.id,
           charged_currency: data.charged_currency ?? null,
           charged_rate: data.charged_rate ?? null,
           source: data.source ?? "manual",
@@ -80,6 +89,14 @@ export async function createBookingAction(input: unknown) {
         })
         .returning();
       await replaceBookingSplits(tx, id, data.splits);
+      // Inside the transaction: an audit row that survived a rolled-back insert
+      // would claim a booking exists that doesn't.
+      await recordCreated(tx, user, {
+        trip_id: inserted.trip_id,
+        entity_type: "booking",
+        entity_id: id,
+        entity_label: bookingLabel(inserted),
+      });
       return inserted;
     });
     revalidateApp();
@@ -92,12 +109,22 @@ export async function updateBookingAction(id: string, input: unknown) {
     const parsed = bookingUpdateSchema.parse(input);
     // `splits` isn't a bookings column — pull it out of the DB update set.
     const { splits, ...updates } = parsed;
+    // The whole row, not just the authz fields: it is also the "before" half of
+    // the audit diff, and it has to be read before the update overwrites it.
     const [existing] = await db
-      .select({ trip_id: tables.bookings.trip_id, paid_by: tables.bookings.paid_by })
+      .select()
       .from(tables.bookings)
       .where(eq(tables.bookings.id, id))
       .limit(1);
     if (!existing) throw new AppError("Booking not found");
+    const existingSplits = await db
+      .select({
+        user_id: tables.bookingSplits.user_id,
+        weight: tables.bookingSplits.weight,
+        extra_amount: tables.bookingSplits.extra_amount,
+      })
+      .from(tables.bookingSplits)
+      .where(eq(tables.bookingSplits.booking_id, id));
     await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     // If the booking is being reassigned to another trip, require write there too.
     const movingTrip = !!updates.trip_id && updates.trip_id !== existing.trip_id;
@@ -112,13 +139,7 @@ export async function updateBookingAction(id: string, input: unknown) {
     const carriedUserIds: (string | null | undefined)[] = [];
     if (movingTrip) {
       if (updates.paid_by === undefined) carriedUserIds.push(existing.paid_by);
-      if (splits === undefined) {
-        const rows = await db
-          .select({ user_id: tables.bookingSplits.user_id })
-          .from(tables.bookingSplits)
-          .where(eq(tables.bookingSplits.booking_id, id));
-        carriedUserIds.push(...rows.map((r) => r.user_id));
-      }
+      if (splits === undefined) carriedUserIds.push(...existingSplits.map((r) => r.user_id));
     }
     await requireTripMembers(targetTripId, [
       updates.paid_by,
@@ -137,6 +158,23 @@ export async function updateBookingAction(id: string, input: unknown) {
         [updated] = await tx.select().from(tables.bookings).where(eq(tables.bookings.id, id)).limit(1);
       }
       await replaceBookingSplits(tx, id, splits);
+      // `splits: undefined` left the existing rows alone, so the "after" side is
+      // the "before" side — otherwise every unrelated save would log a split change.
+      const after: BookingSnapshot = {
+        ...updated,
+        splits: splits ?? existingSplits,
+      };
+      await recordChanges(
+        tx,
+        user,
+        {
+          trip_id: after.trip_id,
+          entity_type: "booking",
+          entity_id: id,
+          entity_label: bookingLabel(after),
+        },
+        await bookingAuditChanges(tx, { ...existing, splits: existingSplits }, after),
+      );
       return updated;
     });
     revalidateApp();
@@ -147,13 +185,27 @@ export async function updateBookingAction(id: string, input: unknown) {
 export async function deleteBookingAction(id: string) {
   return runAction(async (user) => {
     const [existing] = await db
-      .select({ trip_id: tables.bookings.trip_id })
+      .select({
+        trip_id: tables.bookings.trip_id,
+        type: tables.bookings.type,
+        title: tables.bookings.title,
+      })
       .from(tables.bookings)
       .where(eq(tables.bookings.id, id))
       .limit(1);
     if (!existing) return { id };
     await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
-    await db.delete(tables.bookings).where(eq(tables.bookings.id, id));
+    // The delete and its audit row commit together: this entry is the ONLY
+    // remaining record of the booking, so it must not be able to go missing.
+    await transaction(async (tx) => {
+      await tx.delete(tables.bookings).where(eq(tables.bookings.id, id));
+      await recordDeleted(tx, user, {
+        trip_id: existing.trip_id,
+        entity_type: "booking",
+        entity_id: id,
+        entity_label: bookingLabel(existing),
+      });
+    });
     revalidateApp();
     return { id };
   });

@@ -166,6 +166,11 @@ export const bookings = pgTable(
     // from settlement balances and surfaced as "needs attention"). Set-null on
     // user delete so removing a member leaves the booking behind, just unpaid.
     paid_by: text("paid_by").references(() => users.id, { onDelete: "set null" }),
+    // Who added this booking. PERMANENTLY nullable, unlike `timezone`: rows that
+    // predate this column have no creator and it is genuinely unknowable, so they
+    // read "added before this was recorded" forever rather than being backfilled
+    // with a guess. Set-null on user delete, matching paid_by/uploaded_by.
+    created_by: text("created_by").references(() => users.id, { onDelete: "set null" }),
     // The EXACT currency + rate this item was charged at (e.g. a USD fare billed
     // to an HKD card at a known rate). Both null = settle in the native currency.
     // When set, settlement re-denominates the whole item at this rate — exact,
@@ -334,6 +339,8 @@ export const expenses = pgTable(
     amount: numeric("amount", { mode: "number" }).notNull(),
     currency: text("currency").notNull(),
     paid_by: text("paid_by").references(() => users.id, { onDelete: "set null" }),
+    // Same contract as bookings.created_by — permanently nullable, set-null.
+    created_by: text("created_by").references(() => users.id, { onDelete: "set null" }),
     date: text("date"), // optional "YYYY-MM-DD", matching trips' text dates
     // Exact charged currency + rate — mirrors bookings.charged_currency/rate.
     charged_currency: text("charged_currency"),
@@ -401,6 +408,61 @@ export const fxRates = pgTable(
     fetched_at: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.rate_date, t.currency] })],
+);
+
+// Who changed what, across bookings, expenses, settlements and parties. ONE
+// shared table because all four feed a single trip feed and a single UI
+// component; `entity_type` says which one a row is about. History starts the day
+// this ships — nothing is captured retroactively.
+//
+// Three deliberate decisions, each of which looks like an oversight:
+//
+//  1. NO foreign key on `entity_id`, `trip_id` or `changed_by`. The whole point
+//     of the table is that a row outlives its subject: a cascading FK would erase
+//     exactly the record of the deletion you want to read, and a restricting one
+//     would block the delete outright. A dangling id is the correct state here.
+//  2. `trip_id` is denormalised for the same reason. Read permission is "admin,
+//     or an owner of this trip"; once the booking is deleted there is nothing
+//     left to join to, so the audit row has to carry its own trip or it becomes
+//     unauthorizable.
+//  3. Every person is stored TWICE — an id (`changed_by`, `old_refs`,
+//     `new_refs`) and the display name at the time (`changed_by_label`, and the
+//     name inside `old_value`/`new_value`). Neither half works alone: a bare name
+//     is ambiguous when two people are called Justin, and a bare id is unreadable
+//     once that user is gone. Readers resolve the ids against the current roster
+//     and fall back to the stored label (see getAuditForTrip in lib/queries).
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    // Text, not uuid, and no FK: see (1)/(2) above. Reads compare it against a
+    // trip id the caller already holds rather than joining, so the type is free.
+    trip_id: text("trip_id").notNull(),
+    entity_type: text("entity_type").$type<AuditEntityType>().notNull(),
+    entity_id: text("entity_id").notNull(),
+    // The subject's name at the time, so a deleted row is still readable.
+    entity_label: text("entity_label").notNull(),
+    action: text("action").$type<AuditAction>().notNull(),
+    // Null for created/deleted — those describe the whole row, not one field.
+    field: text("field"),
+    old_value: text("old_value"),
+    new_value: text("new_value"),
+    // User ids the value points at, when it points at people (payer, split
+    // participants, party members). See (3).
+    old_refs: jsonb("old_refs").$type<string[]>(),
+    new_refs: jsonb("new_refs").$type<string[]>(),
+    changed_by: text("changed_by"),
+    changed_by_label: text("changed_by_label").notNull(),
+    changed_at: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // The two feeds this table exists to serve: one trip's history, and one
+    // entity's history — both newest-first.
+    index("idx_audit_log_trip").on(t.trip_id, t.changed_at.desc()),
+    index("idx_audit_log_entity").on(t.entity_type, t.entity_id, t.changed_at.desc()),
+  ],
 );
 
 /* -------------------------------- relations -------------------------------- */
@@ -511,3 +573,10 @@ export type Settlement = typeof settlements.$inferSelect;
 export type NewSettlement = typeof settlements.$inferInsert;
 export type FxRate = typeof fxRates.$inferSelect;
 export type NewFxRate = typeof fxRates.$inferInsert;
+// Plain text columns rather than pg enums: an audit row must still be insertable
+// when a future entity type or action word isn't in the enum yet — a failed
+// audit insert would roll back the write it describes (see lib/audit.ts).
+export type AuditEntityType = "booking" | "expense" | "settlement" | "party";
+export type AuditAction = "created" | "updated" | "deleted";
+export type AuditLog = typeof auditLog.$inferSelect;
+export type NewAuditLog = typeof auditLog.$inferInsert;

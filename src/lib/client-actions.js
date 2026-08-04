@@ -40,6 +40,7 @@ import {
   deleteExpenseAction,
 } from "@/actions/expenses";
 import { recordSettlementAction, deleteSettlementAction } from "@/actions/settle";
+import { getEntityAuditAction, getTripAuditAction } from "@/actions/audit";
 import { unwrap } from "@/lib/friendlyError";
 
 export const createBooking = async (booking) => unwrap(await createBookingAction(booking));
@@ -78,3 +79,8 @@ export const deleteExpense = async (id) => unwrap(await deleteExpenseAction(id))
 
 export const recordSettlement = async (input) => unwrap(await recordSettlementAction(input));
 export const deleteSettlement = async (id) => unwrap(await deleteSettlementAction(id));
+
+// Reads, not writes — the history feeds load when their section is opened.
+export const getEntityAudit = async (entityType, entityId) =>
+  unwrap(await getEntityAuditAction(entityType, entityId));
+export const getTripAudit = async (tripId) => unwrap(await getTripAuditAction(tripId));

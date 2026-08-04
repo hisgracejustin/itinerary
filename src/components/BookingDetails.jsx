@@ -1,7 +1,11 @@
+import { useEffect, useState } from 'react'
 import { formatCurrency } from '../lib/currencies'
 import { sanitizeCancellationPolicy, formatCutoff, formatExpiry } from '../lib/cancellation'
 import { itemUnitTransfers } from '../lib/split'
 import { useTripContext } from '../lib/trip-context'
+import { getEntityAudit } from '@/lib/client-actions'
+import { memberLabel } from './AssigneePicker'
+import AuditFeed from './AuditFeed'
 
 const TYPE_LABELS = {
   flight: '✈️ Flight',
@@ -70,8 +74,32 @@ function Row({ label, children }) {
 
 export default function BookingDetails({ booking }) {
   const { trips } = useTripContext()
+  // Fetched rather than passed down: it's per-booking, only this view wants it,
+  // and a reader who isn't an owner/admin gets an empty list back — so the
+  // section simply doesn't appear for them. A failure (offline, no session)
+  // leaves it empty too; history is never worth an error state here.
+  const [history, setHistory] = useState([])
+  const bookingId = booking?.id
+  useEffect(() => {
+    if (!bookingId) return
+    let live = true
+    getEntityAudit('booking', bookingId)
+      .then((rows) => { if (live) setHistory(rows) })
+      .catch(() => {})
+    return () => { live = false }
+  }, [bookingId])
   if (!booking) return null
   const details = booking.details || {}
+
+  // The creator's name comes from the roster the viewer already has; the column
+  // is permanently nullable, so bookings older than it say so rather than
+  // pretending nobody added them.
+  const creator = booking.created_by
+    ? (trips || []).flatMap((t) => t.members || []).find((m) => m.id === booking.created_by)
+    : null
+  const addedBy = booking.created_by
+    ? `Added by ${creator ? memberLabel(creator) : 'someone who has since left'}`
+    : 'Added before this was recorded'
 
   // Net result of this booking's split, aggregated by settlement unit — "who
   // owes the payer's unit for this item". Roster comes from the booking's trip.
@@ -171,6 +199,8 @@ export default function BookingDetails({ booking }) {
           </Row>
         )}
       </div>
+
+      <p className="text-[11px] text-on-surface-variant">{addedBy}</p>
 
       {detailEntries.length > 0 && (
         <div>
@@ -277,6 +307,15 @@ export default function BookingDetails({ booking }) {
           </svg>
           Open in Google Maps
         </a>
+      )}
+
+      {history.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">History</h3>
+          <div className="rounded-xl border border-outline/20 px-4 py-3">
+            <AuditFeed entries={history} scope="entity" />
+          </div>
+        </div>
       )}
     </div>
   )

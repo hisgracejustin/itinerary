@@ -4,11 +4,13 @@ import { useState } from 'react'
 import {
   createTrip, updateTrip, deleteTrip,
   addTripMember, removeTripMember, setTripMemberRole, updateMemberProfile, setMemberPin, setMyAvatar, setMemberAvatar, deleteUser,
-  createParty, renameParty, deleteParty,
+  createParty, renameParty, deleteParty, getTripAudit,
 } from '@/lib/client-actions'
 import { friendlyError } from '../lib/friendlyError'
 import { useToast } from '../components/Toast'
 import { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
+import AuditFeed from '../components/AuditFeed'
+import FilterChip from '../components/FilterChip'
 
 const ROLES = [
   { value: 'owner', label: 'Owner', hint: 'Full control, including people and deleting the trip' },
@@ -194,6 +196,7 @@ export default function Settings({ trips: tripsProp, currentUserId, isAdmin = fa
                 trip={trip}
                 allPeople={allPeople}
                 currentUserId={currentUserId}
+                isAdmin={isAdmin}
                 collapsed={collapsedTrips.has(trip.id)}
                 onToggleCollapse={() => toggleTrip(trip.id)}
                 busy={busy}
@@ -599,7 +602,7 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
  * header itself, including the delete confirmation, always stays visible so a
  * collapsed card can still be renamed or deleted.
  */
-function TripCard({ trip, allPeople, currentUserId, collapsed = false, onToggleCollapse, busy, run }) {
+function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed = false, onToggleCollapse, busy, run }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState({
     name: trip.name,
@@ -839,7 +842,111 @@ function TripCard({ trip, allPeople, currentUserId, collapsed = false, onToggleC
             Only owners can add or remove people.
           </p>
         )}
+
+        {/* Reading the log is owner-or-admin, so the section isn't offered to
+            anyone else — the query would hand them an empty feed anyway. */}
+        {(isOwner || isAdmin) && <TripHistory tripId={trip.id} />}
       </div>
+    </div>
+  )
+}
+
+// Keys are the stored `action` values, so filtering is a straight comparison.
+const HISTORY_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'created', label: 'Added' },
+  { key: 'updated', label: 'Changed' },
+  { key: 'deleted', label: 'Deleted' },
+]
+
+/**
+ * Everything that has happened to this trip's bookings and money, deletions
+ * included — this is the only place a deleted booking still shows up, since the
+ * per-booking history goes with the booking.
+ *
+ * Loaded when opened, not with the page: most visits never expand it, and it can
+ * carry 100 rows per trip. Re-fetched on every open so a change made elsewhere
+ * on this screen is reflected without a reload.
+ */
+function TripHistory({ tripId }) {
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [feed, setFeed] = useState({ entries: [], truncated: false })
+  const [filter, setFilter] = useState('all')
+
+  const toggle = async () => {
+    if (open) { setOpen(false); return }
+    setOpen(true)
+    setLoading(true)
+    try {
+      setFeed(await getTripAudit(tripId))
+    } catch {
+      setFeed({ entries: [], truncated: false })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const counts = {
+    all: feed.entries.length,
+    created: feed.entries.filter((e) => e.action === 'created').length,
+    updated: feed.entries.filter((e) => e.action === 'updated').length,
+    deleted: feed.entries.filter((e) => e.action === 'deleted').length,
+  }
+  const shown = filter === 'all' ? feed.entries : feed.entries.filter((e) => e.action === filter)
+
+  return (
+    <div className="border-t border-outline/20 pt-3 mt-3">
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider hover:text-primary transition-colors"
+      >
+        <svg
+          className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-90' : ''}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+        History
+      </button>
+
+      {open && (
+        <div className="mt-2">
+          {loading ? (
+            <p className="text-[11px] text-on-surface-variant/70">Loading…</p>
+          ) : (
+            <>
+              {feed.entries.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {HISTORY_FILTERS.map((f) => (
+                    <FilterChip
+                      key={f.key}
+                      active={filter === f.key}
+                      onClick={() => setFilter(f.key)}
+                      label={f.label}
+                      count={counts[f.key]}
+                    />
+                  ))}
+                </div>
+              )}
+              <AuditFeed
+                entries={shown}
+                scope="trip"
+                truncated={feed.truncated && filter === 'all'}
+                empty={
+                  feed.entries.length === 0
+                    ? 'Nothing recorded yet — history starts from when a change is made.'
+                    : 'Nothing of that kind yet.'
+                }
+              />
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

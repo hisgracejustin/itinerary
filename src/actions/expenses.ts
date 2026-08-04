@@ -7,6 +7,13 @@ import { runAction } from "@/lib/action-utils";
 import { requireTripAccess, requireTripMembers, WRITE_ROLES } from "@/lib/authz";
 import { expenseInsertSchema, expenseUpdateSchema } from "@/lib/schemas";
 import { AppError } from "@/lib/errors";
+import {
+  expenseAuditChanges,
+  recordChanges,
+  recordCreated,
+  recordDeleted,
+  type ExpenseSnapshot,
+} from "@/lib/audit";
 
 const revalidateApp = () => revalidatePath("/", "layout");
 
@@ -52,12 +59,19 @@ export async function createExpenseAction(input: unknown) {
           amount: data.amount,
           currency: data.currency,
           paid_by: data.paid_by ?? null,
+          created_by: user.id,
           date: data.date ?? null,
           charged_currency: data.charged_currency ?? null,
           charged_rate: data.charged_rate ?? null,
         })
         .returning();
       await replaceExpenseSplits(tx, inserted.id, data.splits);
+      await recordCreated(tx, user, {
+        trip_id: inserted.trip_id,
+        entity_type: "expense",
+        entity_id: inserted.id,
+        entity_label: inserted.title,
+      });
       return inserted;
     });
     revalidateApp();
@@ -69,12 +83,22 @@ export async function updateExpenseAction(id: string, input: unknown) {
   return runAction(async (user) => {
     const parsed = expenseUpdateSchema.parse(input);
     const { splits, ...updates } = parsed;
+    // Whole row: it doubles as the "before" half of the audit diff (see
+    // updateBookingAction).
     const [existing] = await db
-      .select({ trip_id: tables.expenses.trip_id, paid_by: tables.expenses.paid_by })
+      .select()
       .from(tables.expenses)
       .where(eq(tables.expenses.id, id))
       .limit(1);
     if (!existing) throw new AppError("Expense not found");
+    const existingSplits = await db
+      .select({
+        user_id: tables.expenseSplits.user_id,
+        weight: tables.expenseSplits.weight,
+        extra_amount: tables.expenseSplits.extra_amount,
+      })
+      .from(tables.expenseSplits)
+      .where(eq(tables.expenseSplits.expense_id, id));
     await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
     const movingTrip = !!updates.trip_id && updates.trip_id !== existing.trip_id;
     if (movingTrip) {
@@ -86,13 +110,7 @@ export async function updateExpenseAction(id: string, input: unknown) {
     const carriedUserIds: (string | null | undefined)[] = [];
     if (movingTrip) {
       if (updates.paid_by === undefined) carriedUserIds.push(existing.paid_by);
-      if (splits === undefined) {
-        const rows = await db
-          .select({ user_id: tables.expenseSplits.user_id })
-          .from(tables.expenseSplits)
-          .where(eq(tables.expenseSplits.expense_id, id));
-        carriedUserIds.push(...rows.map((r) => r.user_id));
-      }
+      if (splits === undefined) carriedUserIds.push(...existingSplits.map((r) => r.user_id));
     }
     await requireTripMembers(targetTripId, [
       updates.paid_by,
@@ -111,6 +129,18 @@ export async function updateExpenseAction(id: string, input: unknown) {
         [updated] = await tx.select().from(tables.expenses).where(eq(tables.expenses.id, id)).limit(1);
       }
       await replaceExpenseSplits(tx, id, splits);
+      const after: ExpenseSnapshot = { ...updated, splits: splits ?? existingSplits };
+      await recordChanges(
+        tx,
+        user,
+        {
+          trip_id: after.trip_id,
+          entity_type: "expense",
+          entity_id: id,
+          entity_label: after.title,
+        },
+        await expenseAuditChanges(tx, { ...existing, splits: existingSplits }, after),
+      );
       return updated;
     });
     revalidateApp();
@@ -121,14 +151,23 @@ export async function updateExpenseAction(id: string, input: unknown) {
 export async function deleteExpenseAction(id: string) {
   return runAction(async (user) => {
     const [existing] = await db
-      .select({ trip_id: tables.expenses.trip_id })
+      .select({ trip_id: tables.expenses.trip_id, title: tables.expenses.title })
       .from(tables.expenses)
       .where(eq(tables.expenses.id, id))
       .limit(1);
     if (!existing) return { id };
     await requireTripAccess(user.id, existing.trip_id, WRITE_ROLES);
-    // expense_splits cascade on the FK.
-    await db.delete(tables.expenses).where(eq(tables.expenses.id, id));
+    // expense_splits cascade on the FK. The audit row commits with the delete —
+    // it's the only record left of what was here.
+    await transaction(async (tx) => {
+      await tx.delete(tables.expenses).where(eq(tables.expenses.id, id));
+      await recordDeleted(tx, user, {
+        trip_id: existing.trip_id,
+        entity_type: "expense",
+        entity_id: id,
+        entity_label: existing.title,
+      });
+    });
     revalidateApp();
     return { id };
   });

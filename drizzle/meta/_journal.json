@@ -127,6 +127,13 @@
       "when": 1785748260945,
       "tag": "0017_tranquil_korath",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785749777921,
+      "tag": "0018_fair_nightcrawler",
+      "breakpoints": true
     }
   ]
 }

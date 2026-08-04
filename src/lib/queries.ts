@@ -1,5 +1,8 @@
-import { and, asc, eq, getTableColumns, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, inArray, isNotNull } from "drizzle-orm";
 import { db, tables } from "@/db";
+import { isAdmin } from "./authz";
+import { personLabel } from "./audit";
+import type { AuditEntityType, AuditLog } from "@/db/schema";
 
 /**
  * Read queries, userId-scoped. Authorization is folded INTO the data query via a
@@ -535,4 +538,177 @@ export async function getSettleData(userId: string) {
     .orderBy(asc(tables.settlements.created_at));
 
   return { members, parties, bookings, expenses, settlements };
+}
+
+/* ---------------------------------- audit ---------------------------------- */
+
+/**
+ * Reading the audit trail is a stricter permission than reading the trip: an
+ * editor can change a booking but must not be able to audit their fellow
+ * members, so it's admin, or an OWNER of the trip the row itself names.
+ *
+ * The check runs against the audit row's own `trip_id` and never joins to the
+ * entity — the whole reason to read the log is often that the entity is gone.
+ */
+async function auditReadableTrips(userId: string, tripIds: string[]) {
+  if (tripIds.length === 0) return new Set<string>();
+  const [me] = await db
+    .select({ email: tables.users.email })
+    .from(tables.users)
+    .where(eq(tables.users.id, userId))
+    .limit(1);
+  if (me && isAdmin(me)) return new Set(tripIds);
+  const rows = await db
+    .select({ trip_id: tables.tripMembers.trip_id })
+    .from(tables.tripMembers)
+    .where(
+      and(
+        eq(tables.tripMembers.user_id, userId),
+        eq(tables.tripMembers.role, "owner"),
+        inArray(tables.tripMembers.trip_id, tripIds),
+      ),
+    );
+  return new Set(rows.map((r) => r.trip_id));
+}
+
+/** A person on an audit row: the id it stored and the best label available now. */
+export type AuditPerson = { id: string | null; label: string; present: boolean };
+
+export type AuditEntry = {
+  id: string;
+  trip_id: string;
+  entity_type: AuditEntityType;
+  entity_id: string;
+  entity_label: string;
+  action: string;
+  field: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  old_people: AuditPerson[];
+  new_people: AuditPerson[];
+  by: AuditPerson;
+  changed_at: Date;
+};
+
+/**
+ * Attach today's identities to stored rows. Every person is looked up by id and
+ * falls back to the label frozen at write time when the account is gone — and
+ * where two live people share a display name, both get their email appended, so
+ * a payer change between two Justins doesn't read "Justin → Justin".
+ */
+async function resolveAuditRows(rows: AuditLog[]): Promise<AuditEntry[]> {
+  const ids = new Set<string>();
+  for (const r of rows) {
+    if (r.changed_by) ids.add(r.changed_by);
+    for (const id of r.old_refs ?? []) ids.add(id);
+    for (const id of r.new_refs ?? []) ids.add(id);
+  }
+  const users = ids.size
+    ? await db
+        .select({ id: tables.users.id, name: tables.users.name, email: tables.users.email })
+        .from(tables.users)
+        .where(inArray(tables.users.id, [...ids]))
+    : [];
+  const seen = new Map<string, number>();
+  for (const u of users) {
+    const base = personLabel(u);
+    seen.set(base, (seen.get(base) ?? 0) + 1);
+  }
+  const live = new Map<string, string>();
+  for (const u of users) {
+    const base = personLabel(u);
+    live.set(u.id, (seen.get(base) ?? 0) > 1 && u.email ? `${base} (${u.email})` : base);
+  }
+
+  // The account is gone, so the name frozen at write time is all there is. It's
+  // marked only when someone still here answers to it — otherwise "Justin left
+  // and Justin joined" reads as one person changing their mind.
+  const labelFor = (id: string, stored: string) =>
+    live.get(id) ?? (seen.has(stored) ? `${stored} (removed)` : stored);
+
+  const person = (id: string, fallback: string): AuditPerson => ({
+    id,
+    label: labelFor(id, fallback),
+    present: live.has(id),
+  });
+
+  // Person-valued fields are stored as one " · " segment per ref, in ref order,
+  // each starting with that person's name and ending in whatever detail belongs
+  // to them ("Kate ×1 (+HK$50)"). So re-labelling is replacing each segment's
+  // leading name — which is what tells two people called Justin apart in a split
+  // line as well as in a payer change. Anything that doesn't line up segment for
+  // segment keeps the stored text, which is always readable on its own.
+  const relabel = (value: string | null, refs: string[] | null) => {
+    if (!value || !refs?.length) return value;
+    const parts = value.split(" · ");
+    if (parts.length !== refs.length) return value;
+    return parts
+      .map((part, i) => {
+        const detail = part.indexOf(" ×");
+        const stored = detail === -1 ? part : part.slice(0, detail);
+        const label = labelFor(refs[i], stored);
+        return detail === -1 ? label : label + part.slice(detail);
+      })
+      .join(" · ");
+  };
+
+  return rows.map((r) => {
+    const refPeople = (refs: string[] | null, stored: string | null) =>
+      (refs ?? []).map((id) => person(id, stored ?? "Someone"));
+    return {
+      id: r.id,
+      trip_id: r.trip_id,
+      entity_type: r.entity_type,
+      entity_id: r.entity_id,
+      entity_label: r.entity_label,
+      action: r.action,
+      field: r.field,
+      old_value: relabel(r.old_value, r.old_refs),
+      new_value: relabel(r.new_value, r.new_refs),
+      old_people: refPeople(r.old_refs, r.old_value),
+      new_people: refPeople(r.new_refs, r.new_value),
+      by: r.changed_by
+        ? person(r.changed_by, r.changed_by_label)
+        : { id: null, label: r.changed_by_label, present: false },
+      changed_at: r.changed_at,
+    };
+  });
+}
+
+/** History of one booking/expense/settlement/party, newest first. */
+export async function getAuditForEntity(
+  userId: string,
+  entityType: AuditEntityType,
+  entityId: string,
+) {
+  const rows = await db
+    .select()
+    .from(tables.auditLog)
+    .where(
+      and(eq(tables.auditLog.entity_type, entityType), eq(tables.auditLog.entity_id, entityId)),
+    )
+    .orderBy(desc(tables.auditLog.changed_at));
+  if (rows.length === 0) return [];
+  const allowed = await auditReadableTrips(userId, [...new Set(rows.map((r) => r.trip_id))]);
+  return resolveAuditRows(rows.filter((r) => allowed.has(r.trip_id)));
+}
+
+/** Most recent entries for a whole trip, deletions included. */
+const TRIP_AUDIT_LIMIT = 100;
+
+export async function getAuditForTrip(userId: string, tripId: string) {
+  const allowed = await auditReadableTrips(userId, [tripId]);
+  if (!allowed.has(tripId)) return { entries: [], truncated: false };
+  // One over the cap, so "there is more history than this" is known rather than
+  // guessed — the feed says so instead of silently ending.
+  const rows = await db
+    .select()
+    .from(tables.auditLog)
+    .where(eq(tables.auditLog.trip_id, tripId))
+    .orderBy(desc(tables.auditLog.changed_at))
+    .limit(TRIP_AUDIT_LIMIT + 1);
+  return {
+    entries: await resolveAuditRows(rows.slice(0, TRIP_AUDIT_LIMIT)),
+    truncated: rows.length > TRIP_AUDIT_LIMIT,
+  };
 }

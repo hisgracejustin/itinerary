@@ -9,6 +9,13 @@ import { requireAdmin, requireTripAccess, requireTripMembers } from "@/lib/authz
 import { partySchema } from "@/lib/schemas";
 import { hashPin } from "@/lib/pin";
 import { AppError } from "@/lib/errors";
+import {
+  partyMemberIds,
+  partyMembersChange,
+  recordChanges,
+  recordCreated,
+  recordDeleted,
+} from "@/lib/audit";
 
 const revalidateApp = () => revalidatePath("/", "layout");
 
@@ -254,14 +261,19 @@ export async function removeTripMemberAction(input: unknown) {
 
 const OWNER_ONLY_ARR = [...OWNER_ONLY];
 
-/** Confirm a party belongs to the given trip (owner already verified). */
+/**
+ * Confirm a party belongs to the given trip (owner already verified), and hand
+ * back its current name — the audit entries need the name as it stands before
+ * the write.
+ */
 async function partyInTrip(tripId: string, partyId: string) {
   const [row] = await db
-    .select({ id: tables.tripParties.id })
+    .select({ id: tables.tripParties.id, name: tables.tripParties.name })
     .from(tables.tripParties)
     .where(and(eq(tables.tripParties.id, partyId), eq(tables.tripParties.trip_id, tripId)))
     .limit(1);
   if (!row) throw new AppError("That party isn't on this trip");
+  return row;
 }
 
 /**
@@ -293,6 +305,21 @@ export async function createPartyAction(input: unknown) {
             ),
           );
       }
+      const subject = {
+        trip_id: data.trip_id,
+        entity_type: "party" as const,
+        entity_id: created.id,
+        entity_label: created.name,
+      };
+      await recordCreated(tx, user, subject);
+      // Who it was created WITH is a separate line: it's the same membership
+      // change that setMemberPartyAction logs later, so it reads the same way.
+      await recordChanges(
+        tx,
+        user,
+        subject,
+        await partyMembersChange(tx, [], data.member_ids),
+      );
       return created;
     });
     revalidateApp();
@@ -310,11 +337,26 @@ export async function renamePartyAction(input: unknown) {
   return runAction(async (user) => {
     const data = renamePartySchema.parse(input);
     await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
-    await partyInTrip(data.trip_id, data.party_id);
-    await db
-      .update(tables.tripParties)
-      .set({ name: data.name })
-      .where(eq(tables.tripParties.id, data.party_id));
+    const party = await partyInTrip(data.trip_id, data.party_id);
+    await transaction(async (tx) => {
+      await tx
+        .update(tables.tripParties)
+        .set({ name: data.name })
+        .where(eq(tables.tripParties.id, data.party_id));
+      await recordChanges(
+        tx,
+        user,
+        {
+          trip_id: data.trip_id,
+          entity_type: "party",
+          entity_id: data.party_id,
+          entity_label: data.name,
+        },
+        party.name === data.name
+          ? []
+          : [{ field: "name", old_value: party.name, new_value: data.name }],
+      );
+    });
     revalidateApp();
     return { party_id: data.party_id, name: data.name };
   });
@@ -330,8 +372,16 @@ export async function deletePartyAction(input: unknown) {
   return runAction(async (user) => {
     const data = deletePartySchema.parse(input);
     await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
-    await partyInTrip(data.trip_id, data.party_id);
-    await db.delete(tables.tripParties).where(eq(tables.tripParties.id, data.party_id));
+    const party = await partyInTrip(data.trip_id, data.party_id);
+    await transaction(async (tx) => {
+      await tx.delete(tables.tripParties).where(eq(tables.tripParties.id, data.party_id));
+      await recordDeleted(tx, user, {
+        trip_id: data.trip_id,
+        entity_type: "party",
+        entity_id: data.party_id,
+        entity_label: party.name,
+      });
+    });
     revalidateApp();
     return { party_id: data.party_id };
   });
@@ -692,16 +742,50 @@ export async function setMemberPartyAction(input: unknown) {
     const data = setMemberPartySchema.parse(input);
     await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
     await requireTripMembers(data.trip_id, [data.user_id]);
-    if (data.party_id) await partyInTrip(data.trip_id, data.party_id);
-    await db
-      .update(tables.tripMembers)
-      .set({ party_id: data.party_id })
+    const target = data.party_id ? await partyInTrip(data.trip_id, data.party_id) : null;
+    // A move touches TWO parties — the one they left and the one they joined —
+    // and each gets its own entry, because each one's settlement unit changed.
+    const [current] = await db
+      .select({ party_id: tables.tripMembers.party_id })
+      .from(tables.tripMembers)
       .where(
         and(
           eq(tables.tripMembers.trip_id, data.trip_id),
           eq(tables.tripMembers.user_id, data.user_id),
         ),
-      );
+      )
+      .limit(1);
+    const previous = current?.party_id ? await partyInTrip(data.trip_id, current.party_id) : null;
+
+    await transaction(async (tx) => {
+      const before = new Map<string, string[]>();
+      for (const p of [previous, target]) {
+        if (p) before.set(p.id, await partyMemberIds(tx, p.id));
+      }
+      await tx
+        .update(tables.tripMembers)
+        .set({ party_id: data.party_id })
+        .where(
+          and(
+            eq(tables.tripMembers.trip_id, data.trip_id),
+            eq(tables.tripMembers.user_id, data.user_id),
+          ),
+        );
+      for (const p of [previous, target]) {
+        if (!p) continue;
+        await recordChanges(
+          tx,
+          user,
+          {
+            trip_id: data.trip_id,
+            entity_type: "party",
+            entity_id: p.id,
+            entity_label: p.name,
+          },
+          await partyMembersChange(tx, before.get(p.id) ?? [], await partyMemberIds(tx, p.id)),
+        );
+      }
+    });
     revalidateApp();
     return { user_id: data.user_id, party_id: data.party_id };
   });
