@@ -1,6 +1,16 @@
 import { auth } from "@/auth";
 import { naiveStamp } from "@/lib/airports";
 import { sanitizeCancellationPolicy } from "@/lib/cancellation";
+import {
+  estimateCostUsd,
+  getProvider,
+  ProviderConfigError,
+  ProviderEmptyError,
+  ProviderHttpError,
+  type ModelProvider,
+  type ParseRequest,
+  type ParseResult,
+} from "@/lib/ai/provider";
 // Whatever this runtime's ICU actually knows is the only honest definition of "a
 // zone we can use" — the value ends up in Intl.DateTimeFormat. Shared with the
 // schema and the form so all three accept exactly the same set.
@@ -191,77 +201,64 @@ export async function POST(req: Request) {
       }
     }
 
-    const apiKey = process.env.POE_API_KEY;
-    if (!apiKey) {
-      return json({ error: "Server misconfiguration: missing API key" }, 500);
-    }
-
-    let userContent: unknown[];
-    if (isTextMode) {
-      userContent = [
-        {
-          type: "text",
-          text: trip
-            ? `Parse this booking document text. The trip context is: "${trip}".\n\n---\n${text}`
-            : `Parse this booking document text.\n\n---\n${text}`,
-        },
-      ];
-    } else {
-      userContent = [
-        {
-          type: "image_url",
-          image_url: { url: `data:${mimeType};base64,${file}` },
-        },
-        {
-          type: "text",
-          text: trip
-            ? `Parse this booking document. The trip context is: "${trip}".`
-            : "Parse this booking document.",
-        },
-      ];
-    }
-
-    let poeResponse: Response;
+    // Which vendor answers is an env decision (AI_PROVIDER); the request we
+    // build and everything we do with the reply is the same for all of them.
+    let provider: ModelProvider;
     try {
-      poeResponse = await fetch("https://api.poe.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "claude-haiku-4.5",
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: userContent },
-          ],
-          stream: false,
-          temperature: 0,
-        }),
-        // Abort short of maxDuration so a hung upstream returns a real message
-        // instead of the platform's opaque function timeout.
-        signal: AbortSignal.timeout(45_000),
-      });
+      provider = getProvider();
+    } catch (err) {
+      if (err instanceof ProviderConfigError) {
+        console.error("AI provider misconfigured:", err.message);
+        return json({ error: "Server misconfiguration: missing API key" }, 500);
+      }
+      throw err;
+    }
+
+    // The trip context and the "text"/"document" wording are folded into one
+    // instruction string so each adapter only has to place it (alongside the
+    // image, or ahead of the extracted text). This reproduces the exact prompt
+    // the route sent before providers were pluggable.
+    const tripSuffix = trip ? ` The trip context is: "${trip}".` : "";
+    const parseReq: ParseRequest = isTextMode
+      ? { system: SYSTEM_PROMPT, instruction: `Parse this booking document text.${tripSuffix}`, text }
+      : {
+          system: SYSTEM_PROMPT,
+          instruction: `Parse this booking document.${tripSuffix}`,
+          image: { mimeType, base64: file },
+        };
+
+    let result: ParseResult;
+    try {
+      // Abort short of maxDuration so a hung upstream returns a real message
+      // instead of the platform's opaque function timeout.
+      result = await provider.parse(parseReq, AbortSignal.timeout(45_000));
     } catch (err) {
       const name = err instanceof Error ? err.name : "";
       if (name === "TimeoutError" || name === "AbortError") {
         return json({ error: "The parsing service took too long — try again." }, 504);
       }
+      if (err instanceof ProviderHttpError) {
+        console.error("AI provider error:", err.status, err.body);
+        return json({ error: `AI service error (${err.status}). Please try again.` }, 502);
+      }
+      if (err instanceof ProviderEmptyError) {
+        return json({ error: "No response from AI. Please try again." }, 502);
+      }
       throw err;
     }
 
-    if (!poeResponse.ok) {
-      const errBody = await poeResponse.text();
-      console.error("Poe API error:", poeResponse.status, errBody);
-      return json({ error: `AI service error (${poeResponse.status}). Please try again.` }, 502);
+    // What this parse actually cost, when the vendor reports token usage — the
+    // measured answer to "how much per parse" rather than a guess.
+    if (result.usage) {
+      const cost = estimateCostUsd(provider.model, result.usage);
+      console.log(
+        `[parse-booking] provider=${provider.id} model=${provider.model} ` +
+          `in=${result.usage.inputTokens} out=${result.usage.outputTokens}` +
+          (cost != null ? ` ~$${cost.toFixed(4)}` : ""),
+      );
     }
 
-    const poeData = await poeResponse.json();
-    const content = poeData.choices?.[0]?.message?.content;
-
-    if (!content) {
-      return json({ error: "No response from AI. Please try again." }, 502);
-    }
+    const content = result.content;
 
     let parsed: Record<string, unknown>;
     try {
