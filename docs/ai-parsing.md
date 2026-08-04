@@ -94,5 +94,7 @@ network-first by the service worker, so a version bump busts stale caches.
 
 - Image upload → bookings extracted → form pre-filled with `source: "parsed"`.
 - PDF upload → client extracts text → same result.
+- A parsed timezone is shown as an AI suggestion but left unselected; saving is
+  blocked until the user confirms it or manually chooses another timezone.
 - Non-booking image → friendly `422` message; oversized file → `400`/`422`.
 - `curl -X POST /api/parse-booking` without a session → `401`.

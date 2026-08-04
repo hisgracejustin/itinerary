@@ -160,10 +160,10 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
           : [],
         charged_currency: booking.charged_currency || '',
         charged_rate: booking.charged_rate != null ? String(booking.charged_rate) : '',
-        // Only what the booking actually carries. A stored zone is an answer
-        // already given and a parsed one is what the document itself said —
-        // both are pre-selected; nothing else fills this field but a person.
-        timezone: booking.timezone || '',
+        // A saved booking's zone was already accepted by a person. A zone on a
+        // new parsed booking is only an AI suggestion, so leave the field empty
+        // until the person confirms it or chooses another zone.
+        timezone: booking.id ? booking.timezone || '' : '',
         // ports_of_call is stored as an array (the cards join it), but the
         // generic detail input binds a string — an array would coerce to "a,b"
         // and save straight back as a string, breaking the .join() render.
@@ -264,10 +264,10 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
 
   // The timezone row is collapsible, and a REQUIRED field hidden inside a
   // collapsed row is a trap — so a form that opens with no zone opens the row
-  // too. Read from the booking, not from form.timezone, which is empty for one
-  // render while the seeding effect runs: an edit whose answer already exists
-  // keeps opening collapsed, as before. Failed saves re-open it (see below).
-  const [zoneOpen, setZoneOpen] = useState(!booking?.timezone)
+  // too. Only a saved booking's zone counts as an existing answer; a parsed
+  // zone is an unaccepted suggestion and must be visible. Failed saves re-open
+  // it too (see below).
+  const [zoneOpen, setZoneOpen] = useState(!(booking?.id && booking?.timezone))
 
   // Lifted to the modal, which renders the summary chip beside Save. Serialized
   // as the effect's dependency rather than passed as an array: setField rebuilds
@@ -496,7 +496,11 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
             ) : (
               <>
                 <p className="text-on-surface">
-                  {suggestion.kind === 'stored' ? 'Saved on this booking:' : 'Suggested:'}{' '}
+                  {suggestion.kind === 'stored'
+                    ? 'Saved on this booking:'
+                    : suggestion.kind === 'document'
+                      ? 'AI suggested from the document:'
+                      : 'Suggested:'}{' '}
                   <span className="font-medium break-all">{suggestion.zone.replace(/_/g, ' ')}</span>
                 </p>
                 {suggestion.kind !== 'stored' && (
@@ -510,7 +514,11 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
             onClick={() => setField('timezone', suggestion.zone)}
             className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-primary text-white hover:bg-primary-dark active:scale-[0.97] transition-all duration-150"
           >
-            {suggestion.kind === 'stored' ? 'Restore' : 'Use this'}
+            {suggestion.kind === 'stored'
+              ? 'Restore'
+              : suggestion.kind === 'document'
+                ? 'Confirm'
+                : 'Use this'}
           </button>
         </div>
       )}
