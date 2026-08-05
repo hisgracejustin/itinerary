@@ -67,6 +67,17 @@ export default function Sidebar({ user, trips, onNavigate }) {
           label="To-dos"
         />
         <NavItem
+          to={navHref("/considering")}
+          active={pathname === "/considering"}
+          onClick={onNavigate}
+          icon={
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 16l2.879-2.879m0 0a3 3 0 104.243-4.242 3 3 0 00-4.243 4.242zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          }
+          label="Considering"
+        />
+        <NavItem
           to={navHref("/costs")}
           active={pathname === "/costs"}
           onClick={onNavigate}

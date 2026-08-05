@@ -9,6 +9,7 @@ import { useTripContext } from "../lib/trip-context";
 const SECTION_TITLES = {
   "/": "Calendar",
   "/todos": "To-dos",
+  "/considering": "Considering",
   "/costs": "Costs",
   "/settle": "Settle up",
   "/settings": "Settings",

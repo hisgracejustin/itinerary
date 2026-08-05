@@ -1,4 +1,5 @@
 import {
+  boolean,
   customType,
   index,
   integer,
@@ -12,7 +13,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import type { AdapterAccountType } from "next-auth/adapters";
 
@@ -108,6 +109,8 @@ export const bookingSource = pgEnum("booking_source", ["manual", "parsed"]);
 // Board column a to-do lives in. `done` replaces the old `completed` boolean
 // (completed=true → done); `todo`/`in_progress` are the two open columns.
 export const todoStatus = pgEnum("todo_status", ["todo", "in_progress", "done"]);
+// Planning board for alternatives not yet on the calendar.
+export const optionSetStatus = pgEnum("option_set_status", ["open", "decided", "dropped"]);
 
 export const trips = pgTable("trips", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -286,6 +289,83 @@ export const dayReminders = pgTable(
     index("idx_day_reminders_date").on(t.date),
     index("idx_day_reminders_trip_id").on(t.trip_id),
   ],
+);
+
+// A planning "decision" — e.g. "HK Staycation Sep 9–11" — holding several
+// alternatives. Never shown on the calendar; convert a pick into a booking.
+export const optionSets = pgTable(
+  "option_sets",
+  {
+    id: text("id").primaryKey(),
+    trip_id: uuid("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    start_date: text("start_date"),
+    end_date: text("end_date"),
+    type: bookingType("type").notNull(),
+    status: optionSetStatus("status").notNull().default("open"),
+    notes: text("notes"),
+    created_by: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    created_at: createdAt(),
+  },
+  (t) => [
+    index("idx_option_sets_trip_id").on(t.trip_id),
+    index("idx_option_sets_status").on(t.status),
+  ],
+);
+
+// One candidate inside an option set (a hotel, activity, flight…).
+export const options = pgTable(
+  "options",
+  {
+    id: text("id").primaryKey(),
+    option_set_id: text("option_set_id")
+      .notNull()
+      .references(() => optionSets.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    url: text("url"),
+    cost_amount: numeric("cost_amount", { mode: "number" }),
+    cost_currency: text("cost_currency"),
+    pros: jsonb("pros").$type<string[]>().notNull().default([]),
+    cons: jsonb("cons").$type<string[]>().notNull().default([]),
+    notes: text("notes"),
+    sort_order: integer("sort_order").notNull().default(0),
+    is_pick: boolean("is_pick").notNull().default(false),
+    // Set when "Book this" creates a real booking; set-null if that booking is deleted.
+    converted_booking_id: text("converted_booking_id").references(() => bookings.id, {
+      onDelete: "set null",
+    }),
+    created_at: createdAt(),
+  },
+  (t) => [
+    index("idx_options_option_set_id").on(t.option_set_id),
+    index("idx_options_sort_order").on(t.sort_order),
+    uniqueIndex("idx_options_one_pick_per_set")
+      .on(t.option_set_id)
+      .where(sql`${t.is_pick} = true`),
+  ],
+);
+
+// Photos for an option — image bytes only (see OPTION_IMAGE_ALLOWED_TYPES).
+export const optionImages = pgTable(
+  "option_images",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    option_id: text("option_id")
+      .notNull()
+      .references(() => options.id, { onDelete: "cascade" }),
+    filename: text("filename").notNull(),
+    mime_type: text("mime_type").notNull(),
+    size_bytes: integer("size_bytes").notNull(),
+    content: bytea("content").notNull(),
+    sort_order: integer("sort_order").notNull().default(0),
+    uploaded_by: text("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+    created_at: createdAt(),
+  },
+  (t) => [index("idx_option_images_option_id").on(t.option_id)],
 );
 
 // Settlement units — a couple or group that settles as one. Members point at a
@@ -477,6 +557,7 @@ export const tripsRelations = relations(trips, ({ many }) => ({
   todos: many(todos),
   dayNotes: many(dayNotes),
   dayReminders: many(dayReminders),
+  optionSets: many(optionSets),
   parties: many(tripParties),
   expenses: many(expenses),
   settlements: many(settlements),
@@ -546,10 +627,30 @@ export const dayRemindersRelations = relations(dayReminders, ({ one }) => ({
   trip: one(trips, { fields: [dayReminders.trip_id], references: [trips.id] }),
 }));
 
+export const optionSetsRelations = relations(optionSets, ({ one, many }) => ({
+  trip: one(trips, { fields: [optionSets.trip_id], references: [trips.id] }),
+  options: many(options),
+}));
+
+export const optionsRelations = relations(options, ({ one, many }) => ({
+  optionSet: one(optionSets, { fields: [options.option_set_id], references: [optionSets.id] }),
+  images: many(optionImages),
+  convertedBooking: one(bookings, {
+    fields: [options.converted_booking_id],
+    references: [bookings.id],
+  }),
+}));
+
+export const optionImagesRelations = relations(optionImages, ({ one }) => ({
+  option: one(options, { fields: [optionImages.option_id], references: [options.id] }),
+  uploadedBy: one(users, { fields: [optionImages.uploaded_by], references: [users.id] }),
+}));
+
 /* ---------------------------------- types ---------------------------------- */
 
 export type TripRole = (typeof tripRole.enumValues)[number];
 export type TodoStatus = (typeof todoStatus.enumValues)[number];
+export type OptionSetStatus = (typeof optionSetStatus.enumValues)[number];
 export type Trip = typeof trips.$inferSelect;
 export type TripMember = typeof tripMembers.$inferSelect;
 export type Booking = typeof bookings.$inferSelect;
@@ -561,6 +662,12 @@ export type NewTodo = typeof todos.$inferInsert;
 export type DayNote = typeof dayNotes.$inferSelect;
 export type DayReminder = typeof dayReminders.$inferSelect;
 export type NewDayReminder = typeof dayReminders.$inferInsert;
+export type OptionSet = typeof optionSets.$inferSelect;
+export type NewOptionSet = typeof optionSets.$inferInsert;
+export type Option = typeof options.$inferSelect;
+export type NewOption = typeof options.$inferInsert;
+export type OptionImage = typeof optionImages.$inferSelect;
+export type NewOptionImage = typeof optionImages.$inferInsert;
 export type TripParty = typeof tripParties.$inferSelect;
 export type NewTripParty = typeof tripParties.$inferInsert;
 export type BookingSplit = typeof bookingSplits.$inferSelect;

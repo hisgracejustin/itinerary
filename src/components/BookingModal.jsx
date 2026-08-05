@@ -76,7 +76,9 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
   // The booking currently shown (updated in place after save so view mode reflects
   // fresh data). null until a brand-new booking is created.
   const [current, setCurrent] = useState(booking)
-  const [editing, setEditing] = useState(!booking) // existing → view first; new → edit
+  // Drafts without an id (e.g. "Book this" from Considering) open in edit mode
+  // like a brand-new booking, while still prefilling the form from `booking`.
+  const [editing, setEditing] = useState(!booking?.id) // existing → view first; new → edit
   const [stagedFiles, setStagedFiles] = useState([]) // pending attachments for a not-yet-saved booking
   // The form's own validation errors, lifted so the summary chip can sit beside
   // the Save button — the one place the user is certainly looking when a save
@@ -90,8 +92,8 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
   const [saveError, setSaveError] = useState(null)
   const { toast } = useToast()
   const formRef = useRef(null)
-  const isEdit = !!booking
-  const viewMode = !!current && !editing && mode !== 'multi-review'
+  const isEdit = !!booking?.id
+  const viewMode = !!current?.id && !editing && mode !== 'multi-review'
 
   // Whether all parsed bookings are flights (layover-eligible)
   const allFlights = parsedBookings.length > 1 && parsedBookings.every(b => b.type === 'flight')
@@ -240,7 +242,7 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
                   ? (current?.title || 'Booking')
                   : mode === 'multi-review'
                   ? `Booking ${currentIndex + 1} of ${parsedBookings.length}`
-                  : current
+                  : current?.id
                   ? 'Edit Booking'
                   : 'New Booking'}
               </h2>

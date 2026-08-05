@@ -134,6 +134,20 @@
       "when": 1785749777921,
       "tag": "0018_fair_nightcrawler",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785896459627,
+      "tag": "0019_ambiguous_prodigy",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785910741061,
+      "tag": "0020_sturdy_shooting_star",
+      "breakpoints": true
     }
   ]
 }

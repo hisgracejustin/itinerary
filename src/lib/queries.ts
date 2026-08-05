@@ -20,6 +20,8 @@ const todoCols = getTableColumns(tables.todos);
 const dayNoteCols = getTableColumns(tables.dayNotes);
 const expenseCols = getTableColumns(tables.expenses);
 const settlementCols = getTableColumns(tables.settlements);
+const optionSetCols = getTableColumns(tables.optionSets);
+const optionCols = getTableColumns(tables.options);
 
 /** Load booking_splits for a set of booking ids, grouped `booking_id → rows[]`. */
 async function bookingSplitsByBooking(bookingIds: string[]) {
@@ -691,6 +693,76 @@ export async function getAuditForEntity(
   if (rows.length === 0) return [];
   const allowed = await auditReadableTrips(userId, [...new Set(rows.map((r) => r.trip_id))]);
   return resolveAuditRows(rows.filter((r) => allowed.has(r.trip_id)));
+}
+
+/**
+ * Option sets (decisions) with nested options and image metadata for every
+ * accessible trip (or a trip filter). Image bytes are never loaded here — the
+ * UI fetches `/api/option-images/[id]` when rendering a photo.
+ */
+export async function getOptionSetsForUser(userId: string, tripId?: TripFilter) {
+  const ids = toTripIds(tripId);
+  const setBase = db
+    .select(optionSetCols)
+    .from(tables.optionSets)
+    .innerJoin(
+      tables.tripMembers,
+      and(
+        eq(tables.tripMembers.trip_id, tables.optionSets.trip_id),
+        eq(tables.tripMembers.user_id, userId),
+      ),
+    );
+  const sets = ids
+    ? await setBase
+        .where(inArray(tables.optionSets.trip_id, ids))
+        .orderBy(desc(tables.optionSets.created_at))
+    : await setBase.orderBy(desc(tables.optionSets.created_at));
+
+  if (sets.length === 0) return [];
+
+  const setIds = sets.map((s) => s.id);
+  const optionRows = await db
+    .select(optionCols)
+    .from(tables.options)
+    .where(inArray(tables.options.option_set_id, setIds))
+    .orderBy(asc(tables.options.sort_order), asc(tables.options.created_at));
+
+  const optionIds = optionRows.map((o) => o.id);
+  const imageRows =
+    optionIds.length === 0
+      ? []
+      : await db
+          .select({
+            id: tables.optionImages.id,
+            option_id: tables.optionImages.option_id,
+            filename: tables.optionImages.filename,
+            mime_type: tables.optionImages.mime_type,
+            size_bytes: tables.optionImages.size_bytes,
+            sort_order: tables.optionImages.sort_order,
+            created_at: tables.optionImages.created_at,
+          })
+          .from(tables.optionImages)
+          .where(inArray(tables.optionImages.option_id, optionIds))
+          .orderBy(asc(tables.optionImages.sort_order), asc(tables.optionImages.created_at));
+
+  const imagesByOption = new Map<string, typeof imageRows>();
+  for (const img of imageRows) {
+    const list = imagesByOption.get(img.option_id) ?? [];
+    list.push(img);
+    imagesByOption.set(img.option_id, list);
+  }
+
+  const optionsBySet = new Map<string, (typeof optionRows[number] & { images: typeof imageRows })[]>();
+  for (const opt of optionRows) {
+    const list = optionsBySet.get(opt.option_set_id) ?? [];
+    list.push({ ...opt, images: imagesByOption.get(opt.id) ?? [] });
+    optionsBySet.set(opt.option_set_id, list);
+  }
+
+  return sets.map((set) => ({
+    ...set,
+    options: optionsBySet.get(set.id) ?? [],
+  }));
 }
 
 /** Most recent entries for a whole trip, deletions included. */

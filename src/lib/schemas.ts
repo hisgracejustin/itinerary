@@ -304,3 +304,47 @@ export const tripInsertSchema = z.object({
 });
 
 export const tripUpdateSchema = tripInsertSchema.partial();
+
+export const optionSetStatusSchema = z.enum(["open", "decided", "dropped"]);
+
+export const optionSetInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  trip_id: z.string().uuid(),
+  title: z.string().trim().min(1).max(200),
+  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+  type: bookingTypeSchema,
+  status: optionSetStatusSchema.optional(),
+  notes: z.string().max(20_000).nullish(),
+});
+
+export const optionSetUpdateSchema = optionSetInsertSchema.omit({ id: true }).partial();
+
+const stringListSchema = z.array(z.string()).default([]);
+
+export const optionInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  option_set_id: z.string().min(1),
+  title: z.string().trim().min(1).max(200),
+  url: z
+    .string()
+    .url()
+    .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+      message: "URL must use http or https",
+    })
+    .nullish(),
+  cost_amount: z.number().finite().nonnegative().nullish(),
+  cost_currency: z
+    .enum([
+      "HKD", "USD", "EUR", "GBP", "JPY", "CNY", "CAD", "AUD",
+      "SGD", "THB", "KRW", "TWD", "NZD", "CHF", "INR",
+    ])
+    .nullish(),
+  pros: stringListSchema.pipe(z.array(z.string().max(500)).max(50)).optional(),
+  cons: stringListSchema.pipe(z.array(z.string().max(500)).max(50)).optional(),
+  notes: z.string().max(20_000).nullish(),
+});
+
+export const optionUpdateSchema = optionInsertSchema
+  .omit({ id: true, option_set_id: true })
+  .partial();
