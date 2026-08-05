@@ -18,6 +18,7 @@ test("accepts an idempotency UUID and safe web URL", () => {
 
 test("rejects unsafe URLs, negative costs, and unsupported currencies", () => {
   assert.equal(optionInsertSchema.safeParse({ ...valid, url: "javascript:alert(1)" }).success, false);
+  assert.equal(optionInsertSchema.safeParse({ ...valid, url: "1" }).success, false);
   assert.equal(optionInsertSchema.safeParse({ ...valid, cost_amount: -1 }).success, false);
   assert.equal(optionInsertSchema.safeParse({ ...valid, cost_currency: "NOPE" }).success, false);
 });

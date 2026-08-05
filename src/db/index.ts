@@ -40,7 +40,13 @@ function createDb(): Db {
   // that "works" (an empty DB per instance) and loses every write on cold start.
   // `next build` sets NEXT_PHASE, so a local build without DATABASE_URL still
   // passes page-data collection; at serve time a missing URL is a hard error.
-  if (process.env.NODE_ENV === "production" && process.env.NEXT_PHASE !== "phase-production-build") {
+  // ALLOW_PGLITE=1 is an explicit opt-in for low-memory remote boxes that run
+  // `next start` against the local .data/pglite file (e.g. npm run cf).
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.NEXT_PHASE !== "phase-production-build" &&
+    process.env.ALLOW_PGLITE !== "1"
+  ) {
     throw new Error("DATABASE_URL must be a postgres:// URL in production");
   }
   // Local dev fallback — persistent embedded Postgres.

@@ -59,6 +59,14 @@ function formatDateRange(start, end) {
   return start || end;
 }
 
+function isValidWebUrl(value) {
+  try {
+    return ["http:", "https:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
 function linesToList(text) {
   return String(text || "")
     .split("\n")
@@ -92,10 +100,41 @@ async function fetchWithTimeout(url, init, timeoutMs, label) {
   }
 }
 
+async function fetchJsonWithTimeout(url, init, timeoutMs, label, fallback) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    return await readJsonOrThrow(response, fallback);
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error(`${label} timed out — try again`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function withDeadline(promise, timeoutMs, label) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} is taking too long. Check your connection and retry.`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Persist option via JSON API — Server Actions hang forever behind Cloudflare. */
 async function apiUpsertOption(setId, optionId, draftId, data) {
   if (optionId) {
-    const res = await fetchWithTimeout(
+    return fetchJsonWithTimeout(
       `/api/options/${optionId}`,
       {
         method: "PATCH",
@@ -106,10 +145,10 @@ async function apiUpsertOption(setId, optionId, draftId, data) {
       },
       20_000,
       "Option save",
+      "Failed to update option",
     );
-    return readJsonOrThrow(res, "Failed to update option");
   }
-  const res = await fetchWithTimeout(
+  return fetchJsonWithTimeout(
     "/api/options",
     {
       method: "POST",
@@ -120,8 +159,8 @@ async function apiUpsertOption(setId, optionId, draftId, data) {
     },
     20_000,
     "Option save",
+    "Failed to create option",
   );
-  return readJsonOrThrow(res, "Failed to create option");
 }
 
 async function uploadOptionImages(optionId, files, onUploaded, onProgress, onAllUploaded) {
@@ -136,7 +175,7 @@ async function uploadOptionImages(optionId, files, onUploaded, onProgress, onAll
     body.append("file", file);
     let image;
     try {
-      const res = await fetchWithTimeout(
+      image = await fetchJsonWithTimeout(
         "/api/option-images",
         {
           method: "POST",
@@ -146,8 +185,8 @@ async function uploadOptionImages(optionId, files, onUploaded, onProgress, onAll
         },
         60_000,
         `Upload of ${file.name}`,
+        `Failed to upload ${file.name}`,
       );
-      image = await readJsonOrThrow(res, `Failed to upload ${file.name}`);
     } catch (error) {
       failures.push(`${file.name}: ${friendlyError(error)}`);
       continue;
@@ -267,6 +306,52 @@ function Field({ label, hint, children }) {
   );
 }
 
+function InlineError({ message, onDismiss, title = "Couldn’t save" }) {
+  if (!message) return null;
+  return (
+    <div
+      role="alert"
+      className="w-full rounded-xl border border-red-300 bg-red-50 px-3 py-2.5 text-left text-xs text-red-800"
+    >
+      <div className="flex items-start gap-2">
+        <span aria-hidden className="mt-0.5 shrink-0">⚠</span>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold">{title}</div>
+          <div className="mt-0.5 break-words leading-relaxed">{message}</div>
+        </div>
+        {onDismiss ? (
+          <button
+            type="button"
+            className="shrink-0 text-red-700 underline"
+            onClick={onDismiss}
+          >
+            Dismiss
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ProgressChip({ label, detail }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="w-full rounded-xl border border-primary/30 bg-primary-light px-3 py-2.5 text-xs text-accent-ink"
+    >
+      <div className="flex items-center gap-2 font-semibold">
+        <span
+          aria-hidden
+          className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-primary/30 border-t-primary"
+        />
+        {label}
+      </div>
+      {detail ? <div className="mt-1 pl-5.5 leading-relaxed opacity-80">{detail}</div> : null}
+    </div>
+  );
+}
+
 const inputClass = "mat-input";
 
 function DecisionForm({ trips, initial, defaultTripId, onClose, onSave }) {
@@ -280,56 +365,76 @@ function DecisionForm({ trips, initial, defaultTripId, onClose, onSave }) {
     notes: initial?.notes || "",
   });
   const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const draftIdRef = useRef(initial?.id || crypto.randomUUID());
   const { toast } = useToast();
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const submit = async () => {
     if (!form.title.trim()) {
-      toast("Title is required");
+      setSaveError("Enter a title before saving.");
       return;
     }
     if (!form.trip_id) {
-      toast("Pick a trip");
+      setSaveError("Choose which trip this decision belongs to.");
       return;
     }
     if (busy) return;
     setBusy(true);
+    setSaveError("");
     const payload = {
       ...form,
+      ...(!initial ? { id: draftIdRef.current } : {}),
       title: form.title.trim(),
       start_date: form.start_date || null,
       end_date: form.end_date || null,
       notes: form.notes || null,
     };
-    // Close before awaiting — revalidatePath can leave the action promise
-    // hanging while the list already shows the saved row.
-    onClose();
     try {
-      await onSave(payload);
+      await withDeadline(onSave(payload), 20_000, "Decision save");
+      onClose();
     } catch (e) {
-      toast(friendlyError(e));
+      const message = friendlyError(e);
+      setSaveError(message);
+      toast(message);
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
     <ModalShell
       title={initial ? "Edit decision" : "New decision"}
-      onClose={onClose}
+      onClose={busy ? () => {} : onClose}
       footer={
-        <>
-          <button type="button" className="mat-btn-outlined" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            className="mat-btn-filled disabled:opacity-50"
-            onClick={submit}
-          >
-            {busy ? "Saving…" : "Save"}
-          </button>
-        </>
+        <div className="flex w-full flex-col gap-2">
+          {busy ? (
+            <ProgressChip
+              label="Saving decision…"
+              detail="Keep this window open. It will stop automatically if the connection stalls."
+            />
+          ) : null}
+          <InlineError message={saveError} onDismiss={() => setSaveError("")} />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              className="mat-btn-outlined disabled:opacity-50"
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              className="mat-btn-filled disabled:opacity-50"
+              onClick={submit}
+            >
+              {busy ? "Saving…" : saveError ? "Retry save" : "Save"}
+            </button>
+          </div>
+        </div>
       }
     >
       <Field label="Title">
@@ -408,6 +513,7 @@ function OptionForm({ setId, initial, onClose, onSave }) {
   const [staged, setStaged] = useState([]); // { id, file, url }[]
   const [busy, setBusy] = useState(false);
   const [saveLabel, setSaveLabel] = useState("Save");
+  const [saveError, setSaveError] = useState("");
   const savingRef = useRef(false);
   const draftIdRef = useRef(initial?.id || crypto.randomUUID());
   const stagedRef = useRef(staged);
@@ -428,14 +534,15 @@ function OptionForm({ setId, initial, onClose, onSave }) {
   }, []);
 
   const onFiles = (fileList) => {
+    setSaveError("");
     const next = [];
     for (const file of fileList || []) {
       if (!isAllowedOptionImageType(file.type)) {
-        toast(`Unsupported type: ${file.type || file.name}`);
+        setSaveError(`“${file.name}” is not a supported PNG, JPEG, WebP, or GIF image.`);
         continue;
       }
       if (file.size > OPTION_IMAGE_MAX_SIZE) {
-        toast(`Max ${OPTION_IMAGE_MAX_LABEL} per photo`);
+        setSaveError(`“${file.name}” is too large. Maximum ${OPTION_IMAGE_MAX_LABEL} per photo.`);
         continue;
       }
       next.push({ id: crypto.randomUUID(), file, url: URL.createObjectURL(file) });
@@ -446,7 +553,7 @@ function OptionForm({ setId, initial, onClose, onSave }) {
     const available = Math.max(0, OPTION_IMAGE_MAX_COUNT - existingCount);
     if (next.length > available) {
       for (const item of next.slice(available)) URL.revokeObjectURL(item.url);
-      toast(`Maximum ${OPTION_IMAGE_MAX_COUNT} photos per option`);
+      setSaveError(`Maximum ${OPTION_IMAGE_MAX_COUNT} photos per option.`);
     }
     const candidates = next.slice(0, available);
     const existingBytes =
@@ -459,7 +566,7 @@ function OptionForm({ setId, initial, onClose, onSave }) {
     for (const item of candidates) {
       if (totalBytes + item.file.size > OPTION_IMAGE_MAX_TOTAL_SIZE) {
         URL.revokeObjectURL(item.url);
-        toast("Photo storage limit reached for this option");
+        setSaveError("This option has reached its 20MB photo storage limit.");
         continue;
       }
       totalBytes += item.file.size;
@@ -479,13 +586,18 @@ function OptionForm({ setId, initial, onClose, onSave }) {
 
   const submit = async () => {
     if (!form.title.trim()) {
-      toast("Title is required");
+      setSaveError("Enter a title before saving.");
+      return;
+    }
+    if (form.url.trim() && !isValidWebUrl(form.url.trim())) {
+      setSaveError("URL must start with http:// or https://");
       return;
     }
     if (savingRef.current) return;
     savingRef.current = true;
     setBusy(true);
     setSaveLabel("Saving option…");
+    setSaveError("");
 
     const amount =
       form.cost_amount === "" || form.cost_amount == null
@@ -529,7 +641,9 @@ function OptionForm({ setId, initial, onClose, onSave }) {
       );
       if (!completed) onClose();
     } catch (e) {
-      toast(friendlyError(e));
+      const message = friendlyError(e);
+      setSaveError(message);
+      toast(message);
       savingRef.current = false;
       setBusy(false);
       setSaveLabel("Retry save");
@@ -541,24 +655,33 @@ function OptionForm({ setId, initial, onClose, onSave }) {
       title={initial ? "Edit option" : "Add option"}
       onClose={busy ? () => {} : onClose}
       footer={
-        <>
-          <button
-            type="button"
-            disabled={busy}
-            className="mat-btn-outlined disabled:opacity-50"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            className="mat-btn-filled disabled:opacity-50"
-            onClick={submit}
-          >
-            {saveLabel}
-          </button>
-        </>
+        <div className="flex w-full flex-col gap-2">
+          {busy ? (
+            <ProgressChip
+              label={saveLabel}
+              detail="Photos upload one at a time. Successful photos stay saved if another one fails."
+            />
+          ) : null}
+          <InlineError message={saveError} onDismiss={() => setSaveError("")} />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              className="mat-btn-outlined disabled:opacity-50"
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              className="mat-btn-filled disabled:opacity-50"
+              onClick={submit}
+            >
+              {busy ? "Working…" : saveError ? "Retry save" : "Save"}
+            </button>
+          </div>
+        </div>
       }
     >
       <Field label="Title">
@@ -694,7 +817,7 @@ function OptionForm({ setId, initial, onClose, onSave }) {
   );
 }
 
-function OptionCard({ option, onEdit, onDelete, onPick, onBook }) {
+function OptionCard({ option, onEdit, onDelete, onPick, onBook, pending }) {
   const notesHtml = useMemo(() => renderSoftMarkdown(option.notes), [option.notes]);
   return (
     <article
@@ -765,29 +888,41 @@ function OptionCard({ option, onEdit, onDelete, onPick, onBook }) {
           </details>
         ) : null}
         <div className="flex flex-wrap gap-1.5 mt-auto pt-2">
-          <button type="button" className="mat-btn-outlined !text-xs !px-3 !py-1" onClick={onEdit}>
+          <button
+            type="button"
+            disabled={pending}
+            className="mat-btn-outlined !text-xs !px-3 !py-1 disabled:opacity-50"
+            onClick={onEdit}
+          >
             Edit
           </button>
           <button
             type="button"
+            disabled={pending}
             className={
               option.is_pick
-                ? "mat-btn-filled !text-xs !px-3 !py-1"
-                : "mat-btn-outlined !text-xs !px-3 !py-1"
+                ? "mat-btn-filled !text-xs !px-3 !py-1 disabled:opacity-50"
+                : "mat-btn-outlined !text-xs !px-3 !py-1 disabled:opacity-50"
             }
             onClick={onPick}
           >
-            {option.is_pick ? "Unpick" : "Mark as pick"}
+            {pending ? "Working…" : option.is_pick ? "Unpick" : "Mark as pick"}
           </button>
           <button
             type="button"
-            disabled={!!option.converted_booking_id}
+            disabled={pending || !!option.converted_booking_id}
             className="mat-btn-filled !text-xs !px-3 !py-1 disabled:opacity-50 disabled:cursor-default"
             onClick={onBook}
           >
             {option.converted_booking_id ? "Booked" : "Book this"}
           </button>
-          <button type="button" className="mat-icon-btn" title="Delete" onClick={onDelete}>
+          <button
+            type="button"
+            disabled={pending}
+            className="mat-icon-btn disabled:opacity-50"
+            title="Delete"
+            onClick={onDelete}
+          >
             🗑
           </button>
         </div>
@@ -807,7 +942,10 @@ export default function Considering({ initialSets }) {
   const [optionModal, setOptionModal] = useState(null); // null | { setId, option? }
   const [bookingDraft, setBookingDraft] = useState(null);
   const [linkingOptionId, setLinkingOptionId] = useState(null);
+  const [pendingAction, setPendingAction] = useState("");
+  const [actionError, setActionError] = useState("");
   const pendingOptionIdsRef = useRef(new Set());
+  const pendingActionRef = useRef("");
 
   useEffect(() => {
     setSets((prev) =>
@@ -831,6 +969,25 @@ export default function Considering({ initialSets }) {
     setSets((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   };
 
+  const runVisibleAction = async (key, label, operation) => {
+    if (pendingActionRef.current) return false;
+    pendingActionRef.current = key;
+    setPendingAction(key);
+    setActionError("");
+    try {
+      await withDeadline(operation(), 20_000, label);
+      return true;
+    } catch (error) {
+      const message = friendlyError(error);
+      setActionError(message);
+      toast(message);
+      return false;
+    } finally {
+      pendingActionRef.current = "";
+      setPendingAction("");
+    }
+  };
+
   const saveDecision = async (data) => {
     if (decisionModal && decisionModal !== "new" && decisionModal.id) {
       const row = unwrap(await updateOptionSetAction(decisionModal.id, data));
@@ -851,14 +1008,15 @@ export default function Considering({ initialSets }) {
       confirmLabel: "Delete",
     });
     if (!ok) return;
-    try {
-      unwrap(await deleteOptionSetAction(set.id));
-      setSets((prev) => prev.filter((s) => s.id !== set.id));
-      if (activeId === set.id) setActiveId(null);
-      toast("Decision deleted");
-    } catch (e) {
-      toast(friendlyError(e));
-    }
+    const succeeded = await runVisibleAction(
+      `delete-set:${set.id}`,
+      "Decision deletion",
+      async () => unwrap(await deleteOptionSetAction(set.id)),
+    );
+    if (!succeeded) return;
+    setSets((prev) => prev.filter((s) => s.id !== set.id));
+    if (activeId === set.id) setActiveId(null);
+    toast("Decision deleted");
   };
 
   const saveOption = async (
@@ -998,23 +1156,28 @@ export default function Considering({ initialSets }) {
       confirmLabel: "Delete",
     });
     if (!ok) return;
-    try {
-      unwrap(await deleteOptionAction(option.id));
-      setSets((prev) =>
-        prev.map((s) =>
-          s.id !== setId ? s : { ...s, options: s.options.filter((o) => o.id !== option.id) },
-        ),
-      );
-      toast("Option deleted");
-    } catch (e) {
-      toast(friendlyError(e));
-    }
+    const succeeded = await runVisibleAction(
+      `delete-option:${option.id}`,
+      "Option deletion",
+      async () => unwrap(await deleteOptionAction(option.id)),
+    );
+    if (!succeeded) return;
+    setSets((prev) =>
+      prev.map((s) =>
+        s.id !== setId ? s : { ...s, options: s.options.filter((o) => o.id !== option.id) },
+      ),
+    );
+    toast("Option deleted");
   };
 
   const markPick = async (setId, option) => {
-    try {
-      if (option.is_pick) {
-        unwrap(await unpickOptionAction(option.id));
+    if (option.is_pick) {
+      const succeeded = await runVisibleAction(
+        `pick:${option.id}`,
+        "Clearing pick",
+        async () => unwrap(await unpickOptionAction(option.id)),
+      );
+      if (succeeded) {
         setSets((prev) =>
           prev.map((s) =>
             s.id !== setId
@@ -1029,9 +1192,15 @@ export default function Considering({ initialSets }) {
           ),
         );
         toast("Pick cleared");
-        return;
       }
-      unwrap(await markOptionPickAction(option.id));
+      return;
+    }
+    const succeeded = await runVisibleAction(
+      `pick:${option.id}`,
+      "Selecting option",
+      async () => unwrap(await markOptionPickAction(option.id)),
+    );
+    if (succeeded) {
       setSets((prev) =>
         prev.map((s) =>
           s.id !== setId
@@ -1047,8 +1216,6 @@ export default function Considering({ initialSets }) {
         ),
       );
       toast("Marked as pick");
-    } catch (e) {
-      toast(friendlyError(e));
     }
   };
 
@@ -1104,7 +1271,9 @@ export default function Considering({ initialSets }) {
           }),
         );
       } catch (e) {
-        toast(friendlyError(e));
+        const message = `Booking was created, but it could not be linked to this option. ${friendlyError(e)}`;
+        setActionError(message);
+        toast(message);
       }
     }
     setBookingDraft(null);
@@ -1126,13 +1295,20 @@ export default function Considering({ initialSets }) {
           </div>
           <button
             type="button"
-            disabled={!trips.length}
+            disabled={!trips.length || !!pendingAction}
             className="mat-btn-filled disabled:opacity-40 shrink-0"
             onClick={() => setDecisionModal("new")}
           >
             + New decision
           </button>
         </div>
+
+        {pendingAction ? <ProgressChip label="Updating Considering…" detail="This will stop automatically if the connection stalls." /> : null}
+        <InlineError
+          title="Action failed"
+          message={actionError}
+          onDismiss={() => setActionError("")}
+        />
 
         {showTripChips && (
           <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1">
@@ -1228,6 +1404,12 @@ export default function Considering({ initialSets }) {
   return (
     <div className="w-full max-w-6xl mx-auto">
       {confirmDialog}
+      {pendingAction ? <ProgressChip label="Updating Considering…" detail="This will stop automatically if the connection stalls." /> : null}
+      <InlineError
+        title="Action failed"
+        message={actionError}
+        onDismiss={() => setActionError("")}
+      />
       <div className="sticky top-0 z-10 bg-surface-dim/95 backdrop-blur-sm pb-4 mb-5 border-b border-outline-variant -mt-1 pt-1">
         <div className="flex items-center gap-1.5 text-xs text-on-surface-variant mb-2.5">
           <button
@@ -1261,19 +1443,26 @@ export default function Considering({ initialSets }) {
             ) : null}
           </div>
           <div className="flex gap-2 flex-wrap">
-            <button type="button" className="mat-btn-outlined !text-xs !px-3 !py-1.5" onClick={() => setDecisionModal(active)}>
+            <button
+              type="button"
+              disabled={!!pendingAction}
+              className="mat-btn-outlined !text-xs !px-3 !py-1.5 disabled:opacity-50"
+              onClick={() => setDecisionModal(active)}
+            >
               Edit
             </button>
             <button
               type="button"
-              className="mat-btn-outlined !text-xs !px-3 !py-1.5 !border-red-300 !text-red-600 hover:!bg-red-50"
+              disabled={!!pendingAction}
+              className="mat-btn-outlined !text-xs !px-3 !py-1.5 !border-red-300 !text-red-600 hover:!bg-red-50 disabled:opacity-50"
               onClick={() => deleteDecision(active)}
             >
               Delete
             </button>
             <button
               type="button"
-              className="mat-btn-filled !text-xs !px-3 !py-1.5"
+              disabled={!!pendingAction}
+              className="mat-btn-filled !text-xs !px-3 !py-1.5 disabled:opacity-50"
               onClick={() => setOptionModal({ setId: active.id })}
             >
               + Add option
@@ -1291,13 +1480,15 @@ export default function Considering({ initialSets }) {
               onDelete={() => deleteOption(active.id, option)}
               onPick={() => markPick(active.id, option)}
               onBook={() => openBook(active, option)}
+              pending={!!pendingAction}
             />
           </div>
         ))}
         <button
           type="button"
+          disabled={!!pendingAction}
           onClick={() => setOptionModal({ setId: active.id })}
-          className="w-[280px] shrink-0 snap-start sm:w-auto sm:shrink border-2 border-dashed border-outline rounded-2xl min-h-[320px] flex flex-col items-center justify-center gap-2 text-on-surface-variant hover:border-primary hover:bg-primary-light hover:text-accent-ink transition-colors"
+          className="w-[280px] shrink-0 snap-start sm:w-auto sm:shrink border-2 border-dashed border-outline rounded-2xl min-h-[320px] flex flex-col items-center justify-center gap-2 text-on-surface-variant hover:border-primary hover:bg-primary-light hover:text-accent-ink transition-colors disabled:opacity-50"
         >
           <div className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-2xl font-light">
             +

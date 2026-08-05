@@ -51,6 +51,11 @@ const csp = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  // 3GB Docker cgroups OOM-kill `next build` during its tsc pass. Low-mem
+  // scripts set SKIP_TYPECHECK=1; run `npm run typecheck` separately when you can.
+  typescript: {
+    ignoreBuildErrors: process.env.SKIP_TYPECHECK === "1",
+  },
   env: {
     NEXT_PUBLIC_APP_VERSION: appVersion,
   },
@@ -90,6 +95,9 @@ const nextConfig: NextConfig = {
   },
 
   experimental: {
+    // Cap workers when building in the 3GB Docker cgroup (see build:lowmem).
+    ...(process.env.SKIP_TYPECHECK === "1" ? { cpus: 1 } : {}),
+
     // No staleTimes here, deliberately: the Router Cache reuses a page payload
     // across navigations that differ only in search params, and trip selection
     // lives in ?trip=… — with a stale time set, changing the selection served

@@ -328,8 +328,13 @@ export const optionInsertSchema = z.object({
   title: z.string().trim().min(1).max(200),
   url: z
     .string()
-    .url()
-    .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+    .refine((value) => {
+      try {
+        return ["http:", "https:"].includes(new URL(value).protocol);
+      } catch {
+        return false;
+      }
+    }, {
       message: "URL must use http or https",
     })
     .nullish(),

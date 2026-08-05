@@ -47,6 +47,32 @@ export async function createOptionSetAction(input: unknown) {
   return runAction(async (user) => {
     const data = optionSetInsertSchema.parse(input);
     await requireTripAccess(user.id, data.trip_id, WRITE_ROLES);
+    if (data.id) {
+      const [existing] = await db
+        .select({ id: tables.optionSets.id, trip_id: tables.optionSets.trip_id })
+        .from(tables.optionSets)
+        .where(eq(tables.optionSets.id, data.id))
+        .limit(1);
+      if (existing) {
+        if (existing.trip_id !== data.trip_id) {
+          throw new AppError("Decision id already belongs to another trip");
+        }
+        const [row] = await db
+          .update(tables.optionSets)
+          .set({
+            title: data.title,
+            start_date: data.start_date ?? null,
+            end_date: data.end_date ?? null,
+            type: data.type,
+            status: data.status ?? "open",
+            notes: data.notes ?? null,
+          })
+          .where(eq(tables.optionSets.id, data.id))
+          .returning();
+        revalidateApp();
+        return row;
+      }
+    }
     const [row] = await db
       .insert(tables.optionSets)
       .values({
