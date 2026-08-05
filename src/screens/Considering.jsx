@@ -397,7 +397,7 @@ function DecisionForm({ trips, initial, defaultTripId, onClose, onSave }) {
     } catch (e) {
       const message = friendlyError(e);
       setSaveError(message);
-      toast(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -643,7 +643,7 @@ function OptionForm({ setId, initial, onClose, onSave }) {
     } catch (e) {
       const message = friendlyError(e);
       setSaveError(message);
-      toast(message);
+      toast.error(message);
       savingRef.current = false;
       setBusy(false);
       setSaveLabel("Retry save");
@@ -980,7 +980,7 @@ export default function Considering({ initialSets }) {
     } catch (error) {
       const message = friendlyError(error);
       setActionError(message);
-      toast(message);
+      toast.error(message);
       return false;
     } finally {
       pendingActionRef.current = "";
@@ -992,11 +992,11 @@ export default function Considering({ initialSets }) {
     if (decisionModal && decisionModal !== "new" && decisionModal.id) {
       const row = unwrap(await updateOptionSetAction(decisionModal.id, data));
       refreshLocalSet(decisionModal.id, row);
-      toast("Decision updated");
+      toast.success("Decision updated");
     } else {
       const row = unwrap(await createOptionSetAction(data));
       setSets((prev) => [{ ...row, options: [] }, ...prev]);
-      toast("Decision created");
+      toast.success("Decision created");
       setActiveId(row.id);
     }
   };
@@ -1016,7 +1016,7 @@ export default function Considering({ initialSets }) {
     if (!succeeded) return;
     setSets((prev) => prev.filter((s) => s.id !== set.id));
     if (activeId === set.id) setActiveId(null);
-    toast("Decision deleted");
+    toast.success("Decision deleted");
   };
 
   const saveOption = async (
@@ -1143,7 +1143,7 @@ export default function Considering({ initialSets }) {
       // Close from an explicit success signal. This is independent of React's
       // handling of the outer async callback/promise.
       complete();
-      toast(optionId ? "Option updated" : "Option added");
+      toast.success(optionId ? "Option updated" : "Option added");
     } finally {
       pendingOptionIdsRef.current.delete(pendingId);
     }
@@ -1167,7 +1167,7 @@ export default function Considering({ initialSets }) {
         s.id !== setId ? s : { ...s, options: s.options.filter((o) => o.id !== option.id) },
       ),
     );
-    toast("Option deleted");
+    toast.success("Option deleted");
   };
 
   const markPick = async (setId, option) => {
@@ -1191,7 +1191,7 @@ export default function Considering({ initialSets }) {
                 },
           ),
         );
-        toast("Pick cleared");
+        toast.success("Pick cleared");
       }
       return;
     }
@@ -1215,7 +1215,7 @@ export default function Considering({ initialSets }) {
               },
         ),
       );
-      toast("Marked as pick");
+      toast.success("Marked as pick");
     }
   };
 
@@ -1273,7 +1273,7 @@ export default function Considering({ initialSets }) {
       } catch (e) {
         const message = `Booking was created, but it could not be linked to this option. ${friendlyError(e)}`;
         setActionError(message);
-        toast(message);
+        toast.error(message);
       }
     }
     setBookingDraft(null);
