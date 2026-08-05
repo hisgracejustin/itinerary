@@ -16,7 +16,7 @@ import { useTripContext } from "@/lib/trip-context";
 import { TYPE_ICONS } from "@/lib/calendar";
 import { CURRENCIES, formatCurrency } from "@/lib/currencies";
 import { renderSoftMarkdown } from "@/lib/soft-markdown";
-import { dedupeById, mergeConsideringSets } from "@/lib/considering-state";
+import { dedupeById, mergeConsideringSets, sortOptionsByPrice } from "@/lib/considering-state";
 import {
   OPTION_IMAGE_ACCEPT,
   OPTION_IMAGE_MAX_COUNT,
@@ -817,7 +817,16 @@ function OptionForm({ setId, initial, onClose, onSave }) {
   );
 }
 
-function OptionCard({ option, onEdit, onDelete, onPick, onBook, pending }) {
+function OptionCard({
+  option,
+  onEdit,
+  onDelete,
+  onPick,
+  onBook,
+  pending,
+  notesOpen,
+  onNotesToggle,
+}) {
   const notesHtml = useMemo(() => renderSoftMarkdown(option.notes), [option.notes]);
   return (
     <article
@@ -879,7 +888,11 @@ function OptionCard({ option, onEdit, onDelete, onPick, onBook, pending }) {
           </div>
         </div>
         {notesHtml ? (
-          <details className="border-t border-outline-variant pt-2.5">
+          <details
+            open={notesOpen}
+            onToggle={(event) => onNotesToggle?.(event.currentTarget.open)}
+            className="border-t border-outline-variant pt-2.5"
+          >
             <summary className="text-xs font-semibold text-on-surface-variant cursor-pointer">Notes</summary>
             <div
               className="notes-md mt-2 text-xs text-on-surface-variant [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:my-1 [&_p]:my-0.5 [&_li]:my-0.5"
@@ -944,6 +957,8 @@ export default function Considering({ initialSets }) {
   const [linkingOptionId, setLinkingOptionId] = useState(null);
   const [pendingAction, setPendingAction] = useState("");
   const [actionError, setActionError] = useState("");
+  const [priceSort, setPriceSort] = useState(null);
+  const [expandedNoteIds, setExpandedNoteIds] = useState(() => new Set());
   const pendingOptionIdsRef = useRef(new Set());
   const pendingActionRef = useRef("");
 
@@ -963,7 +978,48 @@ export default function Considering({ initialSets }) {
     tripFilter === "all" ? scoped : scoped.filter((s) => s.trip_id === tripFilter);
 
   const active = filtered.find((s) => s.id === activeId) || sets.find((s) => s.id === activeId);
+  const activeOptions = useMemo(
+    () => sortOptionsByPrice(active?.options || [], priceSort),
+    [active?.options, priceSort],
+  );
+  const noteOptionIds = useMemo(
+    () =>
+      (active?.options || [])
+        .filter((option) => String(option.notes || "").trim())
+        .map((option) => option.id),
+    [active?.options],
+  );
+  const allNotesExpanded =
+    noteOptionIds.length > 0 && noteOptionIds.every((id) => expandedNoteIds.has(id));
+  const pricedOptionCount = (active?.options || []).filter(
+    (option) => option.cost_amount != null && Number.isFinite(Number(option.cost_amount)),
+  ).length;
+  const hasMixedCurrencies =
+    new Set(
+      (active?.options || [])
+        .filter((option) => option.cost_amount != null && option.cost_currency)
+        .map((option) => option.cost_currency),
+    ).size > 1;
+
+  useEffect(() => {
+    setPriceSort(null);
+    setExpandedNoteIds(new Set());
+  }, [activeId]);
+
   const tripName = (id) => trips.find((t) => t.id === id)?.name || "Trip";
+
+  const toggleAllNotes = () => {
+    setExpandedNoteIds(allNotesExpanded ? new Set() : new Set(noteOptionIds));
+  };
+
+  const toggleOptionNotes = (optionId, open) => {
+    setExpandedNoteIds((previous) => {
+      const next = new Set(previous);
+      if (open) next.add(optionId);
+      else next.delete(optionId);
+      return next;
+    });
+  };
 
   const refreshLocalSet = (id, patch) => {
     setSets((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
@@ -1471,8 +1527,43 @@ export default function Considering({ initialSets }) {
         </div>
       </div>
 
+      {(active.options || []).length ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={!noteOptionIds.length}
+            className="mat-btn-outlined !px-3 !py-1.5 !text-xs disabled:opacity-40"
+            onClick={toggleAllNotes}
+          >
+            {allNotesExpanded ? "Collapse all notes" : "Expand all notes"}
+          </button>
+          <button
+            type="button"
+            disabled={pricedOptionCount < 2}
+            className="mat-btn-outlined !px-3 !py-1.5 !text-xs disabled:opacity-40"
+            title={
+              pricedOptionCount < 2
+                ? "Add prices to at least two options to sort them"
+                : "Toggle between ascending and descending entered amounts"
+            }
+            onClick={() => setPriceSort((current) => (current === "asc" ? "desc" : "asc"))}
+          >
+            {priceSort === "asc"
+              ? "Price: low → high"
+              : priceSort === "desc"
+                ? "Price: high → low"
+                : "Sort by price"}
+          </button>
+          {priceSort && hasMixedCurrencies ? (
+            <span className="text-[11px] text-on-surface-variant">
+              Amounts are compared without currency conversion.
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="flex gap-4 overflow-x-auto snap-x pb-4 mb-8 sm:grid sm:grid-cols-2 xl:grid-cols-3 sm:overflow-visible sm:snap-none">
-        {(active.options || []).map((option) => (
+        {activeOptions.map((option) => (
           <div key={option.id} className="w-[280px] shrink-0 snap-start sm:w-auto sm:shrink">
             <OptionCard
               option={option}
@@ -1481,6 +1572,8 @@ export default function Considering({ initialSets }) {
               onPick={() => markPick(active.id, option)}
               onBook={() => openBook(active, option)}
               pending={!!pendingAction}
+              notesOpen={expandedNoteIds.has(option.id)}
+              onNotesToggle={(open) => toggleOptionNotes(option.id, open)}
             />
           </div>
         ))}

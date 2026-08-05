@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mergeConsideringSets } from "../src/lib/considering-state.js";
+import { mergeConsideringSets, sortOptionsByPrice } from "../src/lib/considering-state.js";
 
 const set = (options: unknown[]) => ({ id: "set-1", title: "Decision", options });
 const option = (id: string, images: unknown[] = []) => ({ id, title: id, images });
@@ -37,5 +37,27 @@ test("only explicitly pending options survive an in-flight server snapshot", () 
   assert.deepEqual(
     merged[0].options[0].images.map((image: { id: string }) => image.id),
     ["server-image", "pending-image"],
+  );
+});
+
+test("sorts priced options in either direction and leaves unpriced options last", () => {
+  const options = [
+    { id: "unpriced", cost_amount: null },
+    { id: "high", cost_amount: "250.00" },
+    { id: "low", cost_amount: "80.00" },
+    { id: "invalid", cost_amount: "unknown" },
+  ];
+
+  assert.deepEqual(
+    sortOptionsByPrice(options, "asc").map((item: { id: string }) => item.id),
+    ["low", "high", "unpriced", "invalid"],
+  );
+  assert.deepEqual(
+    sortOptionsByPrice(options, "desc").map((item: { id: string }) => item.id),
+    ["high", "low", "unpriced", "invalid"],
+  );
+  assert.deepEqual(
+    sortOptionsByPrice(options, null).map((item: { id: string }) => item.id),
+    ["unpriced", "high", "low", "invalid"],
   );
 });
