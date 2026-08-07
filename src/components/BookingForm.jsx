@@ -3,6 +3,7 @@ import { CURRENCIES, formatCurrency } from '../lib/currencies'
 import { sanitizeCancellationPolicy } from '../lib/cancellation'
 import { suggestZone } from '../lib/booking-zones'
 import { SUPPORTED_ZONES } from '../lib/timezones'
+import { pruneEmptySplits } from '../lib/split'
 import { FIELD_LABELS, FIELD_ORDER, focusFormField } from '../lib/booking-fields'
 import { useTripContext } from '../lib/trip-context'
 import SplitEditor from './SplitEditor'
@@ -154,7 +155,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         splits: Array.isArray(booking.splits)
           ? booking.splits.map((s) => ({
               user_id: s.user_id,
-              weight: Number(s.weight) || 1,
+              weight: Number.isFinite(Number(s.weight)) ? Number(s.weight) : 1,
               extra_amount: Number(s.extra_amount) || 0,
             }))
           : [],
@@ -407,7 +408,10 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
       // Splits/payer only make sense with a cost. `splits: []` un-splits the
       // booking (replace-all delete); no cost clears both.
       paid_by: form.cost_amount ? form.paid_by || null : null,
-      splits: form.cost_amount ? form.splits || [] : [],
+      // A party chip includes every member while shares are being adjusted.
+      // Weight 0 + no extra means that member consumed none of this item, so
+      // omit the empty row before the server validates/persists the split.
+      splits: form.cost_amount ? pruneEmptySplits(form.splits) : [],
       // Charged currency + rate only make sense with a cost, and are sent as a
       // pair (both null when absent — clears the columns).
       charged_currency:
