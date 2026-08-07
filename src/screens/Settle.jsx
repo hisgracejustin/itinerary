@@ -6,6 +6,7 @@ import { computeBalances, suggestTransfers, itemViewerNet, pruneEmptySplits } fr
 // toHKD is for the Split-costs SORT ORDER only — every displayed amount on this
 // page stays exact per-currency (no ~ conversions).
 import { formatCurrency, CURRENCIES, FX_RATES_TO_HKD, toHKD } from '../lib/currencies'
+import { buildExpensesCsv } from '../lib/expense-csv'
 import { TYPE_ICONS } from '../lib/calendar'
 import AssigneePicker, { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
 import SplitEditor from '../components/SplitEditor'
@@ -1151,6 +1152,17 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNet
   const parties = form ? ((trips.find((t) => t.id === form.trip_id)?.parties) ?? []) : []
 
   const openNew = () => setForm(blank())
+  const exportCsv = () => {
+    const blob = new Blob([`\uFEFF${buildExpensesCsv(expenses, trips)}`], {
+      type: 'text/csv;charset=utf-8',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
   const openEdit = (e) => setForm({
     id: e.id,
     trip_id: e.trip_id,
@@ -1219,13 +1231,24 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNet
     <section className="mat-surface p-5">
       <div className="flex items-center justify-between mb-3">
         <SectionTitle className="mb-0">Expenses</SectionTitle>
-        <button
-          type="button"
-          onClick={() => (form && !form.id ? setForm(null) : openNew())}
-          className="mat-btn-outlined text-xs"
-        >
-          {form && !form.id ? 'Cancel' : '+ Add expense'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={expenses.length === 0}
+            title="Export expenses shown by the current trip filters"
+            className="mat-btn-outlined text-xs disabled:opacity-40"
+          >
+            Export CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => (form && !form.id ? setForm(null) : openNew())}
+            className="mat-btn-outlined text-xs"
+          >
+            {form && !form.id ? 'Cancel' : '+ Add expense'}
+          </button>
+        </div>
       </div>
 
       {form && (
