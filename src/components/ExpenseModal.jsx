@@ -35,6 +35,9 @@ const initialForm = (expense, selectedTrip) => ({
   charged_rate: expense?.charged_rate != null ? String(expense.charged_rate) : "",
 });
 
+/**
+ * @param {{ expense?: any, selectedTrip?: string | null, onClose: () => void }} props
+ */
 export default function ExpenseModal({ expense = null, selectedTrip = null, onClose }) {
   const { trips } = useTripContext();
   const { toast } = useToast();

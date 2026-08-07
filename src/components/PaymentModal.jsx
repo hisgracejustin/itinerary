@@ -12,6 +12,9 @@ import { useTripContext } from "../lib/trip-context";
 
 const cleanAmount = (raw) => String(raw).replace(/[^0-9.]/g, "");
 
+/**
+ * @param {{ selectedTrip?: string | null, onClose: () => void }} props
+ */
 export default function PaymentModal({ selectedTrip = null, onClose }) {
   const { trips } = useTripContext();
   const { toast } = useToast();

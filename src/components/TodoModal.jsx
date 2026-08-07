@@ -9,6 +9,9 @@ import { friendlyError } from "../lib/friendlyError";
 import { useToast } from "./Toast";
 import { useTripContext } from "../lib/trip-context";
 
+/**
+ * @param {{ selectedTrip?: string | null, currentUserId: string, onClose: () => void }} props
+ */
 export default function TodoModal({ selectedTrip = null, currentUserId, onClose }) {
   const { trips } = useTripContext();
   const { toast } = useToast();
