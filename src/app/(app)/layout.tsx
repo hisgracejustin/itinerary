@@ -24,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   };
 
   return (
-    <AppShell user={user} trips={trips} fx={fx}>
+    <AppShell userId={sessionUser.id} user={user} trips={trips} fx={fx}>
       {children}
     </AppShell>
   );

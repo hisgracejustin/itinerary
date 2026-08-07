@@ -2,21 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
-import { computeBalances, suggestTransfers, itemViewerNet, pruneEmptySplits } from '../lib/split'
+import { computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
 // toHKD is for the Split-costs SORT ORDER only — every displayed amount on this
 // page stays exact per-currency (no ~ conversions).
 import { formatCurrency, CURRENCIES, FX_RATES_TO_HKD, toHKD } from '../lib/currencies'
-import { buildExpensesCsv } from '../lib/expense-csv'
 import { TYPE_ICONS } from '../lib/calendar'
 import AssigneePicker, { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
-import SplitEditor from '../components/SplitEditor'
-import ChargedRateEditor from '../components/ChargedRateEditor'
 import BookingModal from '../components/BookingModal'
+import TripSelect from '../components/TripSelect'
 import { useToast } from '../components/Toast'
 import { useConfirmDanger } from '../components/ConfirmDanger'
 import { friendlyError } from '../lib/friendlyError'
 import {
-  createExpense, updateExpense, deleteExpense,
+  updateExpense,
   recordSettlement, deleteSettlement,
   updateBooking, deleteBooking,
 } from '../lib/client-actions'
@@ -183,14 +181,6 @@ export default function Settle({
     const d = displayNet(net, row)
     return d.currency === 'HKD' ? d.net : toHKD(d.net, d.currency, rates)
   }
-  const viewerNetOfExpense = (e) =>
-    itemViewerNet({
-      amount: e.amount || 0,
-      paidBy: e.paid_by,
-      splits: e.splits || [],
-      unitMemberIds: viewerUnitIds(e.trip_id),
-    })
-
   // Per-item breakdown: every fully split cost-bearing booking in the selection,
   // with the viewer's unit-level net for it.
   const splitCostRows = bookings
@@ -705,20 +695,7 @@ export default function Settle({
           </section>
         )}
 
-        {/* 5 — Expenses */}
-        <ExpensesSection
-          expenses={expenses}
-          personLabel={personLabel}
-          trips={trips}
-          selectedTrip={selectedTrip}
-          viewerNetOf={viewerNetOfExpense}
-          busy={busy}
-          run={run}
-          toast={toast}
-          ask={ask}
-        />
-
-        {/* 7 — Settlement history + record a payment */}
+        {/* Payments stay with balances; expense management lives on /expenses. */}
         <section ref={settleFormRef} className="mat-surface p-5">
           <div className="flex items-center justify-between mb-3">
             <SectionTitle className="mb-0">Payments</SectionTitle>
@@ -1122,276 +1099,4 @@ function NeedsAttentionRow({ item, reason, onOpen, onSplitEven, busy }) {
     )
   }
   return <div className="py-2 border-b border-outline/20 last:border-0">{inner}</div>
-}
-
-/** Trip picker for expense/settlement creation (same rule Add Booking follows). */
-function TripSelect({ trips, value, onChange }) {
-  return (
-    <label className="block">
-      <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">Trip</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label="Trip"
-        className="mat-select w-full"
-      >
-        <option value="">Select a trip…</option>
-        {trips.map((t) => (
-          <option key={t.id} value={t.id}>{t.name}</option>
-        ))}
-      </select>
-    </label>
-  )
-}
-
-function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNetOf, busy, run, toast, ask }) {
-  const blank = () => ({ id: null, trip_id: selectedTrip ?? '', title: '', amount: '', currency: 'HKD', date: '', paid_by: null, splits: [], charged_currency: '', charged_rate: '' })
-  const [form, setForm] = useState(null) // null = closed
-
-  const roster = form ? ((trips.find((t) => t.id === form.trip_id)?.members) ?? []) : []
-  const parties = form ? ((trips.find((t) => t.id === form.trip_id)?.parties) ?? []) : []
-
-  const openNew = () => setForm(blank())
-  const exportCsv = () => {
-    const blob = new Blob([`\uFEFF${buildExpensesCsv(expenses, trips)}`], {
-      type: 'text/csv;charset=utf-8',
-    })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    // Safari may not start reading the blob until after the click handler
-    // returns, so revoking synchronously can produce an empty download.
-    setTimeout(() => URL.revokeObjectURL(url), 0)
-  }
-  const openEdit = (e) => setForm({
-    id: e.id,
-    trip_id: e.trip_id,
-    title: e.title || '',
-    amount: e.amount != null ? String(e.amount) : '',
-    currency: e.currency || 'HKD',
-    date: e.date || '',
-    paid_by: e.paid_by ?? null,
-    splits: (e.splits || []).map((s) => ({
-      user_id: s.user_id,
-      weight: Number.isFinite(Number(s.weight)) ? Number(s.weight) : 1,
-      extra_amount: Number(s.extra_amount) || 0,
-    })),
-    charged_currency: e.charged_currency || '',
-    charged_rate: e.charged_rate != null ? String(e.charged_rate) : '',
-  })
-
-  // Changing trip prunes split entries / payer to the new trip's roster.
-  const changeTrip = (trip_id) => {
-    const nextRoster = (trips.find((t) => t.id === trip_id)?.members) ?? []
-    const ids = new Set(nextRoster.map((m) => m.id))
-    setForm((f) => ({
-      ...f,
-      trip_id,
-      splits: f.splits.filter((s) => ids.has(s.user_id)),
-      paid_by: f.paid_by && ids.has(f.paid_by) ? f.paid_by : null,
-    }))
-  }
-
-  const submit = async (e) => {
-    e.preventDefault()
-    const amount = toNumber(form.amount)
-    if (!form.trip_id) return toast.error('Pick a trip for this expense')
-    if (!form.title.trim()) return toast.error('Give the expense a title')
-    if (!(amount > 0)) return toast.error('Enter an amount')
-    if (form.splits.length === 0) return toast.error('Split the expense between at least one person')
-    if (!form.paid_by) return toast.error('Pick who paid')
-    const sumExtras = form.splits.reduce((s, r) => s + (Number(r.extra_amount) || 0), 0)
-    if (sumExtras > amount + 0.01) return toast.error('Extras exceed the total cost')
-    if (form.charged_currency) {
-      if (!(toNumber(form.charged_rate) > 0)) return toast.error('Enter the rate it was charged at')
-      if (form.charged_currency === form.currency) return toast.error('Charged currency must differ from the expense currency')
-    }
-    const hasCharged = !!form.charged_currency && toNumber(form.charged_rate) > 0
-    const payload = {
-      trip_id: form.trip_id,
-      title: form.title.trim(),
-      amount,
-      currency: form.currency,
-      date: form.date || null,
-      paid_by: form.paid_by,
-      // Party selection expands to member rows. A member adjusted to zero with
-      // no extra consumed none of the item, so don't persist an empty row.
-      splits: pruneEmptySplits(form.splits),
-      charged_currency: hasCharged ? form.charged_currency : null,
-      charged_rate: hasCharged ? toNumber(form.charged_rate) : null,
-    }
-    const ok = await run(
-      () => (form.id ? updateExpense(form.id, payload) : createExpense(payload)),
-      form.id ? 'Expense updated' : 'Expense added',
-    )
-    if (ok) setForm(null)
-  }
-
-  return (
-    <section className="mat-surface p-5">
-      <div className="flex items-center justify-between mb-3">
-        <SectionTitle className="mb-0">Expenses</SectionTitle>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={exportCsv}
-            disabled={expenses.length === 0}
-            title="Export expenses shown by the current trip filters"
-            className="mat-btn-outlined text-xs disabled:opacity-40"
-          >
-            Export CSV
-          </button>
-          <button
-            type="button"
-            onClick={() => (form && !form.id ? setForm(null) : openNew())}
-            className="mat-btn-outlined text-xs"
-          >
-            {form && !form.id ? 'Cancel' : '+ Add expense'}
-          </button>
-        </div>
-      </div>
-
-      {form && (
-        <form onSubmit={submit} className="mb-4 space-y-3 rounded-xl border border-outline/30 bg-surface-container/40 p-3">
-          <TripSelect trips={trips} value={form.trip_id} onChange={changeTrip} />
-          <input
-            type="text"
-            value={form.title}
-            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            placeholder="What was it? (dinner, taxi…)"
-            className="mat-input"
-          />
-          <div className="flex gap-2">
-            <input
-              type="text"
-              inputMode="decimal"
-              value={form.amount}
-              onChange={(e) => setForm((f) => ({ ...f, amount: cleanAmount(e.target.value) }))}
-              placeholder="Amount"
-              className="mat-input flex-1"
-            />
-            <select
-              value={form.currency}
-              onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
-              aria-label="Currency"
-              className="mat-select shrink-0"
-            >
-              {CURRENCIES.map((c) => (
-                <option key={c.code} value={c.code}>{c.code}</option>
-              ))}
-            </select>
-          </div>
-          <label className="block">
-            <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">Date (optional)</span>
-            <input
-              type="date"
-              value={form.date}
-              onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
-              className="mat-input"
-            />
-          </label>
-          {form.trip_id ? (
-            <SplitEditor
-              members={roster}
-              parties={parties}
-              amount={toNumber(form.amount) || 0}
-              currency={form.currency}
-              paidBy={form.paid_by}
-              splits={form.splits}
-              onChange={({ paid_by, splits }) => setForm((f) => ({ ...f, paid_by, splits }))}
-            />
-          ) : (
-            <p className="text-[11px] text-on-surface-variant/70">Pick a trip to split this expense.</p>
-          )}
-          <ChargedRateEditor
-            nativeCurrency={form.currency}
-            effective={toNumber(form.amount) || 0}
-            chargedCurrency={form.charged_currency}
-            chargedRate={form.charged_rate}
-            onChange={({ charged_currency, charged_rate }) =>
-              setForm((f) => ({
-                ...f,
-                charged_currency: charged_currency ?? '',
-                charged_rate: charged_rate ?? '',
-              }))
-            }
-          />
-          <div className="flex justify-end gap-2">
-            {form.id && (
-              <button type="button" onClick={() => setForm(null)} className="mat-btn-outlined text-xs">
-                Cancel
-              </button>
-            )}
-            <button type="submit" disabled={busy} className="mat-btn-filled text-xs disabled:opacity-40">
-              {busy ? 'Saving…' : form.id ? 'Save expense' : 'Add expense'}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {expenses.length === 0 ? (
-        <EmptyLine>No expenses yet — add a dinner, taxi or anything shared.</EmptyLine>
-      ) : (
-        <div className="space-y-1">
-          {expenses.map((e) => (
-            <div key={e.id} className="flex items-center gap-2 py-2 border-b border-outline/20 last:border-0">
-              <span className="text-base shrink-0">🧾</span>
-              <div className="min-w-0 flex-1">
-                <div className="text-sm text-on-surface font-medium truncate">{e.title}</div>
-                <div className="text-xs text-on-surface-variant truncate">
-                  {e.paid_by ? `${personLabel(e.paid_by)} paid` : 'No payer'}
-                  {e.date ? ` · ${e.date}` : ''}
-                </div>
-              </div>
-              {(() => {
-                const raw = viewerNetOf ? viewerNetOf(e) : null
-                const ch = Number(e.charged_rate) > 0 && e.charged_currency
-                const dn = raw == null ? null : ch ? raw * Number(e.charged_rate) : raw
-                const dc = ch ? e.charged_currency : e.currency
-                return <NetPill net={dn} currency={dc} />
-              })()}
-              <span className="text-sm font-medium text-on-surface shrink-0">
-                {formatCurrency(Number(e.amount) || 0, e.currency)}
-              </span>
-              <button
-                type="button"
-                onClick={() => openEdit(e)}
-                aria-label={`Edit ${e.title}`}
-                className="text-on-surface-variant hover:text-primary p-1 rounded-full hover:bg-surface-container transition-colors shrink-0"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const ok = await ask({
-                    title: 'Delete this expense?',
-                    message: e.title
-                      ? `"${e.title}" will be permanently removed. This cannot be undone.`
-                      : 'This expense will be permanently removed. This cannot be undone.',
-                    confirmLabel: 'Delete',
-                  })
-                  if (!ok) return
-                  run(() => deleteExpense(e.id), 'Expense deleted')
-                }}
-                disabled={busy}
-                aria-label={`Delete ${e.title}`}
-                className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 shrink-0"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  )
 }
