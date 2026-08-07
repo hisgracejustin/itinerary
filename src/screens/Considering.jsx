@@ -971,6 +971,9 @@ export default function Considering({ initialSets }) {
   const pendingOptionIdsRef = useRef(new Set());
   const pendingActionRef = useRef("");
   const cardRefs = useRef(new Map());
+  // List defaults to cheapest-first, but only until the sort control is touched —
+  // "no sort" is a state the user can choose and we shouldn't keep overriding it.
+  const sortTouchedRef = useRef(false);
 
   useEffect(() => {
     setSets((prev) =>
@@ -1016,7 +1019,11 @@ export default function Considering({ initialSets }) {
 
   useEffect(() => {
     setPriceSort(null);
-    setExpandedNoteIds(new Set());
+    sortTouchedRef.current = false;
+    // Notes start open — they're the reasoning behind an option, and hunting for
+    // a disclosure triangle per card is the opposite of what this view is for.
+    setExpandedNoteIds(new Set(noteOptionIds));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the decision only: re-running on an options refresh would re-expand notes just collapsed
   }, [activeId]);
 
   // Read outside render — a localStorage read in the render path breaks SSR hydration.
@@ -1031,7 +1038,7 @@ export default function Considering({ initialSets }) {
     const view = saved === "list" || saved === "details" ? saved : "details";
     setOptionView(view);
     // Deltas are read against a sorted column, so a restored List view sorts too.
-    if (view === "list") setPriceSort((current) => current ?? "asc");
+    if (view === "list" && !sortTouchedRef.current) setPriceSort((current) => current ?? "asc");
   }, [activeId]);
 
   // Scroll to the card a List row was tapped from, once Details has rendered it.
@@ -1070,7 +1077,7 @@ export default function Considering({ initialSets }) {
     persistView(view);
     // Drop any pending jump so toggling back to Details doesn't re-scroll to it.
     setJumpToId(null);
-    if (view === "list" && priceSort == null) setPriceSort("asc");
+    if (view === "list" && priceSort == null && !sortTouchedRef.current) setPriceSort("asc");
   };
 
   const openOption = (optionId) => {
@@ -1536,7 +1543,10 @@ export default function Considering({ initialSets }) {
         message={actionError}
         onDismiss={() => setActionError("")}
       />
-      <div className="sticky top-0 z-10 bg-surface-dim/95 backdrop-blur-sm pb-4 mb-5 border-b border-outline-variant -mt-1 pt-1">
+      {/* The scroll container (AppShell's <main>) has p-3 / sm:p-5, and sticky
+          pins to its padding box — so the header must bleed out over that
+          padding or content scrolls visibly through the gap above it. */}
+      <div className="sticky top-0 z-10 bg-surface-dim pb-4 mb-5 border-b border-outline-variant -mx-3 px-3 -mt-3 pt-3 sm:-mx-5 sm:px-5 sm:-mt-5 sm:pt-5">
         <div className="flex items-center gap-1.5 text-xs text-on-surface-variant mb-2.5">
           <button
             type="button"
@@ -1639,9 +1649,14 @@ export default function Considering({ initialSets }) {
             title={
               pricedOptionCount < 2
                 ? "Add prices to at least two options to sort them"
-                : "Toggle between ascending and descending entered amounts"
+                : "Cycle low → high, high → low, then back to your own order"
             }
-            onClick={() => setPriceSort((current) => (current === "asc" ? "desc" : "asc"))}
+            onClick={() => {
+              sortTouchedRef.current = true;
+              setPriceSort((current) =>
+                current == null ? "asc" : current === "asc" ? "desc" : null,
+              );
+            }}
           >
             {priceSort === "asc"
               ? "Price: low → high"
