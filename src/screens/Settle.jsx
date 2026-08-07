@@ -1160,8 +1160,12 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNet
     const link = document.createElement('a')
     link.href = url
     link.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
     link.click()
-    URL.revokeObjectURL(url)
+    link.remove()
+    // Safari may not start reading the blob until after the click handler
+    // returns, so revoking synchronously can produce an empty download.
+    setTimeout(() => URL.revokeObjectURL(url), 0)
   }
   const openEdit = (e) => setForm({
     id: e.id,
