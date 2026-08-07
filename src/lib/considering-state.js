@@ -32,6 +32,30 @@ export function sortOptionsByPrice(options, direction) {
 }
 
 /**
+ * Cheapest-option summary for a decision's options.
+ * Amounts are only comparable within a single currency — the app never
+ * FX-converts for anything a user acts on.
+ */
+export function summarizePrices(options) {
+  const priced = (options || []).filter((o) => {
+    const amount = o?.cost_amount == null ? null : Number(o.cost_amount);
+    return Number.isFinite(amount) && !!o?.cost_currency;
+  });
+
+  const currencies = new Set(priced.map((o) => o.cost_currency));
+  if (priced.length < 2 || currencies.size !== 1) {
+    return { comparable: false, currency: null, cheapestIds: new Set(), deltas: new Map() };
+  }
+
+  const amounts = priced.map((o) => Number(o.cost_amount));
+  const min = Math.min(...amounts);
+  const cheapestIds = new Set(priced.filter((o) => Number(o.cost_amount) === min).map((o) => o.id));
+  const deltas = new Map(priced.map((o) => [o.id, Number(o.cost_amount) - min]));
+
+  return { comparable: true, currency: priced[0].cost_currency, cheapestIds, deltas };
+}
+
+/**
  * Server data is authoritative. The only local records retained across an RSC
  * refresh are option ids with a mutation currently in flight.
  */

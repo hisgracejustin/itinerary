@@ -16,7 +16,12 @@ import { useTripContext } from "@/lib/trip-context";
 import { TYPE_ICONS } from "@/lib/calendar";
 import { CURRENCIES, formatCurrency } from "@/lib/currencies";
 import { renderSoftMarkdown } from "@/lib/soft-markdown";
-import { dedupeById, mergeConsideringSets, sortOptionsByPrice } from "@/lib/considering-state";
+import {
+  dedupeById,
+  mergeConsideringSets,
+  sortOptionsByPrice,
+  summarizePrices,
+} from "@/lib/considering-state";
 import {
   OPTION_IMAGE_ACCEPT,
   OPTION_IMAGE_MAX_COUNT,
@@ -27,6 +32,7 @@ import {
 } from "@/lib/option-images";
 import FilterChip from "@/components/FilterChip";
 import BookingModal from "@/components/BookingModal";
+import { OptionListRow, MobileOptionCard, PhotoLightbox } from "@/components/ConsideringOptions";
 import { useToast } from "@/components/Toast";
 import { useConfirmDanger } from "@/components/ConfirmDanger";
 import { createBooking, updateBooking, deleteBooking } from "@/lib/client-actions";
@@ -959,8 +965,12 @@ export default function Considering({ initialSets }) {
   const [actionError, setActionError] = useState("");
   const [priceSort, setPriceSort] = useState(null);
   const [expandedNoteIds, setExpandedNoteIds] = useState(() => new Set());
+  const [optionView, setOptionView] = useState("details"); // mobile only: "list" | "details"
+  const [jumpToId, setJumpToId] = useState(null);
+  const [photoOption, setPhotoOption] = useState(null);
   const pendingOptionIdsRef = useRef(new Set());
   const pendingActionRef = useRef("");
+  const cardRefs = useRef(new Map());
 
   useEffect(() => {
     setSets((prev) =>
@@ -982,6 +992,9 @@ export default function Considering({ initialSets }) {
     () => sortOptionsByPrice(active?.options || [], priceSort),
     [active?.options, priceSort],
   );
+  const priceSummary = useMemo(() => summarizePrices(active?.options || []), [active?.options]);
+  const canToggleView = (active?.options || []).length >= 2;
+  const effectiveView = canToggleView ? optionView : "details";
   const noteOptionIds = useMemo(
     () =>
       (active?.options || [])
@@ -1006,7 +1019,64 @@ export default function Considering({ initialSets }) {
     setExpandedNoteIds(new Set());
   }, [activeId]);
 
+  // Read outside render — a localStorage read in the render path breaks SSR hydration.
+  useEffect(() => {
+    if (!activeId) return;
+    let saved = null;
+    try {
+      saved = window.localStorage.getItem(`considering-view:${activeId}`);
+    } catch {
+      // Blocked storage (private mode, third-party cookie blocking) — fall back to Details.
+    }
+    const view = saved === "list" || saved === "details" ? saved : "details";
+    setOptionView(view);
+    // Deltas are read against a sorted column, so a restored List view sorts too.
+    if (view === "list") setPriceSort((current) => current ?? "asc");
+  }, [activeId]);
+
+  // Scroll to the card a List row was tapped from, once Details has rendered it.
+  useEffect(() => {
+    if (!jumpToId || effectiveView !== "details") return;
+    const node = cardRefs.current.get(jumpToId);
+    if (!node) {
+      setJumpToId(null);
+      return;
+    }
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    node.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+    // A distinct outline, not `ring-2`/`ring-primary` — those are the permanent
+    // picked ring, and clearing them on timeout would strip it from a picked card.
+    node.classList.add("outline", "outline-2", "outline-offset-2", "outline-primary");
+    const timer = setTimeout(() => {
+      node.classList.remove("outline", "outline-2", "outline-offset-2", "outline-primary");
+      setJumpToId(null);
+    }, 1400);
+    return () => clearTimeout(timer);
+  }, [jumpToId, effectiveView]);
+
   const tripName = (id) => trips.find((t) => t.id === id)?.name || "Trip";
+
+  const persistView = (view) => {
+    if (!activeId) return;
+    try {
+      window.localStorage.setItem(`considering-view:${activeId}`, view);
+    } catch {
+      // Safari private mode throws on write — the toggle still works this session.
+    }
+  };
+
+  const switchView = (view) => {
+    setOptionView(view);
+    persistView(view);
+    // Drop any pending jump so toggling back to Details doesn't re-scroll to it.
+    setJumpToId(null);
+    if (view === "list" && priceSort == null) setPriceSort("asc");
+  };
+
+  const openOption = (optionId) => {
+    switchView("details");
+    setJumpToId(optionId);
+  };
 
   const toggleAllNotes = () => {
     setExpandedNoteIds(allNotesExpanded ? new Set() : new Set(noteOptionIds));
@@ -1527,12 +1597,37 @@ export default function Considering({ initialSets }) {
         </div>
       </div>
 
+      {canToggleView && (
+        <div className="sm:hidden mb-3">
+          <div role="tablist" className="flex bg-surface-container rounded-full p-[3px] gap-[3px]">
+            {["list", "details"].map((view) => (
+              <button
+                key={view}
+                type="button"
+                role="tab"
+                aria-selected={optionView === view}
+                className={`flex-1 min-h-[38px] rounded-full text-[13.5px] font-medium ${
+                  optionView === view
+                    ? "bg-white text-accent-ink font-semibold shadow-elevation-1"
+                    : "text-on-surface-variant"
+                }`}
+                onClick={() => switchView(view)}
+              >
+                {view === "list" ? "List" : "Details"}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {(active.options || []).length ? (
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <button
             type="button"
             disabled={!noteOptionIds.length}
-            className="mat-btn-outlined !px-3 !py-1.5 !text-xs disabled:opacity-40"
+            className={`mat-btn-outlined !px-3 !py-1.5 !text-xs disabled:opacity-40 ${
+              effectiveView === "list" ? "hidden sm:inline-flex" : ""
+            }`}
             onClick={toggleAllNotes}
           >
             {allNotesExpanded ? "Collapse all notes" : "Expand all notes"}
@@ -1562,26 +1657,77 @@ export default function Considering({ initialSets }) {
         </div>
       ) : null}
 
-      <div className="flex gap-4 overflow-x-auto snap-x pb-4 mb-8 sm:grid sm:grid-cols-2 xl:grid-cols-3 sm:overflow-visible sm:snap-none">
-        {activeOptions.map((option) => (
-          <div key={option.id} className="w-[280px] shrink-0 snap-start sm:w-auto sm:shrink">
-            <OptionCard
-              option={option}
-              onEdit={() => setOptionModal({ setId: active.id, option })}
-              onDelete={() => deleteOption(active.id, option)}
-              onPick={() => markPick(active.id, option)}
-              onBook={() => openBook(active, option)}
-              pending={!!pendingAction}
-              notesOpen={expandedNoteIds.has(option.id)}
-              onNotesToggle={(open) => toggleOptionNotes(option.id, open)}
-            />
+      {/* mobile: List / Details behind the toggle above */}
+      <div className="sm:hidden mb-8">
+        {effectiveView === "list" ? (
+          <div className="flex flex-col gap-1.5">
+            {activeOptions.map((option) => (
+              <OptionListRow
+                key={option.id}
+                option={option}
+                type={active.type}
+                isCheapest={priceSummary.comparable && priceSummary.cheapestIds.has(option.id)}
+                delta={priceSummary.deltas.get(option.id)}
+                currency={priceSummary.currency}
+                onOpen={openOption}
+              />
+            ))}
           </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {activeOptions.map((option) => (
+              <MobileOptionCard
+                key={option.id}
+                option={option}
+                tripType={active.type}
+                isCheapest={priceSummary.comparable && priceSummary.cheapestIds.has(option.id)}
+                pending={!!pendingAction}
+                notesOpen={expandedNoteIds.has(option.id)}
+                onNotesToggle={(open) => toggleOptionNotes(option.id, open)}
+                onEdit={() => setOptionModal({ setId: active.id, option })}
+                onDelete={() => deleteOption(active.id, option)}
+                onPick={() => markPick(active.id, option)}
+                onBook={() => openBook(active, option)}
+                onOpenPhotos={() => setPhotoOption(option)}
+                cardRef={(node) => {
+                  if (node) cardRefs.current.set(option.id, node);
+                  else cardRefs.current.delete(option.id);
+                }}
+              />
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          disabled={!!pendingAction}
+          onClick={() => setOptionModal({ setId: active.id })}
+          className="w-full mt-3 border-2 border-dashed border-outline rounded-2xl min-h-[80px] flex flex-col items-center justify-center gap-1 text-on-surface-variant hover:border-primary hover:bg-primary-light hover:text-accent-ink transition-colors disabled:opacity-50"
+        >
+          <div className="font-semibold text-sm">+ Add option</div>
+          <div className="text-xs">Another place you’re considering</div>
+        </button>
+      </div>
+
+      {/* desktop — unchanged behaviour */}
+      <div className="hidden sm:grid sm:grid-cols-2 xl:grid-cols-3 gap-4 pb-4 mb-8">
+        {activeOptions.map((option) => (
+          <OptionCard
+            key={option.id}
+            option={option}
+            onEdit={() => setOptionModal({ setId: active.id, option })}
+            onDelete={() => deleteOption(active.id, option)}
+            onPick={() => markPick(active.id, option)}
+            onBook={() => openBook(active, option)}
+            pending={!!pendingAction}
+            notesOpen={expandedNoteIds.has(option.id)}
+            onNotesToggle={(open) => toggleOptionNotes(option.id, open)}
+          />
         ))}
         <button
           type="button"
           disabled={!!pendingAction}
           onClick={() => setOptionModal({ setId: active.id })}
-          className="w-[280px] shrink-0 snap-start sm:w-auto sm:shrink border-2 border-dashed border-outline rounded-2xl min-h-[320px] flex flex-col items-center justify-center gap-2 text-on-surface-variant hover:border-primary hover:bg-primary-light hover:text-accent-ink transition-colors disabled:opacity-50"
+          className="border-2 border-dashed border-outline rounded-2xl min-h-[320px] flex flex-col items-center justify-center gap-2 text-on-surface-variant hover:border-primary hover:bg-primary-light hover:text-accent-ink transition-colors disabled:opacity-50"
         >
           <div className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-2xl font-light">
             +
@@ -1590,6 +1736,14 @@ export default function Considering({ initialSets }) {
           <div className="text-xs">Another place you’re considering</div>
         </button>
       </div>
+
+      {photoOption && (
+        <PhotoLightbox
+          images={photoOption.images}
+          startIndex={0}
+          onClose={() => setPhotoOption(null)}
+        />
+      )}
 
       {decisionModal && (
         <DecisionForm

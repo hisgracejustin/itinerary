@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mergeConsideringSets, sortOptionsByPrice } from "../src/lib/considering-state.js";
+import { mergeConsideringSets, sortOptionsByPrice, summarizePrices } from "../src/lib/considering-state.js";
 
 const set = (options: unknown[]) => ({ id: "set-1", title: "Decision", options });
 const option = (id: string, images: unknown[] = []) => ({ id, title: id, images });
@@ -60,4 +60,54 @@ test("sorts priced options in either direction and leaves unpriced options last"
     sortOptionsByPrice(options, null).map((item: { id: string }) => item.id),
     ["unpriced", "high", "low", "invalid"],
   );
+});
+
+test("summarizePrices: fewer than two priced options is not comparable", () => {
+  const summary = summarizePrices([{ id: "a", cost_amount: "100", cost_currency: "HKD" }]);
+  assert.equal(summary.comparable, false);
+  assert.equal(summary.cheapestIds.size, 0);
+  assert.equal(summary.deltas.size, 0);
+});
+
+test("summarizePrices: mixed currencies is not comparable", () => {
+  const summary = summarizePrices([
+    { id: "a", cost_amount: "100", cost_currency: "HKD" },
+    { id: "b", cost_amount: "50", cost_currency: "USD" },
+  ]);
+  assert.equal(summary.comparable, false);
+});
+
+test("summarizePrices: a tie at the minimum both get the cheapest badge", () => {
+  const summary = summarizePrices([
+    { id: "a", cost_amount: "100", cost_currency: "HKD" },
+    { id: "b", cost_amount: "100", cost_currency: "HKD" },
+    { id: "c", cost_amount: "150", cost_currency: "HKD" },
+  ]);
+  assert.equal(summary.comparable, true);
+  assert.deepEqual([...summary.cheapestIds].sort(), ["a", "b"]);
+  assert.equal(summary.deltas.get("a"), 0);
+  assert.equal(summary.deltas.get("b"), 0);
+  assert.equal(summary.deltas.get("c"), 50);
+});
+
+test("summarizePrices: unpriced options are excluded from deltas", () => {
+  const summary = summarizePrices([
+    { id: "a", cost_amount: "100", cost_currency: "HKD" },
+    { id: "b", cost_amount: null, cost_currency: "HKD" },
+    { id: "c", cost_amount: "200", cost_currency: "HKD" },
+  ]);
+  assert.equal(summary.comparable, true);
+  assert.equal(summary.deltas.has("b"), false);
+  assert.equal(summary.deltas.get("c"), 100);
+});
+
+test("summarizePrices: correct deltas against the cheapest", () => {
+  const summary = summarizePrices([
+    { id: "a", cost_amount: "80", cost_currency: "HKD" },
+    { id: "b", cost_amount: "125.50", cost_currency: "HKD" },
+  ]);
+  assert.equal(summary.comparable, true);
+  assert.deepEqual([...summary.cheapestIds], ["a"]);
+  assert.equal(summary.deltas.get("a"), 0);
+  assert.equal(summary.deltas.get("b"), 45.5);
 });

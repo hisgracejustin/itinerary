@@ -1,4 +1,5 @@
 TODO:
+19. Considering detail view is unreadable on mobile — one 280px card and a sliver of the next in a horizontal rail, pros/cons wrapping in a 2-col grid, action buttons under the touch minimum. Approved design is a mobile-only List/Details toggle: dense 48px rows with price deltas for choosing, full-width cards with merged pros/cons for reading, tapping a row jumps to its card. Desktop untouched. Plan: docs/considering_mobile_plan.md
 
 DONE:
 18. make sure any deletion of any sort has a danger popup to confirm if the user really wants to do this action — shared `ConfirmDanger` + `useConfirmDanger` (src/components/ConfirmDanger.jsx). Wired into every persisted delete that was firing immediately: expenses, settlement payments, to-dos, day notes/reminders, day titles, attachments, trip-member remove, party ungroup, account delete, and PIN remove. Bookings and trips already had danger confirms (modal body / inline panel) and keep those. Form-only removals (staged files, split tiers, charged-rate toggle) stay click-through since nothing is deleted until save. — ✅ done 2026-08-04
