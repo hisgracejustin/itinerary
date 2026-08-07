@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
-import { computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
+import { computeBalances, suggestTransfers, itemViewerNet, pruneEmptySplits } from '../lib/split'
 // toHKD is for the Split-costs SORT ORDER only — every displayed amount on this
 // page stays exact per-currency (no ~ conversions).
 import { formatCurrency, CURRENCIES, FX_RATES_TO_HKD, toHKD } from '../lib/currencies'
@@ -1161,7 +1161,7 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNet
     paid_by: e.paid_by ?? null,
     splits: (e.splits || []).map((s) => ({
       user_id: s.user_id,
-      weight: Number(s.weight) || 1,
+      weight: Number.isFinite(Number(s.weight)) ? Number(s.weight) : 1,
       extra_amount: Number(s.extra_amount) || 0,
     })),
     charged_currency: e.charged_currency || '',
@@ -1202,7 +1202,9 @@ function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNet
       currency: form.currency,
       date: form.date || null,
       paid_by: form.paid_by,
-      splits: form.splits,
+      // Party selection expands to member rows. A member adjusted to zero with
+      // no extra consumed none of the item, so don't persist an empty row.
+      splits: pruneEmptySplits(form.splits),
       charged_currency: hasCharged ? form.charged_currency : null,
       charged_rate: hasCharged ? toNumber(form.charged_rate) : null,
     }

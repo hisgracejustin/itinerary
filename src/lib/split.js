@@ -58,6 +58,15 @@
 const ZERO_DECIMAL = ['JPY', 'KRW', 'TWD']
 const epsilonFor = (currency) => (ZERO_DECIMAL.includes(currency) ? 1 : 0.01)
 
+/**
+ * A zero weight with no itemized extra means the person has no share. The
+ * editor keeps that row around while someone adjusts a party, but persistence
+ * should omit it: splitEntrySchema intentionally rejects meaningless rows.
+ */
+export function pruneEmptySplits(splits = []) {
+  return splits.filter((row) => Number(row.weight) > 0 || Number(row.extra_amount) > 0)
+}
+
 /** Display label for a member row (falls back to the email local-part). */
 function label(member) {
   if (!member) return 'Someone'
