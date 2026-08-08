@@ -181,6 +181,11 @@ export const bookings = pgTable(
     // the item's own cost_currency.
     charged_currency: text("charged_currency"),
     charged_rate: numeric("charged_rate", { mode: "number" }),
+    // Provenance for exact-amount splits — see the matching pair on `expenses`.
+    // Both are already baked into booking_splits.extra_amount; they persist only
+    // so the editor can show what was entered instead of the bumped figures.
+    service_percent: numeric("service_percent", { mode: "number" }),
+    shared_charge: numeric("shared_charge", { mode: "number" }),
     source: bookingSource("source").default("manual"),
     source_file: text("source_file"),
     raw_text: text("raw_text"),
@@ -405,6 +410,8 @@ export const bookingSplits = pgTable(
     // Amount this person funded separately. This affects settlement credit only,
     // never the share they consume; paid_by funds the remaining item amount.
     paid_amount: numeric("paid_amount", { mode: "number" }).notNull().default(0),
+    // Pre-charge amount for this person — mirrors expense_splits.base_amount.
+    base_amount: numeric("base_amount", { mode: "number" }),
   },
   (t) => [primaryKey({ columns: [t.booking_id, t.user_id] })],
 );

@@ -196,6 +196,10 @@ const bookingBaseShape = {
   // clears; both set re-denominates the settlement at this rate.
   charged_currency: currencySchema.nullish(),
   charged_rate: z.number().positive().nullish(),
+  // What the exact-amounts editor was told, so it can be shown again on edit.
+  // Both are already folded into the split rows (see the schema comment).
+  service_percent: z.number().min(0).max(1000).nullish(),
+  shared_charge: z.number().min(0).nullish(),
   source: z.enum(["manual", "parsed"]).nullish(),
   source_file: z.string().nullish(),
   raw_text: z.string().nullish(),

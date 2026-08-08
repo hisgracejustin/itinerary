@@ -27,7 +27,13 @@ const optionCols = getTableColumns(tables.options);
 async function bookingSplitsByBooking(bookingIds: string[]) {
   const byBooking = new Map<
     string,
-    { user_id: string; weight: number; extra_amount: number; paid_amount: number }[]
+    {
+      user_id: string;
+      weight: number;
+      extra_amount: number;
+      paid_amount: number;
+      base_amount: number | null;
+    }[]
   >();
   if (bookingIds.length === 0) return byBooking;
   const rows = await db
@@ -37,6 +43,7 @@ async function bookingSplitsByBooking(bookingIds: string[]) {
       weight: tables.bookingSplits.weight,
       extra_amount: tables.bookingSplits.extra_amount,
       paid_amount: tables.bookingSplits.paid_amount,
+      base_amount: tables.bookingSplits.base_amount,
     })
     .from(tables.bookingSplits)
     .where(inArray(tables.bookingSplits.booking_id, bookingIds));
@@ -47,6 +54,7 @@ async function bookingSplitsByBooking(bookingIds: string[]) {
       weight: r.weight,
       extra_amount: r.extra_amount,
       paid_amount: r.paid_amount,
+      base_amount: r.base_amount,
     });
     byBooking.set(r.booking_id, list);
   }

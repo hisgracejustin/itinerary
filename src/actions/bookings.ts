@@ -35,7 +35,13 @@ async function replaceBookingSplits(
   client: Db,
   bookingId: string,
   splits:
-    | { user_id: string; weight: number; extra_amount?: number; paid_amount?: number }[]
+    | {
+        user_id: string;
+        weight: number;
+        extra_amount?: number;
+        paid_amount?: number;
+        base_amount?: number | null;
+      }[]
     | undefined,
 ) {
   if (splits === undefined) return;
@@ -48,6 +54,7 @@ async function replaceBookingSplits(
         weight: s.weight,
         extra_amount: s.extra_amount ?? 0,
         paid_amount: s.paid_amount ?? 0,
+        base_amount: s.base_amount ?? null,
       })),
     );
   }

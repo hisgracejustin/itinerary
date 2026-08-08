@@ -129,6 +129,9 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
     splits: [],
     charged_currency: '',
     charged_rate: '',
+    // Already folded into the split rows; carried so the editor can show them.
+    service_percent: null,
+    shared_charge: null,
     // Empty on purpose. The app suggests a zone (see `suggestion` below), the
     // user picks it: a pre-filled inference is one nobody ever looks at, so a
     // wrong guess used to sail through Save invisibly.
@@ -158,10 +161,13 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
               weight: Number.isFinite(Number(s.weight)) ? Number(s.weight) : 1,
               extra_amount: Number(s.extra_amount) || 0,
               paid_amount: Number(s.paid_amount) || 0,
+              base_amount: s.base_amount != null ? Number(s.base_amount) : null,
             }))
           : [],
         charged_currency: booking.charged_currency || '',
         charged_rate: booking.charged_rate != null ? String(booking.charged_rate) : '',
+        service_percent: booking.service_percent != null ? Number(booking.service_percent) : null,
+        shared_charge: booking.shared_charge != null ? Number(booking.shared_charge) : null,
         // A saved booking's zone was already accepted by a person. A zone on a
         // new parsed booking is only an AI suggestion, so leave the field empty
         // until the person confirms it or chooses another zone.
@@ -430,6 +436,10 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         form.cost_amount && form.charged_currency && parseFloat(form.charged_rate) > 0
           ? parseFloat(form.charged_rate)
           : null,
+      // Provenance for the exact-amount splits — cleared with the cost, since
+      // the rows they explain go with it.
+      service_percent: form.cost_amount ? form.service_percent : null,
+      shared_charge: form.cost_amount ? form.shared_charge : null,
       // Whatever the user actually chose. No fallback: a zone nobody picked is
       // exactly the invisible wrong guess this field exists to prevent, and
       // validate() blocks the empty case before submitSave is ever reached.
@@ -717,8 +727,16 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                 currency={form.cost_currency}
                 paidBy={form.paid_by || null}
                 splits={form.splits}
-                onChange={({ paid_by, splits }) => {
-                  setForm((prev) => ({ ...prev, paid_by: paid_by || '', splits }))
+                servicePercent={form.service_percent}
+                sharedCharge={form.shared_charge}
+                onChange={({ paid_by, splits, service_percent, shared_charge }) => {
+                  setForm((prev) => ({
+                    ...prev,
+                    paid_by: paid_by || '',
+                    splits,
+                    service_percent,
+                    shared_charge,
+                  }))
                   if (paid_by) setErrors((prev) => ({ ...prev, paid_by: undefined }))
                 }}
               />

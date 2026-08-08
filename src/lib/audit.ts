@@ -199,6 +199,8 @@ export type BookingSnapshot = {
   cost_currency: string | null;
   charged_currency: string | null;
   charged_rate: number | null;
+  service_percent: number | null;
+  shared_charge: number | null;
   paid_by: string | null;
   details: Record<string, unknown> | null;
   splits: SplitRow[];
@@ -236,6 +238,13 @@ export async function bookingAuditChanges(
       old_value: text(before.charged_rate),
       new_value: text(after.charged_rate),
     });
+  }
+  // Provenance for the split rows, but a changed service charge is exactly the
+  // sort of edit people query later — same treatment as expenses.
+  for (const f of ["service_percent", "shared_charge"] as const) {
+    if (differs(before[f], after[f])) {
+      changes.push({ field: f, old_value: text(before[f]), new_value: text(after[f]) });
+    }
   }
   if (differs(before.paid_by, after.paid_by)) {
     changes.push(payerChange(before.paid_by, after.paid_by, people));
