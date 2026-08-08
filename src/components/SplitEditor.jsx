@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import AssigneePicker, { Avatar, memberFirstName } from './AssigneePicker'
 import { formatCurrency } from '../lib/currencies'
-import { itemShares, itemUnitTransfers } from '../lib/split'
+import { applyItemCharges, itemShares, itemUnitTransfers } from '../lib/split'
 
 /**
  * Shared split editor, used by BookingForm (and the expense form in commit 3).
@@ -53,6 +53,15 @@ export default function SplitEditor({
   const [paidDrafts, setPaidDrafts] = useState({})
   const [serviceDraft, setServiceDraft] = useState('')
   const [sharedChargeDraft, setSharedChargeDraft] = useState('')
+  // Exact-amounts mode keeps each person's raw amount BEFORE the service and
+  // shared charges. extra_amount already includes them, so recomputing off it
+  // would re-apply them on every charge edit (visible when reopening a saved
+  // expense, where the drafts start empty).
+  const [bases, setBases] = useState(() =>
+    Object.fromEntries(splits.map((row) => [row.user_id, String(Number(row.extra_amount) || 0)])),
+  )
+  // Party chips expand so one half of a couple can be left off a bill.
+  const [openParties, setOpenParties] = useState(() => new Set())
 
   const includedIds = new Set(splits.map((s) => s.user_id))
   const weightOf = (id) => {
@@ -79,6 +88,19 @@ export default function SplitEditor({
       paid_by: next.paid_by !== undefined ? next.paid_by : paidBy,
       splits: next.splits !== undefined ? next.splits : splits,
     })
+
+  // Re-derive exact-amount rows from the raw bases + both charges. Called for
+  // every edit that can move them, membership changes included: adding or
+  // dropping a person changes who the shared charge divides between.
+  const recharge = (rows, { baseMap = bases, service = serviceDraft, shared = sharedChargeDraft } = {}) => {
+    if (shareMode !== 'amounts') return rows
+    return applyItemCharges({
+      splits: rows,
+      bases: Object.fromEntries(Object.entries(baseMap).map(([id, raw]) => [id, parseFloat(raw)])),
+      servicePercent: parseFloat(service) || 0,
+      sharedCharge: parseFloat(shared) || 0,
+    })
+  }
 
   // ---- Units: a party chip toggles all its members; a solo chip toggles one. --
   const partyById = new Map(parties.map((p) => [p.id, p]))
@@ -123,22 +145,32 @@ export default function SplitEditor({
     }
   }
 
-  const toggleUnit = (unit) => {
-    const allIn = unit.memberIds.every((id) => includedIds.has(id))
-    if (allIn) {
-      emit({ splits: splits.filter((s) => !unit.memberIds.includes(s.user_id)) })
-    } else {
-      const toAdd = unit.memberIds
-        .filter((id) => !includedIds.has(id))
-        .map((id) => ({
-          user_id: id,
-          weight: shareMode === 'amounts' ? 0 : 1,
-          extra_amount: 0,
-          paid_amount: 0,
-        }))
-      emit({ splits: [...splits, ...toAdd] })
-    }
+  const blankRow = (id) => ({
+    user_id: id,
+    weight: shareMode === 'amounts' ? 0 : 1,
+    extra_amount: 0,
+    paid_amount: 0,
+  })
+
+  const setMembership = (ids, included) => {
+    const next = included
+      ? [...splits, ...ids.filter((id) => !includedIds.has(id)).map(blankRow)]
+      : splits.filter((s) => !ids.includes(s.user_id))
+    emit({ splits: recharge(next) })
   }
+
+  const toggleUnit = (unit) =>
+    setMembership(unit.memberIds, !unit.memberIds.every((id) => includedIds.has(id)))
+
+  const toggleMember = (id) => setMembership([id], !includedIds.has(id))
+
+  const togglePartyOpen = (key) =>
+    setOpenParties((open) => {
+      const next = new Set(open)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
 
   const setWeight = (id, raw) => {
     const clean = raw.replace(/[^0-9.]/g, '')
@@ -184,7 +216,8 @@ export default function SplitEditor({
         return { ...row, weight: 0, extra_amount: value }
       })
       setDrafts({})
-      setExtraDrafts(Object.fromEntries(next.map((row) => [row.user_id, String(row.extra_amount)])))
+      setExtraDrafts({})
+      setBases(Object.fromEntries(next.map((row) => [row.user_id, String(row.extra_amount)])))
       emit({ splits: next })
     } else {
       emit({
@@ -196,52 +229,32 @@ export default function SplitEditor({
       })
       setDrafts({})
       setExtraDrafts({})
+      setBases({})
     }
+    // The converted amounts already carry whatever charges were applied; the
+    // fields reset so switching back and forth can't stack them a second time.
+    setServiceDraft('')
+    setSharedChargeDraft('')
     setShareMode(mode)
   }
 
   const setFixedAmount = (id, raw) => {
     const clean = raw.replace(/[^0-9.]/g, '')
-    const nextDrafts = { ...extraDrafts, [id]: clean }
-    setExtraDrafts(nextDrafts)
-    const multiplier = 1 + (parseFloat(serviceDraft) || 0) / 100
-    const sharedPerPerson = (parseFloat(sharedChargeDraft) || 0) / Math.max(splits.length, 1)
-    emit({
-      splits: splits.map((row) => {
-        const value = parseFloat(nextDrafts[row.user_id] ?? String(row.extra_amount || 0))
-        return {
-          ...row,
-          weight: 0,
-          extra_amount: Number.isFinite(value) && value >= 0 ? value * multiplier + sharedPerPerson : 0,
-        }
-      }),
-    })
+    const nextBases = { ...bases, [id]: clean }
+    setBases(nextBases)
+    emit({ splits: recharge(splits, { baseMap: nextBases }) })
   }
 
   const setServiceCharge = (raw) => {
     const clean = raw.replace(/[^0-9.]/g, '')
     setServiceDraft(clean)
-    const multiplier = 1 + (parseFloat(clean) || 0) / 100
-    const sharedPerPerson = (parseFloat(sharedChargeDraft) || 0) / Math.max(splits.length, 1)
-    emit({
-      splits: splits.map((row) => {
-        const base = parseFloat(extraDrafts[row.user_id] ?? String(row.extra_amount || 0))
-        return { ...row, weight: 0, extra_amount: (Number.isFinite(base) ? base : 0) * multiplier + sharedPerPerson }
-      }),
-    })
+    emit({ splits: recharge(splits, { service: clean }) })
   }
 
   const setSharedCharge = (raw) => {
     const clean = raw.replace(/[^0-9.]/g, '')
     setSharedChargeDraft(clean)
-    const multiplier = 1 + (parseFloat(serviceDraft) || 0) / 100
-    const sharedPerPerson = (parseFloat(clean) || 0) / Math.max(splits.length, 1)
-    emit({
-      splits: splits.map((row) => {
-        const base = parseFloat(extraDrafts[row.user_id] ?? String(row.extra_amount || 0))
-        return { ...row, weight: 0, extra_amount: (Number.isFinite(base) ? base : 0) * multiplier + sharedPerPerson }
-      }),
-    })
+    emit({ splits: recharge(splits, { shared: clean }) })
   }
 
   const includedMembers = members.filter((m) => includedIds.has(m.id))
@@ -266,24 +279,87 @@ export default function SplitEditor({
           )}
           {units.map((unit) => {
             const active = unit.memberIds.every((id) => includedIds.has(id))
+            const some = unit.memberIds.some((id) => includedIds.has(id))
+            const chipTone = active
+              ? 'border-primary bg-primary-light text-primary'
+              : some
+                ? 'border-primary/50 bg-white text-primary'
+                : 'border-outline/30 bg-white text-on-surface-variant hover:bg-surface-container'
+            if (unit.kind === 'solo') {
+              return (
+                <button
+                  key={unit.key}
+                  type="button"
+                  onClick={() => toggleUnit(unit)}
+                  className={`inline-flex items-center gap-1.5 min-w-0 max-w-[10rem] pl-1 pr-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${chipTone}`}
+                >
+                  <span className="flex -space-x-1.5 shrink-0">
+                    <Avatar member={unit.members[0]} size="xs" />
+                  </span>
+                  <span className="truncate min-w-0">{unit.name}</span>
+                </button>
+              )
+            }
+            // Party chip: the whole unit on one tap, plus a caret to pick just
+            // one of them — only one half of a couple is often on a given bill.
+            const open = openParties.has(unit.key)
             return (
-              <button
-                key={unit.key}
-                type="button"
-                onClick={() => toggleUnit(unit)}
-                className={`inline-flex items-center gap-1.5 min-w-0 max-w-[10rem] pl-1 pr-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
-                  active
-                    ? 'border-primary bg-primary-light text-primary'
-                    : 'border-outline/30 bg-white text-on-surface-variant hover:bg-surface-container'
-                }`}
-              >
-                <span className="flex -space-x-1.5 shrink-0">
-                  {unit.members.slice(0, 2).map((m) => (
-                    <Avatar key={m.id} member={m} size="xs" />
-                  ))}
-                </span>
-                <span className="truncate min-w-0">{unit.name}</span>
-              </button>
+              <div key={unit.key} className="flex flex-col gap-1 min-w-0">
+                <div
+                  className={`inline-flex items-center min-w-0 max-w-[12rem] rounded-full border text-[11px] font-medium transition-colors ${chipTone}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleUnit(unit)}
+                    className="inline-flex items-center gap-1.5 min-w-0 pl-1 pr-1 py-1"
+                  >
+                    <span className="flex -space-x-1.5 shrink-0">
+                      {unit.members.slice(0, 2).map((m) => (
+                        <Avatar key={m.id} member={m} size="xs" />
+                      ))}
+                    </span>
+                    <span className="truncate min-w-0">{unit.name}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => togglePartyOpen(unit.key)}
+                    aria-expanded={open}
+                    aria-label={`Choose who in ${unit.name} is on this`}
+                    className="shrink-0 pl-0.5 pr-2 py-1"
+                  >
+                    <svg
+                      className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+                {open && (
+                  <div className="flex flex-wrap gap-1 pl-2">
+                    {unit.members.map((m) => {
+                      const on = includedIds.has(m.id)
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => toggleMember(m.id)}
+                          className={`inline-flex items-center gap-1 min-w-0 max-w-[8rem] pl-1 pr-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors ${
+                            on
+                              ? 'border-primary bg-primary-light text-primary'
+                              : 'border-outline/30 bg-white text-on-surface-variant'
+                          }`}
+                        >
+                          <Avatar member={m} size="xs" />
+                          <span className="truncate min-w-0">{memberFirstName(m)}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             )
           })}
         </div>
@@ -356,6 +432,10 @@ export default function SplitEditor({
                       />
                     </span>
                   </label>
+                  <p className="text-[10px] text-on-surface-variant/70">
+                    Both apply only to people with an amount above 0 — leave someone at 0 and they
+                    drop off this expense.
+                  </p>
                 </div>
               )}
               {includedMembers.map((m) => {
@@ -395,7 +475,7 @@ export default function SplitEditor({
                     /></> : <input
                       type="text"
                       inputMode="decimal"
-                      value={extraDrafts[m.id] !== undefined ? extraDrafts[m.id] : String(extra)}
+                      value={bases[m.id] !== undefined ? bases[m.id] : String(extra)}
                       onChange={(e) => setFixedAmount(m.id, e.target.value)}
                       className="mat-input w-24 text-right shrink-0"
                       aria-label={`Exact amount for ${memberFirstName(m)}`}

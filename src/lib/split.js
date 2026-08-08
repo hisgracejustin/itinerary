@@ -76,6 +76,51 @@ export function pruneEmptySplits(splits = []) {
   )
 }
 
+/**
+ * Exact-amounts mode: turn each person's raw amount into a split row, applying
+ * a service charge percentage and an equally-shared fixed charge (a tip, a
+ * table charge, a delivery fee) on top.
+ *
+ *   extra_i = base_i × (1 + service/100) + shared / (people with base > 0)
+ *
+ * The shared charge divides only between people who actually ordered something.
+ * A zero row is someone who is in the split for a structural reason — the other
+ * half of a settlement party that was toggled in as one unit — and they must
+ * not pick up a slice of the tip, or the party ends up paying two shares of it.
+ * They stay at 0 and pruneEmptySplits drops them on save. Before anyone has
+ * typed an amount the charge divides across everyone, so entering the charges
+ * first still previews sensibly.
+ *
+ * Bases are passed in rather than read back off extra_amount: extra_amount
+ * already carries the charges, so deriving from it would compound them every
+ * time a charge field is edited.
+ *
+ * @param {object} input
+ * @param {Array}  input.splits [{ user_id, weight, extra_amount, paid_amount }]
+ * @param {Record<string, number>} input.bases raw pre-charge amount per user id
+ * @param {number} [input.servicePercent]
+ * @param {number} [input.sharedCharge]
+ * @returns {Array} the same rows at weight 0 with extra_amount recomputed
+ */
+export function applyItemCharges({ splits = [], bases = {}, servicePercent = 0, sharedCharge = 0 }) {
+  const multiplier = 1 + (Number(servicePercent) || 0) / 100
+  const shared = Number(sharedCharge) || 0
+  const baseFor = (row) => {
+    const base = Number(bases[row.user_id])
+    return Number.isFinite(base) && base > 0 ? base : 0
+  }
+  const payers = splits.filter((row) => baseFor(row) > 0).length
+  const perPerson = shared / (payers > 0 ? payers : Math.max(splits.length, 1))
+  return splits.map((row) => {
+    const base = baseFor(row)
+    return {
+      ...row,
+      weight: 0,
+      extra_amount: payers > 0 && base === 0 ? 0 : base * multiplier + perPerson,
+    }
+  })
+}
+
 /** Display label for a member row (falls back to the email local-part). */
 function label(member) {
   if (!member) return 'Someone'
