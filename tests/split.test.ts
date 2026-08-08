@@ -34,6 +34,7 @@ test("$105 split credits the main payer $100 and another contributor $5", () => 
 
   const result = computeBalances({
     members,
+    parties: [],
     bookings: [{
       id: "booking",
       trip_id,
@@ -43,18 +44,21 @@ test("$105 split credits the main payer $100 and another contributor $5", () => 
       paid_by: "main",
       splits,
     }],
+    expenses: [],
+    settlements: [],
   });
   const byKey = new Map(result.units.map((unit) => [unit.key, unit]));
-  assert.equal(byKey.get("main")!.paid.USD, 100);
-  assert.equal(byKey.get("main")!.owed.USD, 35);
-  assert.equal(byKey.get("main")!.net.USD, 65);
-  assert.equal(byKey.get("other")!.paid.USD, 5);
-  assert.equal(byKey.get("other")!.owed.USD, 35);
-  assert.equal(byKey.get("other")!.net.USD, -30);
-  assert.equal(byKey.get("third")!.owed.USD, 35);
-  assert.equal(byKey.get("third")!.net.USD, -35);
+  const usd = (value: object) => (value as Record<string, number>).USD;
+  assert.equal(usd(byKey.get("main")!.paid), 100);
+  assert.equal(usd(byKey.get("main")!.owed), 35);
+  assert.equal(usd(byKey.get("main")!.net), 65);
+  assert.equal(usd(byKey.get("other")!.paid), 5);
+  assert.equal(usd(byKey.get("other")!.owed), 35);
+  assert.equal(usd(byKey.get("other")!.net), -30);
+  assert.equal(usd(byKey.get("third")!.owed), 35);
+  assert.equal(usd(byKey.get("third")!.net), -35);
   assert.equal(
-    result.units.reduce((sum, unit) => sum + (unit.net.USD || 0), 0),
+    result.units.reduce((sum, unit) => sum + (usd(unit.net) || 0), 0),
     0,
   );
   assert.equal(itemViewerNet({
