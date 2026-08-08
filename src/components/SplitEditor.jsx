@@ -52,6 +52,7 @@ export default function SplitEditor({
   const [extraDrafts, setExtraDrafts] = useState({})
   const [paidDrafts, setPaidDrafts] = useState({})
   const [serviceDraft, setServiceDraft] = useState('')
+  const [sharedChargeDraft, setSharedChargeDraft] = useState('')
 
   const includedIds = new Set(splits.map((s) => s.user_id))
   const weightOf = (id) => {
@@ -204,13 +205,14 @@ export default function SplitEditor({
     const nextDrafts = { ...extraDrafts, [id]: clean }
     setExtraDrafts(nextDrafts)
     const multiplier = 1 + (parseFloat(serviceDraft) || 0) / 100
+    const sharedPerPerson = (parseFloat(sharedChargeDraft) || 0) / Math.max(splits.length, 1)
     emit({
       splits: splits.map((row) => {
         const value = parseFloat(nextDrafts[row.user_id] ?? String(row.extra_amount || 0))
         return {
           ...row,
           weight: 0,
-          extra_amount: Number.isFinite(value) && value >= 0 ? value * multiplier : 0,
+          extra_amount: Number.isFinite(value) && value >= 0 ? value * multiplier + sharedPerPerson : 0,
         }
       }),
     })
@@ -220,10 +222,24 @@ export default function SplitEditor({
     const clean = raw.replace(/[^0-9.]/g, '')
     setServiceDraft(clean)
     const multiplier = 1 + (parseFloat(clean) || 0) / 100
+    const sharedPerPerson = (parseFloat(sharedChargeDraft) || 0) / Math.max(splits.length, 1)
     emit({
       splits: splits.map((row) => {
         const base = parseFloat(extraDrafts[row.user_id] ?? String(row.extra_amount || 0))
-        return { ...row, weight: 0, extra_amount: (Number.isFinite(base) ? base : 0) * multiplier }
+        return { ...row, weight: 0, extra_amount: (Number.isFinite(base) ? base : 0) * multiplier + sharedPerPerson }
+      }),
+    })
+  }
+
+  const setSharedCharge = (raw) => {
+    const clean = raw.replace(/[^0-9.]/g, '')
+    setSharedChargeDraft(clean)
+    const multiplier = 1 + (parseFloat(serviceDraft) || 0) / 100
+    const sharedPerPerson = (parseFloat(clean) || 0) / Math.max(splits.length, 1)
+    emit({
+      splits: splits.map((row) => {
+        const base = parseFloat(extraDrafts[row.user_id] ?? String(row.extra_amount || 0))
+        return { ...row, weight: 0, extra_amount: (Number.isFinite(base) ? base : 0) * multiplier + sharedPerPerson }
       }),
     })
   }
@@ -309,21 +325,38 @@ export default function SplitEditor({
                 ))}
               </div>
               {shareMode === 'amounts' && (
-                <label className="flex items-center justify-between gap-3 text-xs text-on-surface-variant">
-                  <span>Service charge applied to everyone</span>
-                  <span className="flex items-center gap-1">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={serviceDraft}
-                      onChange={(e) => setServiceCharge(e.target.value)}
-                      placeholder="0"
-                      className="mat-input w-16 text-right"
-                      aria-label="Service charge percent"
-                    />
-                    %
-                  </span>
-                </label>
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between gap-3 text-xs text-on-surface-variant">
+                    <span>Service charge applied to everyone</span>
+                    <span className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={serviceDraft}
+                        onChange={(e) => setServiceCharge(e.target.value)}
+                        placeholder="0"
+                        className="mat-input w-16 text-right"
+                        aria-label="Service charge percent"
+                      />
+                      %
+                    </span>
+                  </label>
+                  <label className="flex items-center justify-between gap-3 text-xs text-on-surface-variant">
+                    <span>Shared fixed charge split equally</span>
+                    <span className="flex items-center gap-1">
+                      <span>{currency}</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={sharedChargeDraft}
+                        onChange={(e) => setSharedCharge(e.target.value)}
+                        placeholder="0"
+                        className="mat-input w-20 text-right"
+                        aria-label="Shared fixed charge"
+                      />
+                    </span>
+                  </label>
+                </div>
               )}
               {includedMembers.map((m) => {
                 const w = weightOf(m.id)
