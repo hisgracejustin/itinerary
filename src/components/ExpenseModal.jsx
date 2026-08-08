@@ -34,6 +34,7 @@ const initialForm = (expense, selectedTrip) => ({
     user_id: split.user_id,
     weight: Number.isFinite(Number(split.weight)) ? Number(split.weight) : 1,
     extra_amount: Number(split.extra_amount) || 0,
+    paid_amount: Number(split.paid_amount) || 0,
   })),
   charged_currency: expense?.charged_currency || "",
   charged_rate: expense?.charged_rate != null ? String(expense.charged_rate) : "",
@@ -84,7 +85,15 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
     if (splits.length === 0) return toast.error("Split the expense between at least one person");
     if (!form.paid_by) return toast.error("Pick who paid");
     const sumExtras = splits.reduce((sum, row) => sum + (Number(row.extra_amount) || 0), 0);
+    const sumPaid = splits.reduce((sum, row) => sum + (Number(row.paid_amount) || 0), 0);
+    const sumWeights = splits.reduce((sum, row) => sum + (Number(row.weight) || 0), 0);
     if (sumExtras > amount + 0.01) return toast.error("Extras exceed the total cost");
+    if (sumPaid > amount + 1e-9) {
+      return toast.error("Paid separately amounts exceed the total cost");
+    }
+    if (sumWeights <= 0 && Math.abs(sumExtras - amount) > 0.01) {
+      return toast.error("Exact amounts must add up to the total");
+    }
     if (form.charged_currency) {
       if (!(toNumber(form.charged_rate) > 0)) return toast.error("Enter the rate it was charged at");
       if (form.charged_currency === form.currency) {

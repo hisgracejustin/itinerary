@@ -23,18 +23,18 @@ const currencySchema = z.enum(CURRENCY_CODES);
 const dateOnlySchema = z.iso.date();
 
 // One person's share of a split. user_id is a text user id (cuid2 / preserved
-// Supabase UUID), so no .uuid(). `weight` must be ≥ 0 and `extra_amount` ≥ 0,
-// with each entry carrying weight > 0 OR extra_amount > 0 — an extras-only
-// participant (someone who only owes their itemized extra) sits at weight 0.
+// Supabase UUID), so no .uuid(). Share fields and the independent funding field
+// are nonnegative. A funding-only participant may have zero weight and extra.
 export const splitEntrySchema = z
   .object({
     user_id: z.string().min(1),
     weight: z.number().min(0),
     extra_amount: z.number().min(0).default(0),
+    paid_amount: z.number().min(0).default(0),
   })
-  .refine((s) => s.weight > 0 || s.extra_amount > 0, {
+  .refine((s) => s.weight > 0 || s.extra_amount > 0 || s.paid_amount > 0, {
     path: ["weight"],
-    message: "Each person needs a weight or an extra amount",
+    message: "Each person needs a share, extra amount, or paid amount",
   });
 
 // Splits without a payer break the zero-sum invariant, so any non-empty split
@@ -42,7 +42,7 @@ export const splitEntrySchema = z
 function requirePayerWhenSplit(
   data: {
     paid_by?: string | null;
-    splits?: { user_id: string; weight: number; extra_amount?: number }[];
+    splits?: { user_id: string; weight: number; extra_amount?: number; paid_amount?: number }[];
   },
   ctx: z.RefinementCtx,
 ) {
@@ -51,6 +51,30 @@ function requirePayerWhenSplit(
       code: z.ZodIssueCode.custom,
       path: ["paid_by"],
       message: "Pick who paid before splitting this cost",
+    });
+  }
+}
+
+function requireContributionsWithinAmount(
+  data: {
+    amount?: number | null;
+    cost_amount?: number | null;
+    cost_share?: number | null;
+    splits?: { paid_amount?: number }[];
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (!data.splits) return;
+  const amount =
+    data.amount ??
+    (data.cost_amount == null ? null : data.cost_amount * (data.cost_share ?? 1));
+  if (amount == null) return;
+  const contributed = data.splits.reduce((sum, split) => sum + (split.paid_amount ?? 0), 0);
+  if (contributed > amount + 1e-9) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["splits"],
+      message: "Paid separately amounts cannot exceed the total cost",
     });
   }
 }
@@ -178,6 +202,7 @@ const bookingBase = z.object(bookingBaseShape);
 
 export const bookingInsertSchema = bookingBase
   .superRefine(requirePayerWhenSplit)
+  .superRefine(requireContributionsWithinAmount)
   .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "cost_currency"));
 
 // `id` is omitted (not just optional): the row to update is addressed by the
@@ -187,6 +212,7 @@ export const bookingUpdateSchema = bookingBase
   .omit({ id: true })
   .partial()
   .superRefine(requirePayerWhenSplit)
+  .superRefine(requireContributionsWithinAmount)
   .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "cost_currency"));
 
 // Ad-hoc shared cost. Splits are required and non-empty (an expense with nobody
@@ -204,6 +230,7 @@ export const expenseInsertSchema = z
     charged_rate: z.number().positive().nullish(),
   })
   .superRefine(requirePayerWhenSplit)
+  .superRefine(requireContributionsWithinAmount)
   .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "currency"));
 
 export const expenseUpdateSchema = z
@@ -220,6 +247,7 @@ export const expenseUpdateSchema = z
     charged_rate: z.number().positive().nullish(),
   })
   .superRefine(requirePayerWhenSplit)
+  .superRefine(requireContributionsWithinAmount)
   .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "currency"));
 
 // A recorded pay-back, person-to-person. Same-person is nonsensical.

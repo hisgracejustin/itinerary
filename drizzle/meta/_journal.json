@@ -155,6 +155,13 @@
       "when": 1786149048575,
       "tag": "0021_light_wolf_cub",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786155431122,
+      "tag": "0022_lumpy_agent_zero",
+      "breakpoints": true
     }
   ]
 }

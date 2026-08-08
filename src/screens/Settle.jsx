@@ -299,7 +299,12 @@ export default function Settle({
     const roster = members.filter((m) => m.trip_id === item.trip_id)
     if (roster.length === 0) return null
     return {
-      splits: roster.map((m) => ({ user_id: m.id, weight: 1, extra_amount: 0 })),
+      splits: roster.map((m) => ({
+        user_id: m.id,
+        weight: 1,
+        extra_amount: 0,
+        paid_amount: 0,
+      })),
       paid_by: item.paid_by ?? currentUserId,
     }
   }

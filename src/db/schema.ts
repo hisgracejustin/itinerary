@@ -402,6 +402,9 @@ export const bookingSplits = pgTable(
     // on a shared flight). Their share = extra + weight/Σweights × (splittable −
     // Σextras). 0 for everyone reproduces the pure weight split byte-for-byte.
     extra_amount: numeric("extra_amount", { mode: "number" }).notNull().default(0),
+    // Amount this person funded separately. This affects settlement credit only,
+    // never the share they consume; paid_by funds the remaining item amount.
+    paid_amount: numeric("paid_amount", { mode: "number" }).notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.booking_id, t.user_id] })],
 );
@@ -444,6 +447,8 @@ export const expenseSplits = pgTable(
     // Itemized amount attributed to this person off the top — mirrors
     // booking_splits.extra_amount.
     extra_amount: numeric("extra_amount", { mode: "number" }).notNull().default(0),
+    // Separate funding contribution — mirrors booking_splits.paid_amount.
+    paid_amount: numeric("paid_amount", { mode: "number" }).notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.expense_id, t.user_id] })],
 );

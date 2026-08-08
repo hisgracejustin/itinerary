@@ -40,6 +40,10 @@
  *  - Splits WITHOUT a payer are also excluded (they'd break the zero-sum
  *    invariant) and surfaced as "needs a payer" (`missingPayer`).
  *  - The payer needn't be in the split (paying on behalf of others is fine).
+ *  - `paid_amount` is funding, not consumption. Every contributor is credited
+ *    their paid_amount, while paid_by is credited only
+ *    `splittable − Σpaid_amount`. Contributions may include paid_by, but their
+ *    total may not exceed the item amount. This keeps credits equal to shares.
  *  - With `cost_share < 1` the payer is assumed to have fronted only the trip's
  *    effective portion; the external remainder is out of scope.
  *  - CHARGED RATE: an item may carry `charged_currency` + `charged_rate` — the
@@ -64,7 +68,12 @@ const epsilonFor = (currency) => (ZERO_DECIMAL.includes(currency) ? 1 : 0.01)
  * should omit it: splitEntrySchema intentionally rejects meaningless rows.
  */
 export function pruneEmptySplits(splits = []) {
-  return splits.filter((row) => Number(row.weight) > 0 || Number(row.extra_amount) > 0)
+  return splits.filter(
+    (row) =>
+      Number(row.weight) > 0 ||
+      Number(row.extra_amount) > 0 ||
+      Number(row.paid_amount) > 0,
+  )
 }
 
 /** Display label for a member row (falls back to the email local-part). */
@@ -102,11 +111,32 @@ export function itemShares(amount, splits) {
 }
 
 /**
+ * Per-user funding map for one item. paid_by receives only the unfunded
+ * remainder; split-row contributors receive their paid_amount. Returns null
+ * when contributions exceed the item amount.
+ */
+export function itemFunding(amount, paidBy, splits) {
+  if (!paidBy || !(amount >= 0)) return null
+  const funding = new Map()
+  let contributed = 0
+  for (const row of splits || []) {
+    const paid = Number(row.paid_amount) || 0
+    if (paid < 0) return null
+    contributed += paid
+    if (paid) funding.set(row.user_id, (funding.get(row.user_id) || 0) + paid)
+  }
+  if (contributed > amount + 1e-9) return null
+  const remainder = Math.max(0, amount - contributed)
+  funding.set(paidBy, (funding.get(paidBy) || 0) + remainder)
+  return funding
+}
+
+/**
  * Group-level result of ONE item: which settlement units end up owing the
  * payer's unit, and how much. Used for the live preview in SplitEditor and the
  * "Split" row in the booking view modal.
  *
- * @returns {{ payerName: string, lines: [{ name, amount }] } | null}
+ * @returns {{ lines: [{ fromName, toName, amount }] } | null}
  */
 export function itemUnitTransfers({ members = [], parties = [], amount, paidBy, splits }) {
   if (!paidBy || !(amount > 0)) return null
@@ -118,6 +148,8 @@ export function itemUnitTransfers({ members = [], parties = [], amount, paidBy, 
   if (!memberById.has(paidBy)) return null
   const shares = itemShares(amount, splits)
   if (!shares) return null
+  const funding = itemFunding(amount, paidBy, splits)
+  if (!funding) return null
 
   const partyNameById = new Map(parties.map((p) => [p.id, p.name]))
   const unitKeyOf = (id) => memberById.get(id)?.party_id || `solo-${id}`
@@ -127,16 +159,42 @@ export function itemUnitTransfers({ members = [], parties = [], amount, paidBy, 
     return firstName(memberById.get(id))
   }
 
-  const payerUnit = unitKeyOf(paidBy)
-  const owedByUnit = new Map()
-  for (const [userId, share] of shares) {
-    if (!memberById.has(userId)) continue
+  const netByUnit = new Map()
+  const namesByUnit = new Map()
+  const addNet = (userId, value) => {
+    if (!memberById.has(userId)) return
     const key = unitKeyOf(userId)
-    if (key === payerUnit || share <= 0) continue
-    const prev = owedByUnit.get(key)
-    owedByUnit.set(key, { name: unitNameOf(userId), amount: (prev?.amount || 0) + share })
+    namesByUnit.set(key, unitNameOf(userId))
+    netByUnit.set(key, (netByUnit.get(key) || 0) + value)
   }
-  return { payerName: unitNameOf(paidBy), lines: [...owedByUnit.values()] }
+  for (const [userId, paid] of funding) addNet(userId, paid)
+  for (const [userId, share] of shares) {
+    addNet(userId, -share)
+  }
+  const creditors = []
+  const debtors = []
+  for (const [key, net] of netByUnit) {
+    if (net > 1e-9) creditors.push({ key, amount: net })
+    else if (net < -1e-9) debtors.push({ key, amount: -net })
+  }
+  const lines = []
+  while (creditors.length && debtors.length) {
+    creditors.sort((a, b) => b.amount - a.amount)
+    debtors.sort((a, b) => b.amount - a.amount)
+    const creditor = creditors[0]
+    const debtor = debtors[0]
+    const transfer = Math.min(creditor.amount, debtor.amount)
+    lines.push({
+      fromName: namesByUnit.get(debtor.key),
+      toName: namesByUnit.get(creditor.key),
+      amount: transfer,
+    })
+    creditor.amount -= transfer
+    debtor.amount -= transfer
+    if (creditor.amount <= 1e-9) creditors.shift()
+    if (debtor.amount <= 1e-9) debtors.shift()
+  }
+  return { lines }
 }
 
 /**
@@ -148,8 +206,11 @@ export function itemViewerNet({ amount, paidBy, splits, unitMemberIds }) {
   if (!paidBy) return null
   const shares = itemShares(amount, splits)
   if (!shares) return null
+  const funding = itemFunding(amount, paidBy, splits)
+  if (!funding) return null
   const ids = new Set(unitMemberIds)
-  let net = ids.has(paidBy) ? amount : 0
+  let net = 0
+  for (const [userId, paid] of funding) if (ids.has(userId)) net += paid
   for (const [userId, share] of shares) if (ids.has(userId)) net -= share
   return net
 }
@@ -300,19 +361,22 @@ export function computeBalances({
     // poisoning balances.
     const shares = itemShares(item.amount, item.splits)
     if (!shares) continue
+    const funding = itemFunding(item.amount, item.paid_by, item.splits)
+    if (!funding) continue
     const tripId = item.ref.trip_id
-    settleable.push({ item, shares, tripId })
+    settleable.push({ item, shares, funding, tripId })
 
     // Re-denominate at the charged rate (1 / native currency when none): shares
     // stay native above, so scaling the paid amount and every share by the same
     // factor here preserves proportions and extras exactly.
     const cur = item.settleCurrency ?? item.currency
     const rate = item.settleRate ?? 1
-    // The payer's trip-unit is credited; each share-holder's trip-unit is
-    // debited. A co-party share-holder maps to the SAME trip-unit key as the
-    // payer, so their within-party debt cancels in the net automatically — that
-    // is how within-trip-party suppression happens, without any union step.
-    add(totals(paidByUnit, registerUnit(tripId, item.paid_by)), cur, item.amount * rate)
+    // Every funder's trip-unit is credited; each share-holder's trip-unit is
+    // debited. paid_by appears in funding only for the remainder after separate
+    // contributions. Co-party amounts cancel within the same unit naturally.
+    for (const [userId, paid] of funding) {
+      add(totals(paidByUnit, registerUnit(tripId, userId)), cur, paid * rate)
+    }
     for (const [userId, share] of shares) {
       add(totals(owedByUnit, registerUnit(tripId, userId)), cur, share * rate)
     }
@@ -386,14 +450,38 @@ export function computeBalances({
     const k = `${a}||${b}`
     m.set(k, (m.get(k) || 0) + sign * amount)
   }
-  for (const { item, shares, tripId } of settleable) {
-    const payerKey = unitKey(tripUnitMembers(tripId, item.paid_by))
+  for (const { item, shares, funding, tripId } of settleable) {
     const cur = item.settleCurrency ?? item.currency
     const rate = item.settleRate ?? 1
+    // Net each unit's funding against its own consumed share, then match this
+    // item's debtors to this item's creditors. This preserves direct debts when
+    // an item has several contributors instead of pretending paid_by funded all.
+    const itemNets = new Map()
+    const addItemNet = (userId, value) => {
+      const key = unitKey(tripUnitMembers(tripId, userId))
+      itemNets.set(key, (itemNets.get(key) || 0) + value)
+    }
+    for (const [userId, paid] of funding) addItemNet(userId, paid * rate)
     for (const [userId, share] of shares) {
-      const shareKey = unitKey(tripUnitMembers(tripId, userId))
-      if (shareKey === payerKey) continue
-      addPair(cur, shareKey, payerKey, share * rate)
+      addItemNet(userId, -share * rate)
+    }
+    const creditors = []
+    const debtors = []
+    for (const [key, net] of itemNets) {
+      if (net > 1e-9) creditors.push({ key, amount: net })
+      else if (net < -1e-9) debtors.push({ key, amount: -net })
+    }
+    while (creditors.length && debtors.length) {
+      creditors.sort((a, b) => b.amount - a.amount)
+      debtors.sort((a, b) => b.amount - a.amount)
+      const creditor = creditors[0]
+      const debtor = debtors[0]
+      const transfer = Math.min(creditor.amount, debtor.amount)
+      addPair(cur, debtor.key, creditor.key, transfer)
+      creditor.amount -= transfer
+      debtor.amount -= transfer
+      if (creditor.amount <= 1e-9) creditors.shift()
+      if (debtor.amount <= 1e-9) debtors.shift()
     }
   }
   for (const s of settlements) {

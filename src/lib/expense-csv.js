@@ -57,12 +57,14 @@ export function buildExpensesCsv(expenses = [], trips = []) {
     const splitDetails = splits.map((split) => {
       const weight = number(split.weight)
       const extra = number(split.extra_amount)
+      const paid = number(split.paid_amount)
       const share = shares?.get(split.user_id)
       const parts = [
         `${nameOf(split.user_id)}: ${share == null ? 'unknown' : share.toFixed(2)} ${expense.currency}`,
         `weight ${weight}`,
       ]
       if (extra > 0) parts.push(`extra ${extra.toFixed(2)} ${expense.currency}`)
+      if (paid > 0) parts.push(`paid separately ${paid.toFixed(2)} ${expense.currency}`)
       return parts.join(', ')
     })
     const chargedRate = number(expense.charged_rate)

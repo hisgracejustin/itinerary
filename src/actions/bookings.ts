@@ -34,7 +34,9 @@ const revalidateApp = () => revalidatePath("/", "layout");
 async function replaceBookingSplits(
   client: Db,
   bookingId: string,
-  splits: { user_id: string; weight: number; extra_amount?: number }[] | undefined,
+  splits:
+    | { user_id: string; weight: number; extra_amount?: number; paid_amount?: number }[]
+    | undefined,
 ) {
   if (splits === undefined) return;
   await client.delete(tables.bookingSplits).where(eq(tables.bookingSplits.booking_id, bookingId));
@@ -45,6 +47,7 @@ async function replaceBookingSplits(
         user_id: s.user_id,
         weight: s.weight,
         extra_amount: s.extra_amount ?? 0,
+        paid_amount: s.paid_amount ?? 0,
       })),
     );
   }
@@ -122,6 +125,7 @@ export async function updateBookingAction(id: string, input: unknown) {
         user_id: tables.bookingSplits.user_id,
         weight: tables.bookingSplits.weight,
         extra_amount: tables.bookingSplits.extra_amount,
+        paid_amount: tables.bookingSplits.paid_amount,
       })
       .from(tables.bookingSplits)
       .where(eq(tables.bookingSplits.booking_id, id));
@@ -146,6 +150,14 @@ export async function updateBookingAction(id: string, input: unknown) {
       ...(splits ?? []).map((s) => s.user_id),
       ...carriedUserIds,
     ]);
+    const finalSplits = splits ?? existingSplits;
+    const finalAmount = updates.cost_amount === undefined ? existing.cost_amount : updates.cost_amount;
+    const finalShare = updates.cost_share === undefined ? existing.cost_share : updates.cost_share;
+    const splittable = finalAmount == null ? 0 : finalAmount * (finalShare ?? 1);
+    const contributed = finalSplits.reduce((sum, split) => sum + (split.paid_amount ?? 0), 0);
+    if (contributed > splittable + 1e-9) {
+      throw new AppError("Paid separately amounts cannot exceed the total cost");
+    }
     const row = await transaction(async (tx) => {
       let updated;
       if (Object.keys(updates).length > 0) {

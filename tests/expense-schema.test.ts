@@ -9,7 +9,7 @@ const validExpense = {
   currency: "CAD",
   paid_by: "payer",
   date: "2026-08-08",
-  splits: [{ user_id: "payer", weight: 1, extra_amount: 0 }],
+  splits: [{ user_id: "payer", weight: 1, extra_amount: 0, paid_amount: 0 }],
 };
 
 test("expense creation requires a YYYY-MM-DD date", () => {
@@ -23,4 +23,18 @@ test("expense updates may omit but cannot clear the date", () => {
   assert.equal(expenseUpdateSchema.safeParse({ title: "Coffee beans" }).success, true);
   assert.equal(expenseUpdateSchema.safeParse({ date: null }).success, false);
   assert.equal(expenseUpdateSchema.safeParse({ date: "2026-08-09" }).success, true);
+});
+
+test("expense creation rejects paid separately contributions above its amount", () => {
+  const result = expenseInsertSchema.safeParse({
+    ...validExpense,
+    splits: [{
+      user_id: "payer",
+      weight: 1,
+      extra_amount: 0,
+      paid_amount: 14.01,
+    }],
+  });
+  assert.equal(result.success, false);
+  assert.match(result.error!.issues[0].message, /cannot exceed/i);
 });

@@ -28,9 +28,9 @@ test("exports essential expense and exact split information", () => {
         charged_currency: "USD",
         charged_rate: 0.75,
         splits: [
-          { user_id: "adri", weight: 1, extra_amount: 0 },
-          { user_id: "justin", weight: 1, extra_amount: 0 },
-          { user_id: "michelle", weight: 0, extra_amount: 0 },
+          { user_id: "adri", weight: 1, extra_amount: 0, paid_amount: 0 },
+          { user_id: "justin", weight: 1, extra_amount: 0, paid_amount: 2 },
+          { user_id: "michelle", weight: 0, extra_amount: 0, paid_amount: 0 },
         ],
       },
     ],
@@ -41,7 +41,7 @@ test("exports essential expense and exact split information", () => {
   assert.match(csv, /"Trip","Date","Expense","Amount","Currency","Paid by"/);
   assert.match(csv, /"Coffee, ""large"""/);
   assert.match(csv, /"Adri; Justin; Michelle"/);
-  assert.match(csv, /"Adri: 7\.00 CAD, weight 1; Justin: 7\.00 CAD, weight 1; Michelle: 0\.00 CAD, weight 0"/);
+  assert.match(csv, /"Adri: 7\.00 CAD, weight 1; Justin: 7\.00 CAD, weight 1, paid separately 2\.00 CAD; Michelle: 0\.00 CAD, weight 0"/);
   assert.match(csv, /"USD","0\.75","10\.5","Justin","2026-08-07T18:00:00\.000Z","expense-1"/);
 });
 
