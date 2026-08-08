@@ -64,7 +64,7 @@ function mergeAsLayover(legs) {
   }
 }
 
-export default function BookingModal({ booking, onClose, onSave, onDelete, selectedTrip, tripName, availableTrips = null, allBookings = null }) {
+export default function BookingModal({ booking, onClose, onSave, onDelete, selectedTrip, tripName, availableTrips, allBookings = null }) {
   const [saving, setSaving] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [mode, setMode] = useState('manual') // 'manual' | 'upload' | 'multi-review'
