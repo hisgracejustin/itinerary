@@ -20,6 +20,7 @@ export const bookingTypeSchema = z.enum([
 // `cost_currency: string` for back-compat with historical rows.
 const CURRENCY_CODES = CURRENCIES.map((c) => c.code) as [string, ...string[]];
 const currencySchema = z.enum(CURRENCY_CODES);
+const dateOnlySchema = z.iso.date();
 
 // One person's share of a split. user_id is a text user id (cuid2 / preserved
 // Supabase UUID), so no .uuid(). `weight` must be ≥ 0 and `extra_amount` ≥ 0,
@@ -197,7 +198,7 @@ export const expenseInsertSchema = z
     amount: z.number().positive(),
     currency: currencySchema,
     paid_by: z.string().min(1).nullish(),
-    date: z.string().nullish(),
+    date: dateOnlySchema,
     splits: z.array(splitEntrySchema).min(1),
     charged_currency: currencySchema.nullish(),
     charged_rate: z.number().positive().nullish(),
@@ -212,7 +213,7 @@ export const expenseUpdateSchema = z
     amount: z.number().positive().optional(),
     currency: currencySchema.optional(),
     paid_by: z.string().min(1).nullish(),
-    date: z.string().nullish(),
+    date: dateOnlySchema.optional(),
     // Replace-all, like bookings: `[]` un-splits, `undefined` leaves rows alone.
     splits: z.array(splitEntrySchema).optional(),
     charged_currency: currencySchema.nullish(),

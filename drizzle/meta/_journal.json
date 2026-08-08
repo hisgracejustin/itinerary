@@ -148,6 +148,13 @@
       "when": 1785910741061,
       "tag": "0020_sturdy_shooting_star",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786149048575,
+      "tag": "0021_light_wolf_cub",
+      "breakpoints": true
     }
   ]
 }
