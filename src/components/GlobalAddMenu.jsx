@@ -62,7 +62,10 @@ export default function GlobalAddMenu({ onSelect, onClose, disabled = false }) {
 
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div ref={overlayRef} className="fixed inset-0 z-40">
+    <div
+      ref={overlayRef}
+      className="fixed inset-0 z-40 flex items-center justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+    >
       <div
         aria-hidden="true"
         className="absolute inset-0 bg-black/30"
@@ -75,7 +78,7 @@ export default function GlobalAddMenu({ onSelect, onClose, disabled = false }) {
         aria-label="Add something"
         tabIndex={-1}
         onKeyDown={onKeyDown}
-        className="absolute inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] sm:inset-x-auto sm:bottom-auto sm:right-5 sm:top-14 w-auto sm:w-80 rounded-2xl bg-white border border-outline/20 shadow-elevation-4 p-2 animate-scale-in"
+        className="relative w-full max-w-sm max-h-full overflow-y-auto rounded-2xl bg-white border border-outline/20 shadow-elevation-4 p-2 animate-scale-in"
       >
         <div className="flex items-center justify-between px-3 py-2">
           <h2 className="text-sm font-semibold text-on-surface">Add something</h2>
@@ -90,7 +93,7 @@ export default function GlobalAddMenu({ onSelect, onClose, disabled = false }) {
             No editable trips are selected.
           </p>
         )}
-        <div className="grid grid-cols-2 sm:grid-cols-1 gap-1">
+        <div className="grid grid-cols-1 gap-1">
           {ACTIONS.map((action) => (
             <button
               key={action.kind}
