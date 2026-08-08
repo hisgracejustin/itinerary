@@ -13,6 +13,14 @@ import { useToast } from "./Toast";
 import { useConfirmDanger } from "./ConfirmDanger";
 import { useTripContext } from "../lib/trip-context";
 
+const LAST_EXPENSE_TRIP_KEY = "lastExpenseTrip";
+const rememberedExpenseTrip = () => {
+  try {
+    return window.localStorage.getItem(LAST_EXPENSE_TRIP_KEY);
+  } catch {
+    return null;
+  }
+};
 const cleanAmount = (raw) => String(raw).replace(/[^0-9.]/g, "");
 const toNumber = (raw) => {
   const value = parseFloat(cleanAmount(raw));
@@ -46,8 +54,13 @@ const initialForm = (expense, selectedTrip) => ({
 export default function ExpenseModal({ expense = null, selectedTrip = null, availableTrips = null, onClose }) {
   const { trips } = useTripContext();
   const tripOptions = availableTrips ?? trips;
+  const rememberedTrip = !expense && typeof window !== "undefined"
+    ? rememberedExpenseTrip()
+    : null;
   const defaultTrip =
-    selectedTrip && tripOptions.some((trip) => trip.id === selectedTrip)
+    rememberedTrip && tripOptions.some((trip) => trip.id === rememberedTrip)
+      ? rememberedTrip
+      : selectedTrip && tripOptions.some((trip) => trip.id === selectedTrip)
       ? selectedTrip
       : tripOptions.length === 1
         ? tripOptions[0].id
@@ -64,6 +77,13 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
   const parties = trip?.parties || [];
 
   const changeTrip = (trip_id) => {
+    if (!expense) {
+      try {
+        window.localStorage.setItem(LAST_EXPENSE_TRIP_KEY, trip_id);
+      } catch {
+        // Storage can be unavailable in private browsing; the form still works.
+      }
+    }
     const ids = new Set((trips.find((item) => item.id === trip_id)?.members || []).map((member) => member.id));
     setForm((current) => ({
       ...current,
@@ -118,6 +138,13 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
     try {
       if (expense?.id) await updateExpense(expense.id, payload);
       else await createExpense(payload);
+      if (!expense?.id) {
+        try {
+          window.localStorage.setItem(LAST_EXPENSE_TRIP_KEY, form.trip_id);
+        } catch {
+          // Remembering the convenience default must never block a save.
+        }
+      }
       toast.success(expense?.id ? "Expense updated" : "Expense added");
       onClose();
     } catch (error) {
