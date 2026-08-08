@@ -472,7 +472,7 @@ export default function Settle({
                       t={t}
                       memberByUserId={memberByUserId}
                       currentUserId={currentUserId}
-                      onSettle={writableSelectedTrips.length > 0 ? () => markPaid(t) : undefined}
+                      onSettle={selectedWritableTrip ? () => markPaid(t) : undefined}
                     />
                   ))}
                 </div>
@@ -1000,33 +1000,36 @@ function NeedsAttentionRow({ item, reason, onOpen, onSplitEven, busy }) {
   const isBooking = !!item.type
   const title = item.title || 'Untitled'
   const icon = isBooking ? (TYPE_ICONS[item.type] || '🗂️') : '🧾'
-  const inner = (
-    <div className="flex items-center gap-2 min-w-0">
+  const content = (
+    <>
       <span className="text-base shrink-0">{icon}</span>
       <span className="text-sm text-on-surface truncate min-w-0 flex-1">{title}</span>
-      {onSplitEven ? (
+      {!onSplitEven && <span className="text-[11px] text-amber-600 shrink-0">{reason}</span>}
+    </>
+  )
+  return (
+    <div className="flex items-center gap-2 py-2 border-b border-outline/20 last:border-0 -mx-2 px-2 rounded-lg">
+      {onOpen ? (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onSplitEven() }}
+          onClick={() => onOpen(item)}
+          className="flex flex-1 items-center gap-2 min-w-0 text-left rounded-lg hover:bg-surface-container/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-colors"
+        >
+          {content}
+        </button>
+      ) : (
+        <div className="flex flex-1 items-center gap-2 min-w-0">{content}</div>
+      )}
+      {onSplitEven && (
+        <button
+          type="button"
+          onClick={onSplitEven}
           disabled={busy}
           className="text-[11px] font-medium text-amber-800 border border-amber-400 rounded-full px-2 py-0.5 hover:bg-amber-100 disabled:opacity-40 shrink-0 transition-colors"
         >
           Split evenly
         </button>
-      ) : (
-        <span className="text-[11px] text-amber-600 shrink-0">{reason}</span>
       )}
     </div>
   )
-  if (onOpen) {
-    return (
-      <div
-        onClick={() => onOpen(item)}
-        className="py-2 border-b border-outline/20 last:border-0 cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors"
-      >
-        {inner}
-      </div>
-    )
-  }
-  return <div className="py-2 border-b border-outline/20 last:border-0">{inner}</div>
 }
