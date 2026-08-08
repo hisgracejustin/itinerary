@@ -18,13 +18,17 @@ const toNumber = (raw) => {
   const value = parseFloat(cleanAmount(raw));
   return Number.isFinite(value) ? value : NaN;
 };
+const todayLocal = () => {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+};
 
 const initialForm = (expense, selectedTrip) => ({
   trip_id: expense?.trip_id || selectedTrip || "",
   title: expense?.title || "",
   amount: expense?.amount != null ? String(expense.amount) : "",
   currency: expense?.currency || "HKD",
-  date: expense?.date || "",
+  date: expense?.date || todayLocal(),
   paid_by: expense?.paid_by ?? null,
   splits: (expense?.splits || []).map((split) => ({
     user_id: split.user_id,
@@ -76,6 +80,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
     if (!form.trip_id) return toast.error("Pick a trip for this expense");
     if (!form.title.trim()) return toast.error("Give the expense a title");
     if (!(amount > 0)) return toast.error("Enter an amount");
+    if (!form.date) return toast.error("Pick a date for this expense");
     if (splits.length === 0) return toast.error("Split the expense between at least one person");
     if (!form.paid_by) return toast.error("Pick who paid");
     const sumExtras = splits.reduce((sum, row) => sum + (Number(row.extra_amount) || 0), 0);
@@ -92,7 +97,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
       title: form.title.trim(),
       amount,
       currency: form.currency,
-      date: form.date || null,
+      date: form.date,
       paid_by: form.paid_by,
       splits,
       charged_currency: hasCharge ? form.charged_currency : null,
@@ -194,10 +199,11 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
           </div>
           <label className="block">
             <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">
-              Date (optional)
+              Date
             </span>
             <input
               type="date"
+              required
               value={form.date}
               onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))}
               className="mat-input"

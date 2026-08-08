@@ -421,7 +421,7 @@ export const expenses = pgTable(
     paid_by: text("paid_by").references(() => users.id, { onDelete: "set null" }),
     // Same contract as bookings.created_by — permanently nullable, set-null.
     created_by: text("created_by").references(() => users.id, { onDelete: "set null" }),
-    date: text("date"), // optional "YYYY-MM-DD", matching trips' text dates
+    date: text("date").notNull(), // "YYYY-MM-DD", matching trips' text dates
     // Exact charged currency + rate — mirrors bookings.charged_currency/rate.
     charged_currency: text("charged_currency"),
     charged_rate: numeric("charged_rate", { mode: "number" }),
