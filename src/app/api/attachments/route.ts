@@ -15,10 +15,11 @@ function json(body: unknown, status: number) {
 }
 
 /**
- * Upload a file attachment for a booking. Uses multipart/form-data (fields:
- * `file`, `booking_id`) via a route handler because Server Actions cap bodies
- * at ~1MB and don't accept multipart. File bytes are stored as bytea on the
- * booking_attachments row (see the storage decision in project memory).
+ * Upload a file attachment for a booking OR an expense. Uses multipart/form-data
+ * (fields: `file`, plus exactly one of `booking_id` / `expense_id`) via a route
+ * handler because Server Actions cap bodies at ~1MB and don't accept multipart.
+ * File bytes are stored as bytea on the matching *_attachments row (see the
+ * storage decision in project memory).
  */
 export async function POST(req: Request) {
   const session = await auth();
@@ -40,10 +41,13 @@ export async function POST(req: Request) {
   }
 
   const bookingId = form.get("booking_id");
+  const expenseId = form.get("expense_id");
   const file = form.get("file");
 
-  if (typeof bookingId !== "string" || !bookingId) {
-    return json({ error: "Missing booking_id" }, 400);
+  const hasBooking = typeof bookingId === "string" && bookingId.length > 0;
+  const hasExpense = typeof expenseId === "string" && expenseId.length > 0;
+  if (hasBooking === hasExpense) {
+    return json({ error: "Provide exactly one of booking_id or expense_id" }, 400);
   }
   if (!(file instanceof File)) {
     return json({ error: "Missing file" }, 400);
@@ -58,38 +62,50 @@ export async function POST(req: Request) {
     return json({ error: "File is empty." }, 400);
   }
 
-  const [booking] = await db
-    .select({ trip_id: tables.bookings.trip_id })
-    .from(tables.bookings)
-    .where(eq(tables.bookings.id, bookingId))
-    .limit(1);
-  if (!booking) return json({ error: "Booking not found" }, 404);
+  const [parent] = hasBooking
+    ? await db
+        .select({ trip_id: tables.bookings.trip_id })
+        .from(tables.bookings)
+        .where(eq(tables.bookings.id, bookingId as string))
+        .limit(1)
+    : await db
+        .select({ trip_id: tables.expenses.trip_id })
+        .from(tables.expenses)
+        .where(eq(tables.expenses.id, expenseId as string))
+        .limit(1);
+  if (!parent) return json({ error: hasBooking ? "Booking not found" : "Expense not found" }, 404);
 
   try {
-    await requireTripAccess(session.user.id, booking.trip_id, WRITE_ROLES);
+    await requireTripAccess(session.user.id, parent.trip_id, WRITE_ROLES);
   } catch {
     return json({ error: "Forbidden" }, 403);
   }
 
   const content = Buffer.from(await file.arrayBuffer());
+  const values = {
+    filename: file.name || "attachment",
+    mime_type: file.type,
+    size_bytes: file.size,
+    content,
+    uploaded_by: session.user.id,
+  };
 
-  const [row] = await db
-    .insert(tables.bookingAttachments)
-    .values({
-      booking_id: bookingId,
-      filename: file.name || "attachment",
-      mime_type: file.type,
-      size_bytes: file.size,
-      content,
-      uploaded_by: session.user.id,
-    })
-    .returning();
+  const [row] = hasBooking
+    ? await db
+        .insert(tables.bookingAttachments)
+        .values({ ...values, booking_id: bookingId as string })
+        .returning()
+    : await db
+        .insert(tables.expenseAttachments)
+        .values({ ...values, expense_id: expenseId as string })
+        .returning();
 
   // Return metadata only — never ship the file bytes back in the JSON response.
   return json(
     {
       id: row.id,
-      booking_id: row.booking_id,
+      booking_id: hasBooking ? bookingId : undefined,
+      expense_id: hasExpense ? expenseId : undefined,
       filename: row.filename,
       mime_type: row.mime_type,
       size_bytes: row.size_bytes,

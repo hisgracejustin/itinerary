@@ -25,7 +25,13 @@ async function replaceExpenseSplits(
   client: Db,
   expenseId: string,
   splits:
-    | { user_id: string; weight: number; extra_amount?: number; paid_amount?: number }[]
+    | {
+        user_id: string;
+        weight: number;
+        extra_amount?: number;
+        paid_amount?: number;
+        base_amount?: number | null;
+      }[]
     | undefined,
 ) {
   if (splits === undefined) return;
@@ -38,6 +44,7 @@ async function replaceExpenseSplits(
         weight: s.weight,
         extra_amount: s.extra_amount ?? 0,
         paid_amount: s.paid_amount ?? 0,
+        base_amount: s.base_amount ?? null,
       })),
     );
   }
@@ -66,6 +73,8 @@ export async function createExpenseAction(input: unknown) {
           date: data.date ?? null,
           charged_currency: data.charged_currency ?? null,
           charged_rate: data.charged_rate ?? null,
+          service_percent: data.service_percent ?? null,
+          shared_charge: data.shared_charge ?? null,
         })
         .returning();
       await replaceExpenseSplits(tx, inserted.id, data.splits);
@@ -100,6 +109,7 @@ export async function updateExpenseAction(id: string, input: unknown) {
         weight: tables.expenseSplits.weight,
         extra_amount: tables.expenseSplits.extra_amount,
         paid_amount: tables.expenseSplits.paid_amount,
+        base_amount: tables.expenseSplits.base_amount,
       })
       .from(tables.expenseSplits)
       .where(eq(tables.expenseSplits.expense_id, id));

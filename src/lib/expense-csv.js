@@ -9,6 +9,8 @@ const HEADERS = [
   'Paid by',
   'Split between',
   'Split details',
+  'Service %',
+  'Shared charge',
   'Charged currency',
   'Charged rate',
   'Charged amount',
@@ -63,6 +65,8 @@ export function buildExpensesCsv(expenses = [], trips = []) {
         `${nameOf(split.user_id)}: ${share == null ? 'unknown' : share.toFixed(2)} ${expense.currency}`,
         `weight ${weight}`,
       ]
+      const base = split.base_amount
+      if (base != null) parts.push(`before charges ${number(base).toFixed(2)} ${expense.currency}`)
       if (extra > 0) parts.push(`extra ${extra.toFixed(2)} ${expense.currency}`)
       if (paid > 0) parts.push(`paid separately ${paid.toFixed(2)} ${expense.currency}`)
       return parts.join(', ')
@@ -79,6 +83,8 @@ export function buildExpensesCsv(expenses = [], trips = []) {
       expense.paid_by ? nameOf(expense.paid_by) : 'Unassigned',
       splitNames.length ? splitNames.join('; ') : 'Unallocated',
       splitDetails.join('; '),
+      expense.service_percent == null ? '' : number(expense.service_percent),
+      expense.shared_charge == null ? '' : number(expense.shared_charge),
       hasCharge ? expense.charged_currency : '',
       hasCharge ? chargedRate : '',
       hasCharge ? amount * chargedRate : '',

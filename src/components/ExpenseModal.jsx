@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import FormModal from "./FormModal";
 import TripSelect from "./TripSelect";
 import SplitEditor from "./SplitEditor";
+import AttachmentsSection from "./AttachmentsSection";
 import ChargedRateEditor from "./ChargedRateEditor";
 import { CURRENCIES } from "../lib/currencies";
 import { pruneEmptySplits } from "../lib/split";
@@ -43,10 +44,28 @@ const initialForm = (expense, selectedTrip) => ({
     weight: Number.isFinite(Number(split.weight)) ? Number(split.weight) : 1,
     extra_amount: Number(split.extra_amount) || 0,
     paid_amount: Number(split.paid_amount) || 0,
+    base_amount: split.base_amount != null ? Number(split.base_amount) : null,
   })),
+  // Already folded into the split rows; carried so the editor can show them.
+  service_percent: expense?.service_percent != null ? Number(expense.service_percent) : null,
+  shared_charge: expense?.shared_charge != null ? Number(expense.shared_charge) : null,
   charged_currency: expense?.charged_currency || "",
   charged_rate: expense?.charged_rate != null ? String(expense.charged_rate) : "",
 });
+
+/** Upload files staged before a new expense existed. Best-effort per file. */
+async function uploadStagedFiles(expenseId, files) {
+  for (const file of files) {
+    const body = new FormData();
+    body.append("expense_id", expenseId);
+    body.append("file", file);
+    const res = await fetch("/api/attachments", { method: "POST", body });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.error || `Failed to attach ${file.name}`);
+    }
+  }
+}
 
 /**
  * @param {{ expense?: any, selectedTrip?: string | null, availableTrips?: any[] | null, onClose: () => void }} props
@@ -71,6 +90,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
   const savingRef = useRef(false);
   const [form, setForm] = useState(() => initialForm(expense, defaultTrip));
   const [saving, setSaving] = useState(false);
+  const [stagedFiles, setStagedFiles] = useState([]); // attachments for a not-yet-saved expense
 
   const trip = trips.find((item) => item.id === form.trip_id);
   const roster = trip?.members || [];
@@ -129,6 +149,8 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
       date: form.date,
       paid_by: form.paid_by,
       splits,
+      service_percent: form.service_percent,
+      shared_charge: form.shared_charge,
       charged_currency: hasCharge ? form.charged_currency : null,
       charged_rate: hasCharge ? toNumber(form.charged_rate) : null,
     };
@@ -137,7 +159,18 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
     setSaving(true);
     try {
       if (expense?.id) await updateExpense(expense.id, payload);
-      else await createExpense(payload);
+      else {
+        const saved = await createExpense(payload);
+        if (saved?.id && stagedFiles.length > 0) {
+          try {
+            await uploadStagedFiles(saved.id, stagedFiles);
+          } catch (error) {
+            // The expense itself saved — surface the upload failure without
+            // losing it, exactly as BookingModal does.
+            toast.error(friendlyError(error));
+          }
+        }
+      }
       if (!expense?.id) {
         try {
           window.localStorage.setItem(LAST_EXPENSE_TRIP_KEY, form.trip_id);
@@ -253,11 +286,29 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
               currency={form.currency}
               paidBy={form.paid_by}
               splits={form.splits}
-              onChange={({ paid_by, splits }) => setForm((current) => ({ ...current, paid_by, splits }))}
+              servicePercent={form.service_percent}
+              sharedCharge={form.shared_charge}
+              onChange={({ paid_by, splits, service_percent, shared_charge }) =>
+                setForm((current) => ({
+                  ...current,
+                  paid_by,
+                  splits,
+                  service_percent,
+                  shared_charge,
+                }))
+              }
             />
           ) : (
             <p className="text-xs text-on-surface-variant">Pick a trip to split this expense.</p>
           )}
+          <div className="rounded-xl border border-outline/30 bg-surface-container/40 p-3">
+            <AttachmentsSection
+              expenseId={expense?.id ?? null}
+              mode="edit"
+              stagedFiles={stagedFiles}
+              setStagedFiles={setStagedFiles}
+            />
+          </div>
           <ChargedRateEditor
             nativeCurrency={form.currency}
             effective={toNumber(form.amount) || 0}

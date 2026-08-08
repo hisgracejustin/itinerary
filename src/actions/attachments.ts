@@ -34,3 +34,28 @@ export async function getBookingAttachmentsAction(bookingId: string) {
       .orderBy(asc(tables.bookingAttachments.created_at));
   });
 }
+
+/** The same, for an expense's receipts. Gated on membership of its trip. */
+export async function getExpenseAttachmentsAction(expenseId: string) {
+  return runAction(async (user) => {
+    const [expense] = await db
+      .select({ trip_id: tables.expenses.trip_id })
+      .from(tables.expenses)
+      .where(eq(tables.expenses.id, expenseId))
+      .limit(1);
+    if (!expense) throw new AppError("Expense not found");
+    await requireTripAccess(user.id, expense.trip_id);
+    return db
+      .select({
+        id: tables.expenseAttachments.id,
+        expense_id: tables.expenseAttachments.expense_id,
+        filename: tables.expenseAttachments.filename,
+        mime_type: tables.expenseAttachments.mime_type,
+        size_bytes: tables.expenseAttachments.size_bytes,
+        created_at: tables.expenseAttachments.created_at,
+      })
+      .from(tables.expenseAttachments)
+      .where(eq(tables.expenseAttachments.expense_id, expenseId))
+      .orderBy(asc(tables.expenseAttachments.created_at));
+  });
+}

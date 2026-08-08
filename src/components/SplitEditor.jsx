@@ -29,8 +29,11 @@ import { applyItemCharges, itemShares, itemUnitTransfers } from '../lib/split'
  * @param {number} props.amount   splittable amount, for the live share preview
  * @param {string} props.currency currency code for the preview
  * @param {string|null} props.paidBy  user id who paid, or null
- * @param {Array}  props.splits   [{ user_id, weight, extra_amount, paid_amount }]
- * @param {(next: { paid_by: string|null, splits: Array }) => void} props.onChange
+ * @param {Array}  props.splits   [{ user_id, weight, extra_amount, paid_amount, base_amount }]
+ * @param {number|null} props.servicePercent saved service charge %, if any
+ * @param {number|null} props.sharedCharge   saved equally-shared fixed charge
+ * @param {(next: { paid_by: string|null, splits: Array, service_percent: number|null,
+ *   shared_charge: number|null }) => void} props.onChange
  */
 export default function SplitEditor({
   members = [],
@@ -39,6 +42,8 @@ export default function SplitEditor({
   currency,
   paidBy = null,
   splits = [],
+  servicePercent = null,
+  sharedCharge = null,
   onChange,
 }) {
   const [showShares, setShowShares] = useState(false)
@@ -51,14 +56,21 @@ export default function SplitEditor({
   const [drafts, setDrafts] = useState({})
   const [extraDrafts, setExtraDrafts] = useState({})
   const [paidDrafts, setPaidDrafts] = useState({})
-  const [serviceDraft, setServiceDraft] = useState('')
-  const [sharedChargeDraft, setSharedChargeDraft] = useState('')
+  const [serviceDraft, setServiceDraft] = useState(servicePercent ? String(servicePercent) : '')
+  const [sharedChargeDraft, setSharedChargeDraft] = useState(sharedCharge ? String(sharedCharge) : '')
   // Exact-amounts mode keeps each person's raw amount BEFORE the service and
   // shared charges. extra_amount already includes them, so recomputing off it
-  // would re-apply them on every charge edit (visible when reopening a saved
-  // expense, where the drafts start empty).
+  // would re-apply them on every charge edit. Saved rows carry base_amount and
+  // rehydrate exactly; rows written before that column existed fall back to the
+  // charged figure, which is the best guess available (the charge fields come
+  // back empty for those, so nothing is double-applied).
   const [bases, setBases] = useState(() =>
-    Object.fromEntries(splits.map((row) => [row.user_id, String(Number(row.extra_amount) || 0)])),
+    Object.fromEntries(
+      splits.map((row) => [
+        row.user_id,
+        String(row.base_amount != null ? row.base_amount : Number(row.extra_amount) || 0),
+      ]),
+    ),
   )
   // Party chips expand so one half of a couple can be left off a bill.
   const [openParties, setOpenParties] = useState(() => new Set())
@@ -83,23 +95,36 @@ export default function SplitEditor({
   const sumPaid = splits.reduce((acc, r) => acc + (Number(r.paid_amount) || 0), 0)
   const contributionsExceed = sumPaid > amount + 1e-9
 
+  // A charge field left blank persists as null, not 0 — "never used" and "0%"
+  // read the same on the way back in, and null keeps the editor's fields empty.
+  const chargeValue = (raw) => (parseFloat(raw) > 0 ? parseFloat(raw) : null)
+
   const emit = (next) =>
     onChange?.({
       paid_by: next.paid_by !== undefined ? next.paid_by : paidBy,
       splits: next.splits !== undefined ? next.splits : splits,
+      service_percent: chargeValue(next.service !== undefined ? next.service : serviceDraft),
+      shared_charge: chargeValue(next.shared !== undefined ? next.shared : sharedChargeDraft),
     })
 
   // Re-derive exact-amount rows from the raw bases + both charges. Called for
   // every edit that can move them, membership changes included: adding or
-  // dropping a person changes who the shared charge divides between.
+  // dropping a person changes who the shared charge divides between. Each row
+  // carries its own base back out so a reopened expense rehydrates exactly.
   const recharge = (rows, { baseMap = bases, service = serviceDraft, shared = sharedChargeDraft } = {}) => {
-    if (shareMode !== 'amounts') return rows
+    if (shareMode !== 'amounts') return rows.map((row) => ({ ...row, base_amount: null }))
+    const numeric = Object.fromEntries(
+      Object.entries(baseMap).map(([id, raw]) => [id, parseFloat(raw)]),
+    )
     return applyItemCharges({
       splits: rows,
-      bases: Object.fromEntries(Object.entries(baseMap).map(([id, raw]) => [id, parseFloat(raw)])),
+      bases: numeric,
       servicePercent: parseFloat(service) || 0,
       sharedCharge: parseFloat(shared) || 0,
-    })
+    }).map((row) => ({
+      ...row,
+      base_amount: numeric[row.user_id] > 0 ? numeric[row.user_id] : null,
+    }))
   }
 
   // ---- Units: a party chip toggles all its members; a solo chip toggles one. --
@@ -218,14 +243,21 @@ export default function SplitEditor({
       setDrafts({})
       setExtraDrafts({})
       setBases(Object.fromEntries(next.map((row) => [row.user_id, String(row.extra_amount)])))
-      emit({ splits: next })
+      emit({
+        splits: next.map((row) => ({ ...row, base_amount: row.extra_amount || null })),
+        service: '',
+        shared: '',
+      })
     } else {
       emit({
         splits: splits.map((row) => ({
           ...row,
           weight: Number(row.extra_amount) || 0,
           extra_amount: 0,
+          base_amount: null,
         })),
+        service: '',
+        shared: '',
       })
       setDrafts({})
       setExtraDrafts({})
@@ -248,13 +280,13 @@ export default function SplitEditor({
   const setServiceCharge = (raw) => {
     const clean = raw.replace(/[^0-9.]/g, '')
     setServiceDraft(clean)
-    emit({ splits: recharge(splits, { service: clean }) })
+    emit({ splits: recharge(splits, { service: clean }), service: clean })
   }
 
   const setSharedCharge = (raw) => {
     const clean = raw.replace(/[^0-9.]/g, '')
     setSharedChargeDraft(clean)
-    emit({ splits: recharge(splits, { shared: clean }) })
+    emit({ splits: recharge(splits, { shared: clean }), shared: clean })
   }
 
   const includedMembers = members.filter((m) => includedIds.has(m.id))

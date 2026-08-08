@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getBookingAttachmentsAction } from '@/actions/attachments'
+import { getBookingAttachmentsAction, getExpenseAttachmentsAction } from '@/actions/attachments'
 import { unwrap } from '@/lib/friendlyError'
 import {
   ATTACHMENT_ACCEPT,
@@ -13,15 +13,26 @@ import { useToast } from './Toast'
 import { useConfirmDanger } from './ConfirmDanger'
 
 /**
- * Attachments list + uploader for a booking.
+ * Attachments list + uploader for a booking OR an expense — pass exactly one of
+ * `bookingId` / `expenseId`.
  *  - mode="view": read-only list with View / Download links.
  *  - mode="edit": adds an upload control and per-file delete.
- *    When `bookingId` is null (a new, unsaved booking) files are held in
- *    `stagedFiles` and uploaded by the parent modal after the booking is created.
+ *    When the parent id is null (a new, unsaved item) files are held in
+ *    `stagedFiles` and uploaded by the parent modal after it is created.
  */
-export default function AttachmentsSection({ bookingId, mode = 'view', stagedFiles = [], setStagedFiles }) {
+export default function AttachmentsSection({
+  bookingId = null,
+  expenseId = null,
+  mode = 'view',
+  stagedFiles = [],
+  setStagedFiles,
+}) {
+  // One parent, two shapes: everything below keys off these three values.
+  const parentId = bookingId ?? expenseId
+  const parentField = bookingId ? 'booking_id' : 'expense_id'
+  const listAction = bookingId ? getBookingAttachmentsAction : getExpenseAttachmentsAction
   const [attachments, setAttachments] = useState([])
-  const [loading, setLoading] = useState(!!bookingId)
+  const [loading, setLoading] = useState(!!parentId)
   const [uploading, setUploading] = useState(false)
   const inputRef = useRef(null)
   const { toast } = useToast()
@@ -29,14 +40,14 @@ export default function AttachmentsSection({ bookingId, mode = 'view', stagedFil
   const editable = mode === 'edit'
 
   const load = useCallback(async () => {
-    if (!bookingId) {
+    if (!parentId) {
       setAttachments([])
       setLoading(false)
       return
     }
     setLoading(true)
     try {
-      const rows = unwrap(await getBookingAttachmentsAction(bookingId))
+      const rows = unwrap(await listAction(parentId))
       setAttachments(rows)
     } catch {
       // Non-fatal — surface an empty list rather than blocking the modal.
@@ -44,7 +55,7 @@ export default function AttachmentsSection({ bookingId, mode = 'view', stagedFil
     } finally {
       setLoading(false)
     }
-  }, [bookingId])
+  }, [parentId, listAction])
 
   useEffect(() => { load() }, [load])
 
@@ -62,7 +73,7 @@ export default function AttachmentsSection({ bookingId, mode = 'view', stagedFil
 
   const uploadOne = async (file) => {
     const body = new FormData()
-    body.append('booking_id', bookingId)
+    body.append(parentField, parentId)
     body.append('file', file)
     const res = await fetch('/api/attachments', { method: 'POST', body })
     const data = await res.json().catch(() => null)
@@ -80,8 +91,8 @@ export default function AttachmentsSection({ bookingId, mode = 'view', stagedFil
     const files = Array.from(fileList || []).filter(validate)
     if (files.length === 0) return
 
-    if (!bookingId) {
-      // New booking — stage for upload after it's created.
+    if (!parentId) {
+      // Not saved yet — stage for upload after the parent is created.
       setStagedFiles?.((prev) => [...prev, ...files])
       return
     }

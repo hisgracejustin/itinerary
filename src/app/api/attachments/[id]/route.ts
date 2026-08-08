@@ -16,9 +16,13 @@ function contentDisposition(filename: string, download: boolean): string {
   return `${type}; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
-/** Look up an attachment joined to its booking's trip for authz. */
+/**
+ * Look up an attachment joined to its parent's trip for authz. Booking and
+ * expense attachments live in separate tables but share this route; ids are
+ * cuid2 from one generator, so an id belongs to at most one of them.
+ */
 async function loadAttachment(id: string) {
-  const [row] = await db
+  const [booking] = await db
     .select({
       id: tables.bookingAttachments.id,
       filename: tables.bookingAttachments.filename,
@@ -31,7 +35,22 @@ async function loadAttachment(id: string) {
     .innerJoin(tables.bookings, eq(tables.bookingAttachments.booking_id, tables.bookings.id))
     .where(eq(tables.bookingAttachments.id, id))
     .limit(1);
-  return row;
+  if (booking) return { ...booking, kind: "booking" as const };
+
+  const [expense] = await db
+    .select({
+      id: tables.expenseAttachments.id,
+      filename: tables.expenseAttachments.filename,
+      mime_type: tables.expenseAttachments.mime_type,
+      size_bytes: tables.expenseAttachments.size_bytes,
+      content: tables.expenseAttachments.content,
+      trip_id: tables.expenses.trip_id,
+    })
+    .from(tables.expenseAttachments)
+    .innerJoin(tables.expenses, eq(tables.expenseAttachments.expense_id, tables.expenses.id))
+    .where(eq(tables.expenseAttachments.id, id))
+    .limit(1);
+  return expense ? { ...expense, kind: "expense" as const } : undefined;
 }
 
 // View (inline) or download (?download=1) an attachment.
@@ -89,6 +108,10 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     return json({ error: "Forbidden" }, 403);
   }
 
-  await db.delete(tables.bookingAttachments).where(eq(tables.bookingAttachments.id, id));
+  if (row.kind === "booking") {
+    await db.delete(tables.bookingAttachments).where(eq(tables.bookingAttachments.id, id));
+  } else {
+    await db.delete(tables.expenseAttachments).where(eq(tables.expenseAttachments.id, id));
+  }
   return json({ id }, 200);
 }

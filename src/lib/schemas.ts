@@ -31,6 +31,9 @@ export const splitEntrySchema = z
     weight: z.number().min(0),
     extra_amount: z.number().min(0).default(0),
     paid_amount: z.number().min(0).default(0),
+    // Pre-charge amount for exact-amount expense rows; editor-only provenance,
+    // never read by the settlement math. Absent for weight splits and bookings.
+    base_amount: z.number().min(0).nullish(),
   })
   .refine((s) => s.weight > 0 || s.extra_amount > 0 || s.paid_amount > 0, {
     path: ["weight"],
@@ -228,6 +231,10 @@ export const expenseInsertSchema = z
     splits: z.array(splitEntrySchema).min(1),
     charged_currency: currencySchema.nullish(),
     charged_rate: z.number().positive().nullish(),
+    // What the exact-amounts editor was told, so it can be shown again on edit.
+    // Both are already folded into the split rows (see the schema comment).
+    service_percent: z.number().min(0).max(1000).nullish(),
+    shared_charge: z.number().min(0).nullish(),
   })
   .superRefine(requirePayerWhenSplit)
   .superRefine(requireContributionsWithinAmount)
@@ -245,6 +252,8 @@ export const expenseUpdateSchema = z
     splits: z.array(splitEntrySchema).optional(),
     charged_currency: currencySchema.nullish(),
     charged_rate: z.number().positive().nullish(),
+    service_percent: z.number().min(0).max(1000).nullish(),
+    shared_charge: z.number().min(0).nullish(),
   })
   .superRefine(requirePayerWhenSplit)
   .superRefine(requireContributionsWithinAmount)

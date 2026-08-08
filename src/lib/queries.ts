@@ -57,7 +57,13 @@ async function bookingSplitsByBooking(bookingIds: string[]) {
 async function expenseSplitsByExpense(expenseIds: string[]) {
   const byExpense = new Map<
     string,
-    { user_id: string; weight: number; extra_amount: number; paid_amount: number }[]
+    {
+      user_id: string;
+      weight: number;
+      extra_amount: number;
+      paid_amount: number;
+      base_amount: number | null;
+    }[]
   >();
   if (expenseIds.length === 0) return byExpense;
   const rows = await db
@@ -67,6 +73,7 @@ async function expenseSplitsByExpense(expenseIds: string[]) {
       weight: tables.expenseSplits.weight,
       extra_amount: tables.expenseSplits.extra_amount,
       paid_amount: tables.expenseSplits.paid_amount,
+      base_amount: tables.expenseSplits.base_amount,
     })
     .from(tables.expenseSplits)
     .where(inArray(tables.expenseSplits.expense_id, expenseIds));
@@ -77,6 +84,7 @@ async function expenseSplitsByExpense(expenseIds: string[]) {
       weight: r.weight,
       extra_amount: r.extra_amount,
       paid_amount: r.paid_amount,
+      base_amount: r.base_amount,
     });
     byExpense.set(r.expense_id, list);
   }

@@ -428,6 +428,14 @@ export const expenses = pgTable(
     // Exact charged currency + rate — mirrors bookings.charged_currency/rate.
     charged_currency: text("charged_currency"),
     charged_rate: numeric("charged_rate", { mode: "number" }),
+    // How the exact-amounts editor arrived at the split rows: a service charge
+    // percentage applied to each person's own amount, and a fixed charge (tip,
+    // table charge) divided equally between everyone who ordered. Both are
+    // ALREADY baked into expense_splits.extra_amount — they persist only so
+    // reopening the expense can show what was entered instead of the bumped
+    // figures. null = never used the charge fields.
+    service_percent: numeric("service_percent", { mode: "number" }),
+    shared_charge: numeric("shared_charge", { mode: "number" }),
     created_at: createdAt(),
   },
   (t) => [index("idx_expenses_trip_id").on(t.trip_id)],
@@ -449,8 +457,36 @@ export const expenseSplits = pgTable(
     extra_amount: numeric("extra_amount", { mode: "number" }).notNull().default(0),
     // Separate funding contribution — mirrors booking_splits.paid_amount.
     paid_amount: numeric("paid_amount", { mode: "number" }).notNull().default(0),
+    // This person's own amount BEFORE the expense's service/shared charges —
+    // what they actually typed in the exact-amounts editor. extra_amount is the
+    // charged result and stays the only value the settlement math reads. NULL
+    // for weight-split rows and for rows written before the charge fields were
+    // persisted; the editor falls back to extra_amount there.
+    base_amount: numeric("base_amount", { mode: "number" }),
   },
   (t) => [primaryKey({ columns: [t.expense_id, t.user_id] })],
+);
+
+// File attachments for an expense — a receipt photo, a scanned bill. Mirrors
+// booking_attachments exactly, including bytea storage (see the storage
+// decision in project memory); the two share one pair of API routes.
+export const expenseAttachments = pgTable(
+  "expense_attachments",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    expense_id: uuid("expense_id")
+      .notNull()
+      .references(() => expenses.id, { onDelete: "cascade" }),
+    filename: text("filename").notNull(),
+    mime_type: text("mime_type").notNull(),
+    size_bytes: integer("size_bytes").notNull(),
+    content: bytea("content").notNull(),
+    uploaded_by: text("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+    created_at: createdAt(),
+  },
+  (t) => [index("idx_expense_attachments_expense_id").on(t.expense_id)],
 );
 
 // Recorded pay-backs, person-to-person (never party-to-party). Applied exactly
@@ -595,6 +631,11 @@ export const expensesRelations = relations(expenses, ({ one, many }) => ({
   trip: one(trips, { fields: [expenses.trip_id], references: [trips.id] }),
   payer: one(users, { fields: [expenses.paid_by], references: [users.id] }),
   splits: many(expenseSplits),
+  attachments: many(expenseAttachments),
+}));
+
+export const expenseAttachmentsRelations = relations(expenseAttachments, ({ one }) => ({
+  expense: one(expenses, { fields: [expenseAttachments.expense_id], references: [expenses.id] }),
 }));
 
 export const expenseSplitsRelations = relations(expenseSplits, ({ one }) => ({

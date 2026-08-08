@@ -266,6 +266,8 @@ export type ExpenseSnapshot = {
   charged_rate: number | null;
   paid_by: string | null;
   date: string | null;
+  service_percent: number | null;
+  shared_charge: number | null;
   splits: SplitRow[];
 };
 
@@ -300,6 +302,13 @@ export async function expenseAuditChanges(
       old_value: text(before.charged_rate),
       new_value: text(after.charged_rate),
     });
+  }
+  // The charge inputs are only provenance for the split rows, but a changed tip
+  // is exactly the sort of edit people query later, so it belongs in the history.
+  for (const f of ["service_percent", "shared_charge"] as const) {
+    if (differs(before[f], after[f])) {
+      changes.push({ field: f, old_value: text(before[f]), new_value: text(after[f]) });
+    }
   }
   if (differs(before.paid_by, after.paid_by)) {
     changes.push(payerChange(before.paid_by, after.paid_by, people));
