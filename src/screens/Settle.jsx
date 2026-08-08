@@ -1,21 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
 import { computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
 // toHKD is for the Split-costs SORT ORDER only — every displayed amount on this
 // page stays exact per-currency (no ~ conversions).
-import { formatCurrency, CURRENCIES, FX_RATES_TO_HKD, toHKD } from '../lib/currencies'
+import { formatCurrency, FX_RATES_TO_HKD, toHKD } from '../lib/currencies'
 import { TYPE_ICONS } from '../lib/calendar'
-import AssigneePicker, { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
+import { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
 import BookingModal from '../components/BookingModal'
-import TripSelect from '../components/TripSelect'
+import ExpenseModal from '../components/ExpenseModal'
+import PaymentModal from '../components/PaymentModal'
 import { useToast } from '../components/Toast'
 import { useConfirmDanger } from '../components/ConfirmDanger'
 import { friendlyError } from '../lib/friendlyError'
+import { isTripWritable, writableTripsInSelection } from '../lib/trip-permissions'
 import {
   updateExpense,
-  recordSettlement, deleteSettlement,
+  deleteSettlement,
   updateBooking, deleteBooking,
 } from '../lib/client-actions'
 
@@ -23,12 +25,6 @@ import {
 // dust (a net a fraction of a unit away from zero reads as "settled up").
 const ZERO_DECIMAL = ['JPY', 'KRW', 'TWD']
 const epsFor = (c) => (ZERO_DECIMAL.includes(c) ? 1 : 0.01)
-
-const cleanAmount = (raw) => String(raw).replace(/[^0-9.]/g, '')
-const toNumber = (raw) => {
-  const n = parseFloat(cleanAmount(raw))
-  return Number.isFinite(n) ? n : NaN
-}
 
 /** Non-dust net entries for a unit, as [currency, amount]. */
 function netEntries(net) {
@@ -51,6 +47,9 @@ export default function Settle({
   // Booking modal for "Needs attention" rows — same local wiring as Costs.jsx.
   const [bookingModalOpen, setBookingModalOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState(null)
+  const [editingExpense, setEditingExpense] = useState(null)
+  const [paymentInitialValues, setPaymentInitialValues] = useState(null)
+  const [paymentModalKey, setPaymentModalKey] = useState(0)
   const openBooking = (booking) => {
     setEditingBooking(booking)
     setBookingModalOpen(true)
@@ -60,6 +59,19 @@ export default function Settle({
   // (empty selection = all trips) and recompute balances client-side.
   const selSet = new Set(selectedTrips)
   const inSel = (tripId) => selectedTrips.length === 0 || selSet.has(tripId)
+  const writableTrips = trips.filter(isTripWritable)
+  const writableSelectedTrips = writableTripsInSelection(trips, selectedTrips)
+  const writableTripIds = new Set(writableTrips.map((trip) => trip.id))
+  const selectedWritableTrip = selectedTrip && writableTripIds.has(selectedTrip) ? selectedTrip : ''
+  const openAttentionItem = (item) => {
+    if (!writableTripIds.has(item.trip_id)) return
+    if (item.type) openBooking(item)
+    else setEditingExpense(item)
+  }
+  const openPayment = (initialValues) => {
+    setPaymentModalKey((key) => key + 1)
+    setPaymentInitialValues(initialValues)
+  }
 
   const members = (allMembers || []).filter((m) => inSel(m.trip_id))
   const parties = (allParties || []).filter((p) => inSel(p.trip_id))
@@ -254,37 +266,9 @@ export default function Settle({
       return am - bm || a.name.localeCompare(b.name)
     })
 
-  // ---- Record-payment form (shared by "Mark paid" + the manual entry) --------
-  const settleFormRef = useRef(null)
-  const blankSettle = { trip_id: selectedTrip ?? '', from_user: null, to_user: null, amount: '', currency: 'HKD', note: '' }
-  const [settleForm, setSettleForm] = useState(blankSettle)
-  const [showSettleForm, setShowSettleForm] = useState(false)
-  // Idempotency key for the payment being entered. Minted when the form OPENS,
-  // not per click: a retry after a lost response must reuse it so the server's
-  // conflict-do-nothing recognises the second attempt as the same payback. It's
-  // cleared on a confirmed success, so the next payment gets its own key.
-  const settleIdRef = useRef(null)
-
-  const settleRoster = (trips.find((t) => t.id === settleForm.trip_id)?.members) ?? []
-  // The "to" picker excludes anyone sharing the payer's party in that trip
-  // (decision 5), and the payer themselves.
-  const fromRow = settleRoster.find((m) => m.id === settleForm.from_user)
-  const toRoster = settleRoster.filter((m) => {
-    if (m.id === settleForm.from_user) return false
-    if (fromRow?.party_id && m.party_id === fromRow.party_id) return false
-    return true
-  })
-
-  const openSettleForm = (values) => {
-    setSettleForm({ ...blankSettle, ...values })
-    settleIdRef.current = crypto.randomUUID()
-    setShowSettleForm(true)
-    requestAnimationFrame(() => settleFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
-  }
-
   const markPaid = (t) => {
-    openSettleForm({
-      trip_id: selectedTrip ?? '',
+    openPayment({
+      trip_id: selectedWritableTrip,
       from_user: t.fromUnit.memberIds[0] ?? null,
       to_user: t.toUnit.memberIds[0] ?? null,
       amount: String(ZERO_DECIMAL.includes(t.currency) ? Math.round(t.amount) : Math.round(t.amount * 100) / 100),
@@ -325,38 +309,13 @@ export default function Settle({
     return item.type ? updateBooking(item.id, payload) : updateExpense(item.id, payload)
   }
   const splitItemEvenly = (item) => run(() => saveEvenSplit(item), 'Split evenly')
+  const writableUnallocated = unallocated.filter((item) => writableTripIds.has(item.trip_id))
   const splitAllEvenly = () => {
-    const targets = unallocated.filter((it) => members.some((m) => m.trip_id === it.trip_id))
+    const targets = writableUnallocated.filter((it) => members.some((m) => m.trip_id === it.trip_id))
     if (targets.length === 0) return
     return run(async () => {
       for (const it of targets) await saveEvenSplit(it)
     }, `Split ${targets.length} item${targets.length === 1 ? '' : 's'} evenly`)
-  }
-
-  const submitSettlement = async (e) => {
-    e.preventDefault()
-    const amount = toNumber(settleForm.amount)
-    if (!settleForm.trip_id) return toast.error('Pick a trip for this payment')
-    if (!settleForm.from_user || !settleForm.to_user) return toast.error('Pick who paid and who received')
-    if (!(amount > 0)) return toast.error('Enter an amount')
-    if (!settleIdRef.current) settleIdRef.current = crypto.randomUUID()
-    const ok = await run(
-      () => recordSettlement({
-        id: settleIdRef.current,
-        trip_id: settleForm.trip_id,
-        from_user: settleForm.from_user,
-        to_user: settleForm.to_user,
-        amount,
-        currency: settleForm.currency,
-        note: settleForm.note.trim() || null,
-      }),
-      'Payment recorded',
-    )
-    if (ok) {
-      settleIdRef.current = null
-      setSettleForm(blankSettle)
-      setShowSettleForm(false)
-    }
   }
 
   return (
@@ -422,7 +381,7 @@ export default function Settle({
                 </svg>
                 <h2 className="text-sm font-semibold text-amber-800 m-0">Needs attention</h2>
               </div>
-              {unallocated.length > 0 && (
+              {writableUnallocated.length > 0 && (
                 <button
                   type="button"
                   onClick={splitAllEvenly}
@@ -444,13 +403,18 @@ export default function Settle({
                   key={`u-${i}`}
                   item={ref}
                   reason="Not split yet"
-                  onOpen={openBooking}
-                  onSplitEven={() => splitItemEvenly(ref)}
+                  onOpen={writableTripIds.has(ref.trip_id) ? openAttentionItem : undefined}
+                  onSplitEven={writableTripIds.has(ref.trip_id) ? () => splitItemEvenly(ref) : undefined}
                   busy={busy}
                 />
               ))}
               {missingPayer.map((ref, i) => (
-                <NeedsAttentionRow key={`p-${i}`} item={ref} reason="No payer set" onOpen={openBooking} />
+                <NeedsAttentionRow
+                  key={`p-${i}`}
+                  item={ref}
+                  reason="No payer set"
+                  onOpen={writableTripIds.has(ref.trip_id) ? openAttentionItem : undefined}
+                />
               ))}
             </div>
           </section>
@@ -508,7 +472,7 @@ export default function Settle({
                       t={t}
                       memberByUserId={memberByUserId}
                       currentUserId={currentUserId}
-                      onSettle={() => markPaid(t)}
+                      onSettle={writableSelectedTrips.length > 0 ? () => markPaid(t) : undefined}
                     />
                   ))}
                 </div>
@@ -696,75 +660,19 @@ export default function Settle({
         )}
 
         {/* Payments stay with balances; expense management lives on /expenses. */}
-        <section ref={settleFormRef} className="mat-surface p-5">
+        <section className="mat-surface p-5">
           <div className="flex items-center justify-between mb-3">
             <SectionTitle className="mb-0">Payments</SectionTitle>
-            <button
-              type="button"
-              onClick={() => (showSettleForm ? setShowSettleForm(false) : openSettleForm({ trip_id: selectedTrip ?? '' }))}
-              className="mat-btn-outlined text-xs"
-            >
-              {showSettleForm ? 'Cancel' : '+ Record a payment'}
-            </button>
-          </div>
-
-          {showSettleForm && (
-            <form onSubmit={submitSettlement} className="mb-4 space-y-3 rounded-xl border border-outline/30 bg-surface-container/40 p-3">
-              <TripSelect
-                trips={trips}
-                value={settleForm.trip_id}
-                onChange={(trip_id) => setSettleForm((f) => ({ ...f, trip_id, from_user: null, to_user: null }))}
-              />
-              <div className="flex items-center justify-between gap-2 min-w-0">
-                <label className="text-xs font-medium text-on-surface-variant shrink-0">From (paid)</label>
-                <AssigneePicker
-                  value={settleForm.from_user}
-                  members={settleRoster}
-                  onChange={(m) => setSettleForm((f) => ({ ...f, from_user: m?.id ?? null, to_user: f.to_user === (m?.id ?? null) ? null : f.to_user }))}
-                  align="right"
-                />
-              </div>
-              <div className="flex items-center justify-between gap-2 min-w-0">
-                <label className="text-xs font-medium text-on-surface-variant shrink-0">To (received)</label>
-                <AssigneePicker
-                  value={settleForm.to_user}
-                  members={toRoster}
-                  onChange={(m) => setSettleForm((f) => ({ ...f, to_user: m?.id ?? null }))}
-                  align="right"
-                />
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={settleForm.amount}
-                  onChange={(e) => setSettleForm((f) => ({ ...f, amount: cleanAmount(e.target.value) }))}
-                  placeholder="Amount"
-                  className="mat-input flex-1"
-                />
-                <select
-                  value={settleForm.currency}
-                  onChange={(e) => setSettleForm((f) => ({ ...f, currency: e.target.value }))}
-                  aria-label="Currency"
-                  className="mat-select shrink-0"
-                >
-                  {CURRENCIES.map((c) => (
-                    <option key={c.code} value={c.code}>{c.code}</option>
-                  ))}
-                </select>
-              </div>
-              <input
-                type="text"
-                value={settleForm.note}
-                onChange={(e) => setSettleForm((f) => ({ ...f, note: e.target.value }))}
-                placeholder="Note (optional)"
-                className="mat-input"
-              />
-              <button type="submit" disabled={busy} className="mat-btn-filled w-full justify-center disabled:opacity-40">
-                {busy ? 'Recording…' : 'Record payment'}
+            {writableSelectedTrips.length > 0 && (
+              <button
+                type="button"
+                onClick={() => openPayment({ trip_id: selectedWritableTrip })}
+                className="mat-btn-outlined text-xs"
+              >
+                + Record a payment
               </button>
-            </form>
-          )}
+            )}
+          </div>
 
           {settlements.length === 0 ? (
             <EmptyLine>No payments recorded yet.</EmptyLine>
@@ -783,25 +691,27 @@ export default function Settle({
                   <span className="text-sm font-medium text-on-surface shrink-0">
                     {formatCurrency(Number(s.amount) || 0, s.currency)}
                   </span>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const ok = await ask({
-                        title: 'Delete this payment?',
-                        message: `${personLabel(s.from_user)} → ${personLabel(s.to_user)} (${formatCurrency(Number(s.amount) || 0, s.currency)}) will be permanently removed. This cannot be undone.`,
-                        confirmLabel: 'Delete',
-                      })
-                      if (!ok) return
-                      run(() => deleteSettlement(s.id), 'Payment deleted')
-                    }}
-                    disabled={busy}
-                    aria-label="Delete payment"
-                    className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 shrink-0"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                  {writableTripIds.has(s.trip_id) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ok = await ask({
+                          title: 'Delete this payment?',
+                          message: `${personLabel(s.from_user)} → ${personLabel(s.to_user)} (${formatCurrency(Number(s.amount) || 0, s.currency)}) will be permanently removed. This cannot be undone.`,
+                          confirmLabel: 'Delete',
+                        })
+                        if (!ok) return
+                        run(() => deleteSettlement(s.id), 'Payment deleted')
+                      }}
+                      disabled={busy}
+                      aria-label="Delete payment"
+                      className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 shrink-0"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -824,6 +734,24 @@ export default function Settle({
           onDelete={async (id) => {
             await deleteBooking(id)
           }}
+        />
+      )}
+      {editingExpense && (
+        <ExpenseModal
+          key={editingExpense.id}
+          expense={editingExpense}
+          selectedTrip={selectedTrip}
+          availableTrips={writableTrips}
+          onClose={() => setEditingExpense(null)}
+        />
+      )}
+      {paymentInitialValues && (
+        <PaymentModal
+          key={paymentModalKey}
+          initialValues={paymentInitialValues}
+          selectedTrip={selectedTrip}
+          availableTrips={writableSelectedTrips}
+          onClose={() => setPaymentInitialValues(null)}
         />
       )}
     </div>
@@ -976,16 +904,18 @@ function TransferCard({ t, memberByUserId, currentUserId, onSettle }) {
         </svg>
         <UnitAvatars unit={t.toUnit} memberByUserId={memberByUserId} />
         <span className="flex-1" />
-        <button
-          type="button"
-          onClick={onSettle}
-          className="rounded-full bg-primary/10 text-primary-dark font-semibold text-xs px-4 py-2 inline-flex items-center gap-1.5 shrink-0 hover:bg-primary/20 transition-colors"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-          </svg>
-          Settle
-        </button>
+        {onSettle && (
+          <button
+            type="button"
+            onClick={onSettle}
+            className="rounded-full bg-primary/10 text-primary-dark font-semibold text-xs px-4 py-2 inline-flex items-center gap-1.5 shrink-0 hover:bg-primary/20 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+            Settle
+          </button>
+        )}
       </div>
       <div className="mt-2 flex justify-between items-baseline gap-3">
         <span className="text-sm text-on-surface truncate min-w-0">{sentence}</span>
@@ -1065,7 +995,7 @@ function BalanceRow({ unit, memberByUserId }) {
   )
 }
 
-/** Booking → opens the booking modal in place (same wiring as Costs). */
+/** Actionable items open their matching editor in place. */
 function NeedsAttentionRow({ item, reason, onOpen, onSplitEven, busy }) {
   const isBooking = !!item.type
   const title = item.title || 'Untitled'
@@ -1088,7 +1018,7 @@ function NeedsAttentionRow({ item, reason, onOpen, onSplitEven, busy }) {
       )}
     </div>
   )
-  if (isBooking) {
+  if (onOpen) {
     return (
       <div
         onClick={() => onOpen(item)}

@@ -36,14 +36,22 @@ const initialForm = (expense, selectedTrip) => ({
 });
 
 /**
- * @param {{ expense?: any, selectedTrip?: string | null, onClose: () => void }} props
+ * @param {{ expense?: any, selectedTrip?: string | null, availableTrips?: any[] | null, onClose: () => void }} props
  */
-export default function ExpenseModal({ expense = null, selectedTrip = null, onClose }) {
+export default function ExpenseModal({ expense = null, selectedTrip = null, availableTrips = null, onClose }) {
   const { trips } = useTripContext();
+  const tripOptions = availableTrips ?? trips;
+  const defaultTrip =
+    selectedTrip && tripOptions.some((trip) => trip.id === selectedTrip)
+      ? selectedTrip
+      : tripOptions.length === 1
+        ? tripOptions[0].id
+        : null;
   const { toast } = useToast();
   const { ask, dialog } = useConfirmDanger();
   const formRef = useRef(null);
-  const [form, setForm] = useState(() => initialForm(expense, selectedTrip));
+  const savingRef = useRef(false);
+  const [form, setForm] = useState(() => initialForm(expense, defaultTrip));
   const [saving, setSaving] = useState(false);
 
   const trip = trips.find((item) => item.id === form.trip_id);
@@ -62,6 +70,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, onCl
 
   const submit = async (event) => {
     event.preventDefault();
+    if (savingRef.current) return;
     const amount = toNumber(form.amount);
     const splits = pruneEmptySplits(form.splits);
     if (!form.trip_id) return toast.error("Pick a trip for this expense");
@@ -90,6 +99,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, onCl
       charged_rate: hasCharge ? toNumber(form.charged_rate) : null,
     };
 
+    savingRef.current = true;
     setSaving(true);
     try {
       if (expense?.id) await updateExpense(expense.id, payload);
@@ -99,6 +109,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, onCl
     } catch (error) {
       toast.error(friendlyError(error));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -130,7 +141,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, onCl
         title={expense?.id ? "Edit expense" : "New expense"}
         onClose={onClose}
         footer={
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               {expense?.id && (
                 <button type="button" onClick={remove} disabled={saving} className="text-sm text-red-600 disabled:opacity-40">
@@ -138,13 +149,13 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, onCl
                 </button>
               )}
             </div>
-            <div className="flex gap-2">
-              <button type="button" onClick={onClose} className="mat-btn-outlined">Cancel</button>
+            <div className="flex w-full gap-2 sm:w-auto">
+              <button type="button" onClick={onClose} className="mat-btn-outlined flex-1 sm:flex-none">Cancel</button>
               <button
                 type="button"
                 onClick={() => formRef.current?.requestSubmit()}
                 disabled={saving}
-                className="mat-btn-filled disabled:opacity-40"
+                className="mat-btn-filled flex-1 justify-center disabled:opacity-40 sm:flex-none"
               >
                 {saving ? "Saving…" : expense?.id ? "Save expense" : "Add expense"}
               </button>
@@ -153,7 +164,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, onCl
         }
       >
         <form ref={formRef} onSubmit={submit} className="space-y-4">
-          <TripSelect trips={trips} value={form.trip_id} onChange={changeTrip} />
+          <TripSelect trips={tripOptions} value={form.trip_id} onChange={changeTrip} />
           <input
             type="text"
             value={form.title}
@@ -218,7 +229,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, onCl
               }))
             }
           />
-          <button type="submit" className="hidden" />
+          <button type="submit" disabled={saving} className="hidden" />
         </form>
       </FormModal>
     </>

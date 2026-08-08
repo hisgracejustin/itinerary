@@ -14,6 +14,7 @@ import { handleOfflineSheetClick } from "@/lib/offline-sheet";
 import { createBooking, updateBooking, deleteBooking } from "@/lib/client-actions";
 import { TripContext, type TripSummary } from "@/lib/trip-context";
 import { parseTripParam } from "@/lib/trip-params";
+import { writableTripsInSelection } from "@/lib/trip-permissions";
 
 type Props = {
   userId: string;
@@ -120,6 +121,16 @@ export function AppShell({ userId, user, trips, fx, children }: Props) {
   // Compatibility single-trip view for screens not yet multi-aware.
   const selectedTrip = selectedTrips.length === 1 ? selectedTrips[0] : null;
   const tripMeta = tripMetas.length === 1 ? tripMetas[0] : null;
+  // Global create actions stay inside the active trip filter and only offer
+  // trips where this user can write. Server actions still enforce this too.
+  const createTrips = useMemo(
+    () => writableTripsInSelection(trips, selectedTrips),
+    [trips, selectedTrips],
+  );
+  const createTrip = selectedTrip && createTrips.some((trip) => trip.id === selectedTrip)
+    ? selectedTrip
+    : null;
+  const createTripMeta = createTrip ? createTrips.find((trip) => trip.id === createTrip) : null;
 
   // On real document loads (first visit, refresh) the initial paint must
   // already be correct or the sidebar visibly animates open→closed on phones
@@ -309,6 +320,7 @@ export function AppShell({ userId, user, trips, fx, children }: Props) {
 
       {addAction === "menu" && (
         <GlobalAddMenu
+          disabled={createTrips.length === 0}
           onClose={() => setAddAction(null)}
           onSelect={(kind: Exclude<AddAction, "menu" | null>) => setAddAction(kind)}
         />
@@ -316,8 +328,9 @@ export function AppShell({ userId, user, trips, fx, children }: Props) {
       {addAction === "booking" && (
         <BookingModal
           booking={null}
-          selectedTrip={selectedTrip}
-          tripName={tripMeta?.name}
+          selectedTrip={createTrip}
+          tripName={createTripMeta?.name}
+          availableTrips={createTrips}
           onClose={() => setAddAction(null)}
           onSave={async (data: unknown, existingId: string | null) =>
             existingId ? await updateBooking(existingId, data) : await createBooking(data)
@@ -329,16 +342,25 @@ export function AppShell({ userId, user, trips, fx, children }: Props) {
       )}
       {addAction === "todo" && (
         <TodoModal
-          selectedTrip={selectedTrip}
+          selectedTrip={createTrip}
+          availableTrips={createTrips}
           currentUserId={userId}
           onClose={() => setAddAction(null)}
         />
       )}
       {addAction === "expense" && (
-        <ExpenseModal selectedTrip={selectedTrip} onClose={() => setAddAction(null)} />
+        <ExpenseModal
+          selectedTrip={createTrip}
+          availableTrips={createTrips}
+          onClose={() => setAddAction(null)}
+        />
       )}
       {addAction === "payment" && (
-        <PaymentModal selectedTrip={selectedTrip} onClose={() => setAddAction(null)} />
+        <PaymentModal
+          selectedTrip={createTrip}
+          availableTrips={createTrips}
+          onClose={() => setAddAction(null)}
+        />
       )}
 
       {/* Background refresh of the offline day sheet — never blocks the shell. */}

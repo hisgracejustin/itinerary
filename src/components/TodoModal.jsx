@@ -10,15 +10,23 @@ import { useToast } from "./Toast";
 import { useTripContext } from "../lib/trip-context";
 
 /**
- * @param {{ selectedTrip?: string | null, currentUserId: string, onClose: () => void }} props
+ * @param {{ selectedTrip?: string | null, availableTrips?: any[] | null, currentUserId: string, onClose: () => void }} props
  */
-export default function TodoModal({ selectedTrip = null, currentUserId, onClose }) {
+export default function TodoModal({ selectedTrip = null, availableTrips = null, currentUserId, onClose }) {
   const { trips } = useTripContext();
+  const tripOptions = availableTrips ?? trips;
+  const defaultTrip =
+    selectedTrip && tripOptions.some((trip) => trip.id === selectedTrip)
+      ? selectedTrip
+      : tripOptions.length === 1
+        ? tripOptions[0].id
+        : "";
   const { toast } = useToast();
   const formRef = useRef(null);
+  const savingRef = useRef(false);
   const [form, setForm] = useState({
     title: "",
-    trip_id: selectedTrip || "",
+    trip_id: defaultTrip,
     due_date: "",
     assignee_id: null,
   });
@@ -27,8 +35,10 @@ export default function TodoModal({ selectedTrip = null, currentUserId, onClose 
 
   const submit = async (event) => {
     event.preventDefault();
+    if (savingRef.current) return;
     if (!form.title.trim()) return toast.error("Enter what needs to be done");
     if (!form.trip_id) return toast.error("Pick a trip for this to-do");
+    savingRef.current = true;
     setSaving(true);
     try {
       await createTodo({
@@ -42,6 +52,7 @@ export default function TodoModal({ selectedTrip = null, currentUserId, onClose 
     } catch (error) {
       toast.error(friendlyError(error));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -74,7 +85,7 @@ export default function TodoModal({ selectedTrip = null, currentUserId, onClose 
           autoFocus
         />
         <TripSelect
-          trips={trips}
+          trips={tripOptions}
           value={form.trip_id}
           onChange={(trip_id) => setForm((current) => ({ ...current, trip_id, assignee_id: null }))}
         />
@@ -99,7 +110,7 @@ export default function TodoModal({ selectedTrip = null, currentUserId, onClose 
             align="right"
           />
         </div>
-        <button type="submit" className="hidden" />
+        <button type="submit" disabled={saving} className="hidden" />
       </form>
     </FormModal>
   );

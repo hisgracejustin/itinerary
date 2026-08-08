@@ -13,20 +13,34 @@ import { useTripContext } from "../lib/trip-context";
 const cleanAmount = (raw) => String(raw).replace(/[^0-9.]/g, "");
 
 /**
- * @param {{ selectedTrip?: string | null, onClose: () => void }} props
+ * @param {{ selectedTrip?: string | null, availableTrips?: any[] | null, initialValues?: any, onClose: () => void }} props
  */
-export default function PaymentModal({ selectedTrip = null, onClose }) {
+export default function PaymentModal({
+  selectedTrip = null,
+  availableTrips = null,
+  initialValues = null,
+  onClose,
+}) {
   const { trips } = useTripContext();
+  const tripOptions = availableTrips ?? trips;
+  const defaultTrip =
+    initialValues?.trip_id ||
+    (selectedTrip && tripOptions.some((trip) => trip.id === selectedTrip)
+      ? selectedTrip
+      : tripOptions.length === 1
+        ? tripOptions[0].id
+        : "");
   const { toast } = useToast();
   const formRef = useRef(null);
   const idRef = useRef(null);
+  const savingRef = useRef(false);
   const [form, setForm] = useState({
-    trip_id: selectedTrip || "",
-    from_user: null,
-    to_user: null,
-    amount: "",
-    currency: "HKD",
-    note: "",
+    trip_id: defaultTrip,
+    from_user: initialValues?.from_user ?? null,
+    to_user: initialValues?.to_user ?? null,
+    amount: initialValues?.amount ?? "",
+    currency: initialValues?.currency ?? "HKD",
+    note: initialValues?.note ?? "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -39,11 +53,13 @@ export default function PaymentModal({ selectedTrip = null, onClose }) {
 
   const submit = async (event) => {
     event.preventDefault();
+    if (savingRef.current) return;
     const amount = Number.parseFloat(form.amount);
     if (!form.trip_id) return toast.error("Pick a trip for this payment");
     if (!form.from_user || !form.to_user) return toast.error("Pick who paid and who received");
     if (!(amount > 0)) return toast.error("Enter an amount");
     if (!idRef.current) idRef.current = crypto.randomUUID();
+    savingRef.current = true;
     setSaving(true);
     try {
       await recordSettlement({
@@ -60,6 +76,7 @@ export default function PaymentModal({ selectedTrip = null, onClose }) {
     } catch (error) {
       toast.error(friendlyError(error));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -84,7 +101,7 @@ export default function PaymentModal({ selectedTrip = null, onClose }) {
     >
       <form ref={formRef} onSubmit={submit} className="space-y-4">
         <TripSelect
-          trips={trips}
+          trips={tripOptions}
           value={form.trip_id}
           onChange={(trip_id) => setForm((current) => ({
             ...current,
@@ -142,7 +159,7 @@ export default function PaymentModal({ selectedTrip = null, onClose }) {
           placeholder="Note (optional)"
           className="mat-input"
         />
-        <button type="submit" className="hidden" />
+        <button type="submit" disabled={saving} className="hidden" />
       </form>
     </FormModal>
   );

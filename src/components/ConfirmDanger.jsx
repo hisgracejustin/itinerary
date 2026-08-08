@@ -1,6 +1,7 @@
 "use client"
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 /**
  * Styled danger confirmation overlay — the shared "are you sure?" for any
@@ -18,8 +19,56 @@ export default function ConfirmDanger({
   onConfirm,
   onCancel,
 }) {
-  return (
+  const overlayRef = useRef(null)
+  const dialogRef = useRef(null)
+  useEffect(() => {
+    const overlay = overlayRef.current
+    const dialog = dialogRef.current
+    if (!overlay || !dialog) return
+    const previousFocus = document.activeElement
+    const background = [...document.body.children]
+      .filter((element) => element !== overlay)
+      .map((element) => ({ element, inert: element.inert, ariaHidden: element.getAttribute('aria-hidden') }))
+    for (const { element } of background) {
+      element.inert = true
+      element.setAttribute('aria-hidden', 'true')
+    }
+    const frame = requestAnimationFrame(() => dialog.querySelector('button')?.focus())
+    return () => {
+      cancelAnimationFrame(frame)
+      for (const { element, inert, ariaHidden } of background) {
+        element.inert = inert
+        if (ariaHidden == null) element.removeAttribute('aria-hidden')
+        else element.setAttribute('aria-hidden', ariaHidden)
+      }
+      if (previousFocus instanceof HTMLElement) previousFocus.focus()
+    }
+  }, [])
+
+  const onKeyDown = (event) => {
+    if (event.key === 'Escape' && !busy) {
+      event.preventDefault()
+      onCancel()
+      return
+    }
+    if (event.key !== 'Tab') return
+    const buttons = [...(dialogRef.current?.querySelectorAll('button:not([disabled])') || [])]
+    if (buttons.length === 0) return
+    const first = buttons[0]
+    const last = buttons[buttons.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
+  if (typeof document === 'undefined') return null
+  return createPortal(
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in"
       role="alertdialog"
       aria-modal="true"
@@ -27,7 +76,10 @@ export default function ConfirmDanger({
       onClick={busy ? undefined : onCancel}
     >
       <div
+        ref={dialogRef}
         className="bg-white rounded-2xl shadow-elevation-4 w-full max-w-sm p-6 animate-scale-in text-center"
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
@@ -63,7 +115,8 @@ export default function ConfirmDanger({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

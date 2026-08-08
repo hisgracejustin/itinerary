@@ -5,8 +5,7 @@ import ExpenseModal from "../components/ExpenseModal";
 import { useTripContext } from "../lib/trip-context";
 import { buildExpensesCsv } from "../lib/expense-csv";
 import { formatCurrency } from "../lib/currencies";
-
-const canWrite = (trip) => trip?.myRole === "owner" || trip?.myRole === "editor";
+import { isTripWritable, writableTripsInSelection } from "../lib/trip-permissions";
 
 export default function Expenses({ expenses: allExpenses }) {
   const { trips, selectedTrips, selectedTrip } = useTripContext();
@@ -16,7 +15,8 @@ export default function Expenses({ expenses: allExpenses }) {
     ? allExpenses.filter((expense) => selected.has(expense.trip_id))
     : allExpenses;
   const tripById = new Map(trips.map((trip) => [trip.id, trip]));
-  const writableTrips = trips.filter(canWrite);
+  const writableTrips = trips.filter(isTripWritable);
+  const writableScopedTrips = writableTripsInSelection(trips, selectedTrips);
 
   const nameFor = (expense, userId) => {
     const member = tripById.get(expense.trip_id)?.members?.find((item) => item.id === userId);
@@ -56,8 +56,12 @@ export default function Expenses({ expenses: allExpenses }) {
             >
               Export CSV
             </button>
-            {writableTrips.length > 0 && (
-              <button type="button" onClick={() => setModal({ expense: null })} className="mat-btn-filled text-xs">
+            {writableScopedTrips.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setModal({ expense: null, availableTrips: writableScopedTrips })}
+                className="mat-btn-filled text-xs"
+              >
                 + Add expense
               </button>
             )}
@@ -74,13 +78,13 @@ export default function Expenses({ expenses: allExpenses }) {
             {expenses.map((expense) => {
               const trip = tripById.get(expense.trip_id);
               const splitNames = (expense.splits || []).map((split) => nameFor(expense, split.user_id));
-              const editable = canWrite(trip);
+              const editable = isTripWritable(trip);
               return (
                 <button
                   key={expense.id}
                   type="button"
                   disabled={!editable}
-                  onClick={() => editable && setModal({ expense })}
+                  onClick={() => editable && setModal({ expense, availableTrips: writableTrips })}
                   className={`w-full flex items-center gap-3 py-3 text-left ${editable ? "hover:bg-surface-container/50 cursor-pointer" : "cursor-default"} transition-colors`}
                 >
                   <span className="text-xl shrink-0" aria-hidden>🧾</span>
@@ -118,7 +122,12 @@ export default function Expenses({ expenses: allExpenses }) {
         <ExpenseModal
           key={modal.expense?.id || "new"}
           expense={modal.expense}
-          selectedTrip={selectedTrip}
+          selectedTrip={
+            selectedTrip && modal.availableTrips.some((trip) => trip.id === selectedTrip)
+              ? selectedTrip
+              : null
+          }
+          availableTrips={modal.availableTrips}
           onClose={() => setModal(null)}
         />
       )}
