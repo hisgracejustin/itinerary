@@ -110,7 +110,7 @@ function toLocalDatetime(isoString) {
   return local.toISOString().slice(0, 16)
 }
 
-export default function BookingForm({ booking, onSave, onDelete, onCancel, saving, formRef, selectedTrip, allBookings = null, onErrorsChange, serverError = null }) {
+export default function BookingForm({ booking, onSave, onDelete, onCancel, saving, formRef, selectedTrip, availableTrips = null, allBookings = null, onErrorsChange, serverError = null }) {
   const isEdit = !!booking
   const { trips } = useTripContext()
 
@@ -593,7 +593,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
             className={`mat-input ${errors.trip_id ? 'border-red-400 focus:ring-red-200' : ''}`}
           >
             <option value="">Select a trip...</option>
-            {(trips || []).map((t) => (
+            {(availableTrips || trips || []).map((t) => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>

@@ -5,13 +5,19 @@ import { useSearchParams } from "next/navigation";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
 import BookingModal from "./BookingModal";
+import ExpenseModal from "./ExpenseModal";
+import TodoModal from "./TodoModal";
+import PaymentModal from "./PaymentModal";
+import GlobalAddMenu from "./GlobalAddMenu";
 import { SheetSync } from "./SheetSync";
 import { handleOfflineSheetClick } from "@/lib/offline-sheet";
 import { createBooking, updateBooking, deleteBooking } from "@/lib/client-actions";
 import { TripContext, type TripSummary } from "@/lib/trip-context";
 import { parseTripParam } from "@/lib/trip-params";
+import { writableTripsInSelection } from "@/lib/trip-permissions";
 
 type Props = {
+  userId: string;
   user: { email: string; name: string | null };
   trips: TripSummary[];
   fx: { rates: Record<string, number>; rateDate: string | null; fetchedAt: string | Date | null };
@@ -22,7 +28,9 @@ const MIN_SIDEBAR_WIDTH = 208;
 const MAX_SIDEBAR_WIDTH = 480;
 const DEFAULT_SIDEBAR_WIDTH = 288; // matches the old w-72
 
-export function AppShell({ user, trips, fx, children }: Props) {
+type AddAction = "menu" | "booking" | "todo" | "expense" | "payment" | null;
+
+export function AppShell({ userId, user, trips, fx, children }: Props) {
   // Trip selection is pure client state: pages always load the union of every
   // accessible trip's data and screens filter it by this selection, so a
   // toggle is one instant React render — no navigation, no refetch. (Also the
@@ -113,6 +121,16 @@ export function AppShell({ user, trips, fx, children }: Props) {
   // Compatibility single-trip view for screens not yet multi-aware.
   const selectedTrip = selectedTrips.length === 1 ? selectedTrips[0] : null;
   const tripMeta = tripMetas.length === 1 ? tripMetas[0] : null;
+  // Global create actions stay inside the active trip filter and only offer
+  // trips where this user can write. Server actions still enforce this too.
+  const createTrips = useMemo(
+    () => writableTripsInSelection(trips, selectedTrips),
+    [trips, selectedTrips],
+  );
+  const createTrip = selectedTrip && createTrips.some((trip) => trip.id === selectedTrip)
+    ? selectedTrip
+    : null;
+  const createTripMeta = createTrip ? createTrips.find((trip) => trip.id === createTrip) : null;
 
   // On real document loads (first visit, refresh) the initial paint must
   // already be correct or the sidebar visibly animates open→closed on phones
@@ -136,11 +154,9 @@ export function AppShell({ user, trips, fx, children }: Props) {
   // Keep the latest width available to the (stable) mouseup handler.
   const sidebarWidthRef = useRef(sidebarWidth);
 
-  // "Add Booking" is a shell-level action so it works on every page (Calendar,
-  // Todos, Costs, per-type lists) — not just wherever a screen happened to
-  // register a handler. createBookingAction revalidates the layout, so the
-  // active RSC page refreshes with the new booking on its own.
-  const [addOpen, setAddOpen] = useState(false);
+  // The shell owns global create actions so the + button behaves consistently
+  // on every page. Each action revalidates the layout after saving.
+  const [addAction, setAddAction] = useState<AddAction>(null);
 
   // Connection banner. Starts false (server HTML can't know) and resolves on
   // mount; each fresh offline transition un-dismisses it.
@@ -293,7 +309,7 @@ export function AppShell({ user, trips, fx, children }: Props) {
         )}
         <Header
           onToggleSidebar={() => setSidebarOpen((v) => !v)}
-          onAddBooking={() => setAddOpen(true)}
+          onQuickAdd={() => setAddAction("menu")}
         />
         {/* flex-col so full-height screens (the To-dos board) can size themselves
             with flex-1 instead of a percentage height — h-full against a flex-item
@@ -302,19 +318,48 @@ export function AppShell({ user, trips, fx, children }: Props) {
         <main className="flex-1 overflow-auto bg-surface-dim p-3 sm:p-5 flex flex-col">{children}</main>
       </div>
 
-      {/* Global "Add Booking" modal — available on every page. */}
-      {addOpen && (
+      {addAction === "menu" && (
+        <GlobalAddMenu
+          disabled={createTrips.length === 0}
+          onClose={() => setAddAction(null)}
+          onSelect={(kind: Exclude<AddAction, "menu" | null>) => setAddAction(kind)}
+        />
+      )}
+      {addAction === "booking" && (
         <BookingModal
           booking={null}
-          selectedTrip={selectedTrip}
-          tripName={tripMeta?.name}
-          onClose={() => setAddOpen(false)}
+          selectedTrip={createTrip}
+          tripName={createTripMeta?.name}
+          availableTrips={createTrips}
+          onClose={() => setAddAction(null)}
           onSave={async (data: unknown, existingId: string | null) =>
             existingId ? await updateBooking(existingId, data) : await createBooking(data)
           }
           onDelete={async (id: string) => {
             await deleteBooking(id);
           }}
+        />
+      )}
+      {addAction === "todo" && (
+        <TodoModal
+          selectedTrip={createTrip}
+          availableTrips={createTrips}
+          currentUserId={userId}
+          onClose={() => setAddAction(null)}
+        />
+      )}
+      {addAction === "expense" && (
+        <ExpenseModal
+          selectedTrip={createTrip}
+          availableTrips={createTrips}
+          onClose={() => setAddAction(null)}
+        />
+      )}
+      {addAction === "payment" && (
+        <PaymentModal
+          selectedTrip={createTrip}
+          availableTrips={createTrips}
+          onClose={() => setAddAction(null)}
         />
       )}
 

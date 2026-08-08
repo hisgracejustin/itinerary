@@ -11,6 +11,7 @@ const SECTION_TITLES = {
   "/todos": "To-dos",
   "/considering": "Considering",
   "/costs": "Costs",
+  "/expenses": "Expenses",
   "/settle": "Settle up",
   "/settings": "Settings",
   "/bookings/flight": "Flights",
@@ -92,7 +93,7 @@ function TripChip({ tripMetas }) {
   );
 }
 
-export default function Header({ onToggleSidebar, onAddBooking }) {
+export default function Header({ onToggleSidebar, onQuickAdd }) {
   const { tripMetas } = useTripContext();
   const pathname = usePathname();
   const sectionTitle = SECTION_TITLES[pathname];
@@ -127,8 +128,8 @@ export default function Header({ onToggleSidebar, onAddBooking }) {
           </span>
         )}
         <button
-          onClick={onAddBooking}
-          aria-label="Add booking"
+          onClick={onQuickAdd}
+          aria-label="Add"
           className="w-10 h-10 rounded-full bg-primary text-white shadow-md shadow-primary/25
                      hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/30
                      active:scale-[0.97] transition-all duration-200

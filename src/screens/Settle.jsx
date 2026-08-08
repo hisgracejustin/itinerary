@@ -1,23 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
-import { computeBalances, suggestTransfers, itemViewerNet, pruneEmptySplits } from '../lib/split'
+import { computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
 // toHKD is for the Split-costs SORT ORDER only — every displayed amount on this
 // page stays exact per-currency (no ~ conversions).
-import { formatCurrency, CURRENCIES, FX_RATES_TO_HKD, toHKD } from '../lib/currencies'
-import { buildExpensesCsv } from '../lib/expense-csv'
+import { formatCurrency, FX_RATES_TO_HKD, toHKD } from '../lib/currencies'
 import { TYPE_ICONS } from '../lib/calendar'
-import AssigneePicker, { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
-import SplitEditor from '../components/SplitEditor'
-import ChargedRateEditor from '../components/ChargedRateEditor'
+import { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
 import BookingModal from '../components/BookingModal'
+import ExpenseModal from '../components/ExpenseModal'
+import PaymentModal from '../components/PaymentModal'
 import { useToast } from '../components/Toast'
 import { useConfirmDanger } from '../components/ConfirmDanger'
 import { friendlyError } from '../lib/friendlyError'
+import { isTripWritable, writableTripsInSelection } from '../lib/trip-permissions'
 import {
-  createExpense, updateExpense, deleteExpense,
-  recordSettlement, deleteSettlement,
+  updateExpense,
+  deleteSettlement,
   updateBooking, deleteBooking,
 } from '../lib/client-actions'
 
@@ -25,12 +25,6 @@ import {
 // dust (a net a fraction of a unit away from zero reads as "settled up").
 const ZERO_DECIMAL = ['JPY', 'KRW', 'TWD']
 const epsFor = (c) => (ZERO_DECIMAL.includes(c) ? 1 : 0.01)
-
-const cleanAmount = (raw) => String(raw).replace(/[^0-9.]/g, '')
-const toNumber = (raw) => {
-  const n = parseFloat(cleanAmount(raw))
-  return Number.isFinite(n) ? n : NaN
-}
 
 /** Non-dust net entries for a unit, as [currency, amount]. */
 function netEntries(net) {
@@ -53,6 +47,9 @@ export default function Settle({
   // Booking modal for "Needs attention" rows — same local wiring as Costs.jsx.
   const [bookingModalOpen, setBookingModalOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState(null)
+  const [editingExpense, setEditingExpense] = useState(null)
+  const [paymentInitialValues, setPaymentInitialValues] = useState(null)
+  const [paymentModalKey, setPaymentModalKey] = useState(0)
   const openBooking = (booking) => {
     setEditingBooking(booking)
     setBookingModalOpen(true)
@@ -62,6 +59,19 @@ export default function Settle({
   // (empty selection = all trips) and recompute balances client-side.
   const selSet = new Set(selectedTrips)
   const inSel = (tripId) => selectedTrips.length === 0 || selSet.has(tripId)
+  const writableTrips = trips.filter(isTripWritable)
+  const writableSelectedTrips = writableTripsInSelection(trips, selectedTrips)
+  const writableTripIds = new Set(writableTrips.map((trip) => trip.id))
+  const selectedWritableTrip = selectedTrip && writableTripIds.has(selectedTrip) ? selectedTrip : ''
+  const openAttentionItem = (item) => {
+    if (!writableTripIds.has(item.trip_id)) return
+    if (item.type) openBooking(item)
+    else setEditingExpense(item)
+  }
+  const openPayment = (initialValues) => {
+    setPaymentModalKey((key) => key + 1)
+    setPaymentInitialValues(initialValues)
+  }
 
   const members = (allMembers || []).filter((m) => inSel(m.trip_id))
   const parties = (allParties || []).filter((p) => inSel(p.trip_id))
@@ -183,14 +193,6 @@ export default function Settle({
     const d = displayNet(net, row)
     return d.currency === 'HKD' ? d.net : toHKD(d.net, d.currency, rates)
   }
-  const viewerNetOfExpense = (e) =>
-    itemViewerNet({
-      amount: e.amount || 0,
-      paidBy: e.paid_by,
-      splits: e.splits || [],
-      unitMemberIds: viewerUnitIds(e.trip_id),
-    })
-
   // Per-item breakdown: every fully split cost-bearing booking in the selection,
   // with the viewer's unit-level net for it.
   const splitCostRows = bookings
@@ -264,37 +266,9 @@ export default function Settle({
       return am - bm || a.name.localeCompare(b.name)
     })
 
-  // ---- Record-payment form (shared by "Mark paid" + the manual entry) --------
-  const settleFormRef = useRef(null)
-  const blankSettle = { trip_id: selectedTrip ?? '', from_user: null, to_user: null, amount: '', currency: 'HKD', note: '' }
-  const [settleForm, setSettleForm] = useState(blankSettle)
-  const [showSettleForm, setShowSettleForm] = useState(false)
-  // Idempotency key for the payment being entered. Minted when the form OPENS,
-  // not per click: a retry after a lost response must reuse it so the server's
-  // conflict-do-nothing recognises the second attempt as the same payback. It's
-  // cleared on a confirmed success, so the next payment gets its own key.
-  const settleIdRef = useRef(null)
-
-  const settleRoster = (trips.find((t) => t.id === settleForm.trip_id)?.members) ?? []
-  // The "to" picker excludes anyone sharing the payer's party in that trip
-  // (decision 5), and the payer themselves.
-  const fromRow = settleRoster.find((m) => m.id === settleForm.from_user)
-  const toRoster = settleRoster.filter((m) => {
-    if (m.id === settleForm.from_user) return false
-    if (fromRow?.party_id && m.party_id === fromRow.party_id) return false
-    return true
-  })
-
-  const openSettleForm = (values) => {
-    setSettleForm({ ...blankSettle, ...values })
-    settleIdRef.current = crypto.randomUUID()
-    setShowSettleForm(true)
-    requestAnimationFrame(() => settleFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
-  }
-
   const markPaid = (t) => {
-    openSettleForm({
-      trip_id: selectedTrip ?? '',
+    openPayment({
+      trip_id: selectedWritableTrip,
       from_user: t.fromUnit.memberIds[0] ?? null,
       to_user: t.toUnit.memberIds[0] ?? null,
       amount: String(ZERO_DECIMAL.includes(t.currency) ? Math.round(t.amount) : Math.round(t.amount * 100) / 100),
@@ -335,38 +309,13 @@ export default function Settle({
     return item.type ? updateBooking(item.id, payload) : updateExpense(item.id, payload)
   }
   const splitItemEvenly = (item) => run(() => saveEvenSplit(item), 'Split evenly')
+  const writableUnallocated = unallocated.filter((item) => writableTripIds.has(item.trip_id))
   const splitAllEvenly = () => {
-    const targets = unallocated.filter((it) => members.some((m) => m.trip_id === it.trip_id))
+    const targets = writableUnallocated.filter((it) => members.some((m) => m.trip_id === it.trip_id))
     if (targets.length === 0) return
     return run(async () => {
       for (const it of targets) await saveEvenSplit(it)
     }, `Split ${targets.length} item${targets.length === 1 ? '' : 's'} evenly`)
-  }
-
-  const submitSettlement = async (e) => {
-    e.preventDefault()
-    const amount = toNumber(settleForm.amount)
-    if (!settleForm.trip_id) return toast.error('Pick a trip for this payment')
-    if (!settleForm.from_user || !settleForm.to_user) return toast.error('Pick who paid and who received')
-    if (!(amount > 0)) return toast.error('Enter an amount')
-    if (!settleIdRef.current) settleIdRef.current = crypto.randomUUID()
-    const ok = await run(
-      () => recordSettlement({
-        id: settleIdRef.current,
-        trip_id: settleForm.trip_id,
-        from_user: settleForm.from_user,
-        to_user: settleForm.to_user,
-        amount,
-        currency: settleForm.currency,
-        note: settleForm.note.trim() || null,
-      }),
-      'Payment recorded',
-    )
-    if (ok) {
-      settleIdRef.current = null
-      setSettleForm(blankSettle)
-      setShowSettleForm(false)
-    }
   }
 
   return (
@@ -432,7 +381,7 @@ export default function Settle({
                 </svg>
                 <h2 className="text-sm font-semibold text-amber-800 m-0">Needs attention</h2>
               </div>
-              {unallocated.length > 0 && (
+              {writableUnallocated.length > 0 && (
                 <button
                   type="button"
                   onClick={splitAllEvenly}
@@ -454,13 +403,18 @@ export default function Settle({
                   key={`u-${i}`}
                   item={ref}
                   reason="Not split yet"
-                  onOpen={openBooking}
-                  onSplitEven={() => splitItemEvenly(ref)}
+                  onOpen={writableTripIds.has(ref.trip_id) ? openAttentionItem : undefined}
+                  onSplitEven={writableTripIds.has(ref.trip_id) ? () => splitItemEvenly(ref) : undefined}
                   busy={busy}
                 />
               ))}
               {missingPayer.map((ref, i) => (
-                <NeedsAttentionRow key={`p-${i}`} item={ref} reason="No payer set" onOpen={openBooking} />
+                <NeedsAttentionRow
+                  key={`p-${i}`}
+                  item={ref}
+                  reason="No payer set"
+                  onOpen={writableTripIds.has(ref.trip_id) ? openAttentionItem : undefined}
+                />
               ))}
             </div>
           </section>
@@ -518,7 +472,7 @@ export default function Settle({
                       t={t}
                       memberByUserId={memberByUserId}
                       currentUserId={currentUserId}
-                      onSettle={() => markPaid(t)}
+                      onSettle={selectedWritableTrip ? () => markPaid(t) : undefined}
                     />
                   ))}
                 </div>
@@ -705,89 +659,20 @@ export default function Settle({
           </section>
         )}
 
-        {/* 5 — Expenses */}
-        <ExpensesSection
-          expenses={expenses}
-          personLabel={personLabel}
-          trips={trips}
-          selectedTrip={selectedTrip}
-          viewerNetOf={viewerNetOfExpense}
-          busy={busy}
-          run={run}
-          toast={toast}
-          ask={ask}
-        />
-
-        {/* 7 — Settlement history + record a payment */}
-        <section ref={settleFormRef} className="mat-surface p-5">
+        {/* Payments stay with balances; expense management lives on /expenses. */}
+        <section className="mat-surface p-5">
           <div className="flex items-center justify-between mb-3">
             <SectionTitle className="mb-0">Payments</SectionTitle>
-            <button
-              type="button"
-              onClick={() => (showSettleForm ? setShowSettleForm(false) : openSettleForm({ trip_id: selectedTrip ?? '' }))}
-              className="mat-btn-outlined text-xs"
-            >
-              {showSettleForm ? 'Cancel' : '+ Record a payment'}
-            </button>
-          </div>
-
-          {showSettleForm && (
-            <form onSubmit={submitSettlement} className="mb-4 space-y-3 rounded-xl border border-outline/30 bg-surface-container/40 p-3">
-              <TripSelect
-                trips={trips}
-                value={settleForm.trip_id}
-                onChange={(trip_id) => setSettleForm((f) => ({ ...f, trip_id, from_user: null, to_user: null }))}
-              />
-              <div className="flex items-center justify-between gap-2 min-w-0">
-                <label className="text-xs font-medium text-on-surface-variant shrink-0">From (paid)</label>
-                <AssigneePicker
-                  value={settleForm.from_user}
-                  members={settleRoster}
-                  onChange={(m) => setSettleForm((f) => ({ ...f, from_user: m?.id ?? null, to_user: f.to_user === (m?.id ?? null) ? null : f.to_user }))}
-                  align="right"
-                />
-              </div>
-              <div className="flex items-center justify-between gap-2 min-w-0">
-                <label className="text-xs font-medium text-on-surface-variant shrink-0">To (received)</label>
-                <AssigneePicker
-                  value={settleForm.to_user}
-                  members={toRoster}
-                  onChange={(m) => setSettleForm((f) => ({ ...f, to_user: m?.id ?? null }))}
-                  align="right"
-                />
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={settleForm.amount}
-                  onChange={(e) => setSettleForm((f) => ({ ...f, amount: cleanAmount(e.target.value) }))}
-                  placeholder="Amount"
-                  className="mat-input flex-1"
-                />
-                <select
-                  value={settleForm.currency}
-                  onChange={(e) => setSettleForm((f) => ({ ...f, currency: e.target.value }))}
-                  aria-label="Currency"
-                  className="mat-select shrink-0"
-                >
-                  {CURRENCIES.map((c) => (
-                    <option key={c.code} value={c.code}>{c.code}</option>
-                  ))}
-                </select>
-              </div>
-              <input
-                type="text"
-                value={settleForm.note}
-                onChange={(e) => setSettleForm((f) => ({ ...f, note: e.target.value }))}
-                placeholder="Note (optional)"
-                className="mat-input"
-              />
-              <button type="submit" disabled={busy} className="mat-btn-filled w-full justify-center disabled:opacity-40">
-                {busy ? 'Recording…' : 'Record payment'}
+            {writableSelectedTrips.length > 0 && (
+              <button
+                type="button"
+                onClick={() => openPayment({ trip_id: selectedWritableTrip })}
+                className="mat-btn-outlined text-xs"
+              >
+                + Record a payment
               </button>
-            </form>
-          )}
+            )}
+          </div>
 
           {settlements.length === 0 ? (
             <EmptyLine>No payments recorded yet.</EmptyLine>
@@ -806,25 +691,27 @@ export default function Settle({
                   <span className="text-sm font-medium text-on-surface shrink-0">
                     {formatCurrency(Number(s.amount) || 0, s.currency)}
                   </span>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const ok = await ask({
-                        title: 'Delete this payment?',
-                        message: `${personLabel(s.from_user)} → ${personLabel(s.to_user)} (${formatCurrency(Number(s.amount) || 0, s.currency)}) will be permanently removed. This cannot be undone.`,
-                        confirmLabel: 'Delete',
-                      })
-                      if (!ok) return
-                      run(() => deleteSettlement(s.id), 'Payment deleted')
-                    }}
-                    disabled={busy}
-                    aria-label="Delete payment"
-                    className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 shrink-0"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                  {writableTripIds.has(s.trip_id) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ok = await ask({
+                          title: 'Delete this payment?',
+                          message: `${personLabel(s.from_user)} → ${personLabel(s.to_user)} (${formatCurrency(Number(s.amount) || 0, s.currency)}) will be permanently removed. This cannot be undone.`,
+                          confirmLabel: 'Delete',
+                        })
+                        if (!ok) return
+                        run(() => deleteSettlement(s.id), 'Payment deleted')
+                      }}
+                      disabled={busy}
+                      aria-label="Delete payment"
+                      className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 shrink-0"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -847,6 +734,24 @@ export default function Settle({
           onDelete={async (id) => {
             await deleteBooking(id)
           }}
+        />
+      )}
+      {editingExpense && (
+        <ExpenseModal
+          key={editingExpense.id}
+          expense={editingExpense}
+          selectedTrip={selectedTrip}
+          availableTrips={writableTrips}
+          onClose={() => setEditingExpense(null)}
+        />
+      )}
+      {paymentInitialValues && (
+        <PaymentModal
+          key={paymentModalKey}
+          initialValues={paymentInitialValues}
+          selectedTrip={selectedTrip}
+          availableTrips={writableSelectedTrips}
+          onClose={() => setPaymentInitialValues(null)}
         />
       )}
     </div>
@@ -999,16 +904,18 @@ function TransferCard({ t, memberByUserId, currentUserId, onSettle }) {
         </svg>
         <UnitAvatars unit={t.toUnit} memberByUserId={memberByUserId} />
         <span className="flex-1" />
-        <button
-          type="button"
-          onClick={onSettle}
-          className="rounded-full bg-primary/10 text-primary-dark font-semibold text-xs px-4 py-2 inline-flex items-center gap-1.5 shrink-0 hover:bg-primary/20 transition-colors"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-          </svg>
-          Settle
-        </button>
+        {onSettle && (
+          <button
+            type="button"
+            onClick={onSettle}
+            className="rounded-full bg-primary/10 text-primary-dark font-semibold text-xs px-4 py-2 inline-flex items-center gap-1.5 shrink-0 hover:bg-primary/20 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+            Settle
+          </button>
+        )}
       </div>
       <div className="mt-2 flex justify-between items-baseline gap-3">
         <span className="text-sm text-on-surface truncate min-w-0">{sentence}</span>
@@ -1088,310 +995,41 @@ function BalanceRow({ unit, memberByUserId }) {
   )
 }
 
-/** Booking → opens the booking modal in place (same wiring as Costs). */
+/** Actionable items open their matching editor in place. */
 function NeedsAttentionRow({ item, reason, onOpen, onSplitEven, busy }) {
   const isBooking = !!item.type
   const title = item.title || 'Untitled'
   const icon = isBooking ? (TYPE_ICONS[item.type] || '🗂️') : '🧾'
-  const inner = (
-    <div className="flex items-center gap-2 min-w-0">
+  const content = (
+    <>
       <span className="text-base shrink-0">{icon}</span>
       <span className="text-sm text-on-surface truncate min-w-0 flex-1">{title}</span>
-      {onSplitEven ? (
+      {!onSplitEven && <span className="text-[11px] text-amber-600 shrink-0">{reason}</span>}
+    </>
+  )
+  return (
+    <div className="flex items-center gap-2 py-2 border-b border-outline/20 last:border-0 -mx-2 px-2 rounded-lg">
+      {onOpen ? (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onSplitEven() }}
+          onClick={() => onOpen(item)}
+          className="flex flex-1 items-center gap-2 min-w-0 text-left rounded-lg hover:bg-surface-container/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-colors"
+        >
+          {content}
+        </button>
+      ) : (
+        <div className="flex flex-1 items-center gap-2 min-w-0">{content}</div>
+      )}
+      {onSplitEven && (
+        <button
+          type="button"
+          onClick={onSplitEven}
           disabled={busy}
           className="text-[11px] font-medium text-amber-800 border border-amber-400 rounded-full px-2 py-0.5 hover:bg-amber-100 disabled:opacity-40 shrink-0 transition-colors"
         >
           Split evenly
         </button>
-      ) : (
-        <span className="text-[11px] text-amber-600 shrink-0">{reason}</span>
       )}
     </div>
-  )
-  if (isBooking) {
-    return (
-      <div
-        onClick={() => onOpen(item)}
-        className="py-2 border-b border-outline/20 last:border-0 cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors"
-      >
-        {inner}
-      </div>
-    )
-  }
-  return <div className="py-2 border-b border-outline/20 last:border-0">{inner}</div>
-}
-
-/** Trip picker for expense/settlement creation (same rule Add Booking follows). */
-function TripSelect({ trips, value, onChange }) {
-  return (
-    <label className="block">
-      <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">Trip</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label="Trip"
-        className="mat-select w-full"
-      >
-        <option value="">Select a trip…</option>
-        {trips.map((t) => (
-          <option key={t.id} value={t.id}>{t.name}</option>
-        ))}
-      </select>
-    </label>
-  )
-}
-
-function ExpensesSection({ expenses, personLabel, trips, selectedTrip, viewerNetOf, busy, run, toast, ask }) {
-  const blank = () => ({ id: null, trip_id: selectedTrip ?? '', title: '', amount: '', currency: 'HKD', date: '', paid_by: null, splits: [], charged_currency: '', charged_rate: '' })
-  const [form, setForm] = useState(null) // null = closed
-
-  const roster = form ? ((trips.find((t) => t.id === form.trip_id)?.members) ?? []) : []
-  const parties = form ? ((trips.find((t) => t.id === form.trip_id)?.parties) ?? []) : []
-
-  const openNew = () => setForm(blank())
-  const exportCsv = () => {
-    const blob = new Blob([`\uFEFF${buildExpensesCsv(expenses, trips)}`], {
-      type: 'text/csv;charset=utf-8',
-    })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    // Safari may not start reading the blob until after the click handler
-    // returns, so revoking synchronously can produce an empty download.
-    setTimeout(() => URL.revokeObjectURL(url), 0)
-  }
-  const openEdit = (e) => setForm({
-    id: e.id,
-    trip_id: e.trip_id,
-    title: e.title || '',
-    amount: e.amount != null ? String(e.amount) : '',
-    currency: e.currency || 'HKD',
-    date: e.date || '',
-    paid_by: e.paid_by ?? null,
-    splits: (e.splits || []).map((s) => ({
-      user_id: s.user_id,
-      weight: Number.isFinite(Number(s.weight)) ? Number(s.weight) : 1,
-      extra_amount: Number(s.extra_amount) || 0,
-    })),
-    charged_currency: e.charged_currency || '',
-    charged_rate: e.charged_rate != null ? String(e.charged_rate) : '',
-  })
-
-  // Changing trip prunes split entries / payer to the new trip's roster.
-  const changeTrip = (trip_id) => {
-    const nextRoster = (trips.find((t) => t.id === trip_id)?.members) ?? []
-    const ids = new Set(nextRoster.map((m) => m.id))
-    setForm((f) => ({
-      ...f,
-      trip_id,
-      splits: f.splits.filter((s) => ids.has(s.user_id)),
-      paid_by: f.paid_by && ids.has(f.paid_by) ? f.paid_by : null,
-    }))
-  }
-
-  const submit = async (e) => {
-    e.preventDefault()
-    const amount = toNumber(form.amount)
-    if (!form.trip_id) return toast.error('Pick a trip for this expense')
-    if (!form.title.trim()) return toast.error('Give the expense a title')
-    if (!(amount > 0)) return toast.error('Enter an amount')
-    if (form.splits.length === 0) return toast.error('Split the expense between at least one person')
-    if (!form.paid_by) return toast.error('Pick who paid')
-    const sumExtras = form.splits.reduce((s, r) => s + (Number(r.extra_amount) || 0), 0)
-    if (sumExtras > amount + 0.01) return toast.error('Extras exceed the total cost')
-    if (form.charged_currency) {
-      if (!(toNumber(form.charged_rate) > 0)) return toast.error('Enter the rate it was charged at')
-      if (form.charged_currency === form.currency) return toast.error('Charged currency must differ from the expense currency')
-    }
-    const hasCharged = !!form.charged_currency && toNumber(form.charged_rate) > 0
-    const payload = {
-      trip_id: form.trip_id,
-      title: form.title.trim(),
-      amount,
-      currency: form.currency,
-      date: form.date || null,
-      paid_by: form.paid_by,
-      // Party selection expands to member rows. A member adjusted to zero with
-      // no extra consumed none of the item, so don't persist an empty row.
-      splits: pruneEmptySplits(form.splits),
-      charged_currency: hasCharged ? form.charged_currency : null,
-      charged_rate: hasCharged ? toNumber(form.charged_rate) : null,
-    }
-    const ok = await run(
-      () => (form.id ? updateExpense(form.id, payload) : createExpense(payload)),
-      form.id ? 'Expense updated' : 'Expense added',
-    )
-    if (ok) setForm(null)
-  }
-
-  return (
-    <section className="mat-surface p-5">
-      <div className="flex items-center justify-between mb-3">
-        <SectionTitle className="mb-0">Expenses</SectionTitle>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={exportCsv}
-            disabled={expenses.length === 0}
-            title="Export expenses shown by the current trip filters"
-            className="mat-btn-outlined text-xs disabled:opacity-40"
-          >
-            Export CSV
-          </button>
-          <button
-            type="button"
-            onClick={() => (form && !form.id ? setForm(null) : openNew())}
-            className="mat-btn-outlined text-xs"
-          >
-            {form && !form.id ? 'Cancel' : '+ Add expense'}
-          </button>
-        </div>
-      </div>
-
-      {form && (
-        <form onSubmit={submit} className="mb-4 space-y-3 rounded-xl border border-outline/30 bg-surface-container/40 p-3">
-          <TripSelect trips={trips} value={form.trip_id} onChange={changeTrip} />
-          <input
-            type="text"
-            value={form.title}
-            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            placeholder="What was it? (dinner, taxi…)"
-            className="mat-input"
-          />
-          <div className="flex gap-2">
-            <input
-              type="text"
-              inputMode="decimal"
-              value={form.amount}
-              onChange={(e) => setForm((f) => ({ ...f, amount: cleanAmount(e.target.value) }))}
-              placeholder="Amount"
-              className="mat-input flex-1"
-            />
-            <select
-              value={form.currency}
-              onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
-              aria-label="Currency"
-              className="mat-select shrink-0"
-            >
-              {CURRENCIES.map((c) => (
-                <option key={c.code} value={c.code}>{c.code}</option>
-              ))}
-            </select>
-          </div>
-          <label className="block">
-            <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">Date (optional)</span>
-            <input
-              type="date"
-              value={form.date}
-              onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
-              className="mat-input"
-            />
-          </label>
-          {form.trip_id ? (
-            <SplitEditor
-              members={roster}
-              parties={parties}
-              amount={toNumber(form.amount) || 0}
-              currency={form.currency}
-              paidBy={form.paid_by}
-              splits={form.splits}
-              onChange={({ paid_by, splits }) => setForm((f) => ({ ...f, paid_by, splits }))}
-            />
-          ) : (
-            <p className="text-[11px] text-on-surface-variant/70">Pick a trip to split this expense.</p>
-          )}
-          <ChargedRateEditor
-            nativeCurrency={form.currency}
-            effective={toNumber(form.amount) || 0}
-            chargedCurrency={form.charged_currency}
-            chargedRate={form.charged_rate}
-            onChange={({ charged_currency, charged_rate }) =>
-              setForm((f) => ({
-                ...f,
-                charged_currency: charged_currency ?? '',
-                charged_rate: charged_rate ?? '',
-              }))
-            }
-          />
-          <div className="flex justify-end gap-2">
-            {form.id && (
-              <button type="button" onClick={() => setForm(null)} className="mat-btn-outlined text-xs">
-                Cancel
-              </button>
-            )}
-            <button type="submit" disabled={busy} className="mat-btn-filled text-xs disabled:opacity-40">
-              {busy ? 'Saving…' : form.id ? 'Save expense' : 'Add expense'}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {expenses.length === 0 ? (
-        <EmptyLine>No expenses yet — add a dinner, taxi or anything shared.</EmptyLine>
-      ) : (
-        <div className="space-y-1">
-          {expenses.map((e) => (
-            <div key={e.id} className="flex items-center gap-2 py-2 border-b border-outline/20 last:border-0">
-              <span className="text-base shrink-0">🧾</span>
-              <div className="min-w-0 flex-1">
-                <div className="text-sm text-on-surface font-medium truncate">{e.title}</div>
-                <div className="text-xs text-on-surface-variant truncate">
-                  {e.paid_by ? `${personLabel(e.paid_by)} paid` : 'No payer'}
-                  {e.date ? ` · ${e.date}` : ''}
-                </div>
-              </div>
-              {(() => {
-                const raw = viewerNetOf ? viewerNetOf(e) : null
-                const ch = Number(e.charged_rate) > 0 && e.charged_currency
-                const dn = raw == null ? null : ch ? raw * Number(e.charged_rate) : raw
-                const dc = ch ? e.charged_currency : e.currency
-                return <NetPill net={dn} currency={dc} />
-              })()}
-              <span className="text-sm font-medium text-on-surface shrink-0">
-                {formatCurrency(Number(e.amount) || 0, e.currency)}
-              </span>
-              <button
-                type="button"
-                onClick={() => openEdit(e)}
-                aria-label={`Edit ${e.title}`}
-                className="text-on-surface-variant hover:text-primary p-1 rounded-full hover:bg-surface-container transition-colors shrink-0"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const ok = await ask({
-                    title: 'Delete this expense?',
-                    message: e.title
-                      ? `"${e.title}" will be permanently removed. This cannot be undone.`
-                      : 'This expense will be permanently removed. This cannot be undone.',
-                    confirmLabel: 'Delete',
-                  })
-                  if (!ok) return
-                  run(() => deleteExpense(e.id), 'Expense deleted')
-                }}
-                disabled={busy}
-                aria-label={`Delete ${e.title}`}
-                className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 shrink-0"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
   )
 }
