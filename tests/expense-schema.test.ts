@@ -16,6 +16,7 @@ test("expense creation requires a YYYY-MM-DD date", () => {
   assert.equal(expenseInsertSchema.safeParse(validExpense).success, true);
   assert.equal(expenseInsertSchema.safeParse({ ...validExpense, date: undefined }).success, false);
   assert.equal(expenseInsertSchema.safeParse({ ...validExpense, date: "08/08/2026" }).success, false);
+  assert.equal(expenseInsertSchema.safeParse({ ...validExpense, date: "2026-02-29" }).success, false);
 });
 
 test("expense updates may omit but cannot clear the date", () => {

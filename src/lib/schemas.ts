@@ -20,7 +20,7 @@ export const bookingTypeSchema = z.enum([
 // `cost_currency: string` for back-compat with historical rows.
 const CURRENCY_CODES = CURRENCIES.map((c) => c.code) as [string, ...string[]];
 const currencySchema = z.enum(CURRENCY_CODES);
-const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
+const dateOnlySchema = z.iso.date();
 
 // One person's share of a split. user_id is a text user id (cuid2 / preserved
 // Supabase UUID), so no .uuid(). `weight` must be ≥ 0 and `extra_amount` ≥ 0,
