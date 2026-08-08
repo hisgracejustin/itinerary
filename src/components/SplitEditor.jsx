@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import AssigneePicker, { Avatar, memberFirstName } from './AssigneePicker'
 import { formatCurrency } from '../lib/currencies'
-import { itemUnitTransfers } from '../lib/split'
+import { itemShares, itemUnitTransfers } from '../lib/split'
 
 /**
  * Shared split editor, used by BookingForm (and the expense form in commit 3).
@@ -42,6 +42,9 @@ export default function SplitEditor({
   onChange,
 }) {
   const [showShares, setShowShares] = useState(false)
+  const [shareMode, setShareMode] = useState(
+    splits.length > 0 && splits.every((row) => Number(row.weight) === 0) ? 'amounts' : 'weights',
+  )
   // Local text drafts so a half-typed weight/extra ("1.", "44.", "") doesn't get
   // clobbered by the numeric round-trip; the parent still only ever sees valid
   // non-negative numbers. Separate maps keyed by user id.
@@ -112,7 +115,7 @@ export default function SplitEditor({
     } else {
       const toAdd = unit.memberIds
         .filter((id) => !includedIds.has(id))
-        .map((id) => ({ user_id: id, weight: 1, extra_amount: 0 }))
+        .map((id) => ({ user_id: id, weight: shareMode === 'amounts' ? 0 : 1, extra_amount: 0 }))
       emit({ splits: [...splits, ...toAdd] })
     }
   }
@@ -135,6 +138,47 @@ export default function SplitEditor({
     const extra = Number.isFinite(num) && num >= 0 ? num : 0
     emit({
       splits: splits.map((s) => (s.user_id === id ? { ...s, extra_amount: extra } : s)),
+    })
+  }
+
+  const switchMode = (mode) => {
+    if (mode === shareMode) return
+    if (mode === 'amounts') {
+      const shares = itemShares(amount, splits)
+      let assigned = 0
+      const next = splits.map((row, index) => {
+        const value = index === splits.length - 1
+          ? Math.max(0, amount - assigned)
+          : Math.round((shares?.get(row.user_id) || 0) * 100) / 100
+        assigned += value
+        return { ...row, weight: 0, extra_amount: value }
+      })
+      setDrafts({})
+      setExtraDrafts(Object.fromEntries(next.map((row) => [row.user_id, String(row.extra_amount)])))
+      emit({ splits: next })
+    } else {
+      emit({
+        splits: splits.map((row) => ({
+          ...row,
+          weight: Number(row.extra_amount) || 0,
+          extra_amount: 0,
+        })),
+      })
+      setDrafts({})
+      setExtraDrafts({})
+    }
+    setShareMode(mode)
+  }
+
+  const setFixedAmount = (id, raw) => {
+    const clean = raw.replace(/[^0-9.]/g, '')
+    setExtraDrafts((draft) => ({ ...draft, [id]: clean }))
+    const value = parseFloat(clean)
+    emit({
+      splits: splits.map((row) =>
+        row.user_id === id
+          ? { ...row, weight: 0, extra_amount: Number.isFinite(value) && value >= 0 ? value : 0 }
+          : row),
     })
   }
 
@@ -206,6 +250,18 @@ export default function SplitEditor({
           </button>
           {showShares && (
             <div className="mt-2 space-y-2">
+              <div className="flex rounded-xl border border-outline/40 overflow-hidden">
+                {[['weights', 'Relative shares'], ['amounts', 'Exact amounts']].map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => switchMode(mode)}
+                    className={`flex-1 px-2 py-2 text-xs ${shareMode === mode ? 'bg-primary-light text-primary font-medium' : 'text-on-surface-variant'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               {includedMembers.map((m) => {
                 const w = weightOf(m.id)
                 const extra = extraOf(m.id)
@@ -220,7 +276,7 @@ export default function SplitEditor({
                     <span className="text-xs text-on-surface truncate min-w-0 flex-1">
                       {memberFirstName(m)}
                     </span>
-                    <input
+                    {shareMode === 'weights' ? <><input
                       type="text"
                       inputMode="decimal"
                       value={value}
@@ -236,7 +292,14 @@ export default function SplitEditor({
                       placeholder="+ extra"
                       className="mat-input w-20 text-center shrink-0"
                       aria-label={`Extra for ${memberFirstName(m)}`}
-                    />
+                    /></> : <input
+                      type="text"
+                      inputMode="decimal"
+                      value={extraDrafts[m.id] !== undefined ? extraDrafts[m.id] : String(extra)}
+                      onChange={(e) => setFixedAmount(m.id, e.target.value)}
+                      className="mat-input w-24 text-right shrink-0"
+                      aria-label={`Exact amount for ${memberFirstName(m)}`}
+                    />}
                     <span className="text-xs text-on-surface-variant w-20 text-right shrink-0 truncate">
                       {formatCurrency(share, currency)}
                     </span>
@@ -245,6 +308,11 @@ export default function SplitEditor({
               })}
               {extrasExceed && (
                 <p className="text-[11px] text-amber-600">Extras exceed the total cost.</p>
+              )}
+              {shareMode === 'amounts' && !extrasExceed && Math.abs(remainder) > 0.01 && (
+                <p className="text-[11px] text-amber-600">
+                  {formatCurrency(Math.abs(remainder), currency)} {remainder > 0 ? 'still to assign' : 'over the total'}.
+                </p>
               )}
             </div>
           )}

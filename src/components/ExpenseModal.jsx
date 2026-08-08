@@ -84,7 +84,11 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
     if (splits.length === 0) return toast.error("Split the expense between at least one person");
     if (!form.paid_by) return toast.error("Pick who paid");
     const sumExtras = splits.reduce((sum, row) => sum + (Number(row.extra_amount) || 0), 0);
+    const sumWeights = splits.reduce((sum, row) => sum + (Number(row.weight) || 0), 0);
     if (sumExtras > amount + 0.01) return toast.error("Extras exceed the total cost");
+    if (sumWeights <= 0 && Math.abs(sumExtras - amount) > 0.01) {
+      return toast.error("Exact amounts must add up to the total");
+    }
     if (form.charged_currency) {
       if (!(toNumber(form.charged_rate) > 0)) return toast.error("Enter the rate it was charged at");
       if (form.charged_currency === form.currency) {
