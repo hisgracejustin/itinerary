@@ -7,5 +7,5 @@ export const dynamic = "force-dynamic";
 export default async function ExpensesRoute() {
   const user = await requirePageUser();
   const expenses = await getExpensesForUser(user.id, null);
-  return <Expenses expenses={expenses} />;
+  return <Expenses expenses={expenses} currentUserId={user.id} />;
 }

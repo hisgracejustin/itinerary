@@ -160,7 +160,21 @@ export default function Settle({
     if (!me?.party_id) return [currentUserId]
     return rows.filter((m) => m.party_id === me.party_id).map((m) => m.id)
   }
-  const effectiveOf = (b) => (b.cost_amount || 0) * (b.cost_share != null ? b.cost_share : 1)
+  // Split costs cover BOTH cost-bearing bookings and ad-hoc expenses (the same
+  // pair computeBalances settles), so these accessors take either shape: a
+  // booking carries cost_amount/cost_share/cost_currency/type, an expense just
+  // amount + currency.
+  const effectiveOf = (row) =>
+    row.cost_amount != null
+      ? (row.cost_amount || 0) * (row.cost_share != null ? row.cost_share : 1)
+      : row.amount || 0
+  const currencyOf = (row) => row.cost_currency ?? row.currency
+  const iconOf = (row) => (row.type ? TYPE_ICONS[row.type] || '🗂️' : '🧾')
+  const rowKey = (row) => `${row.type ? 'bk' : 'ex'}-${row.id}`
+  const openSplitItem = (row) => {
+    if (row.type) return openBooking(row)
+    if (writableTripIds.has(row.trip_id)) setEditingExpense(row)
+  }
 
   // How many WAYS an item is split — settlement units, not people: a couple in
   // the split counts once (4 people in 2 couples = ÷2).
@@ -193,10 +207,13 @@ export default function Settle({
     const d = displayNet(net, row)
     return d.currency === 'HKD' ? d.net : toHKD(d.net, d.currency, rates)
   }
-  // Per-item breakdown: every fully split cost-bearing booking in the selection,
-  // with the viewer's unit-level net for it.
-  const splitCostRows = bookings
-    .filter((b) => b.cost_amount && b.cost_currency && (b.splits || []).length > 0 && b.paid_by)
+  // Per-item breakdown: every fully split cost-bearing item in the selection —
+  // bookings AND expenses — with the viewer's unit-level net for it.
+  const splitCostRows = [
+    ...bookings.filter((b) => b.cost_amount && b.cost_currency),
+    ...expenses.filter((e) => e.amount && e.currency),
+  ]
+    .filter((b) => (b.splits || []).length > 0 && b.paid_by)
     .map((b) => ({
       b,
       net: itemViewerNet({
@@ -550,19 +567,19 @@ export default function Settle({
                     const netHKD = netHkdOf(net, b)
                     return (
                       <div
-                        key={b.id}
-                        onClick={() => openBooking(b)}
+                        key={rowKey(b)}
+                        onClick={() => openSplitItem(b)}
                         className="py-2 border-b border-outline/20 last:border-0 cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors"
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-base shrink-0">{TYPE_ICONS[b.type] || '🗂️'}</span>
+                          <span className="text-base shrink-0">{iconOf(b)}</span>
                           <span className="text-sm font-medium text-on-surface truncate min-w-0 flex-1">{b.title}</span>
                           <NetPill net={disp.net} currency={disp.currency} />
                         </div>
                         <div className="mt-0.5 flex items-center gap-1.5 text-xs text-on-surface-variant min-w-0">
                           <Avatar member={payer} size="xs" />
                           <span className="truncate min-w-0 flex-1">
-                            {memberFirstName(payer)} paid {formatCurrency(effectiveOf(b), b.cost_currency)}
+                            {memberFirstName(payer)} paid {formatCurrency(effectiveOf(b), currencyOf(b))}
                             <span className="text-on-surface-variant/70"> · ÷{unitCountOf(b)}</span>
                           </span>
                           {disp.currency !== 'HKD' && netHKD != null && Math.abs(disp.net) >= eps && (
@@ -602,17 +619,17 @@ export default function Settle({
                       const netHKD = netHkdOf(net, b)
                       return (
                         <tr
-                          key={b.id}
-                          onClick={() => openBooking(b)}
+                          key={rowKey(b)}
+                          onClick={() => openSplitItem(b)}
                           className="border-t border-outline/20 cursor-pointer hover:bg-surface-container/50 transition-colors"
                         >
                           <td className="py-2 pr-2">
                             <div className="flex items-center gap-2 min-w-0 max-w-[220px]">
-                              <span className="text-base shrink-0">{TYPE_ICONS[b.type] || '🗂️'}</span>
+                              <span className="text-base shrink-0">{iconOf(b)}</span>
                               <div className="min-w-0">
                                 <div className="text-sm text-on-surface font-medium truncate">{b.title}</div>
                                 <div className="text-xs text-on-surface-variant truncate">
-                                  paid {formatCurrency(effectiveOf(b), b.cost_currency)}
+                                  paid {formatCurrency(effectiveOf(b), currencyOf(b))}
                                   <span className="text-on-surface-variant/70"> · ÷{unitCountOf(b)}</span>
                                 </div>
                               </div>
@@ -658,7 +675,7 @@ export default function Settle({
               </table>
             </div>
             <RatesDisclosure
-              currencies={[...new Set(splitCostRows.map(({ b }) => b.cost_currency).filter((c) => c && c !== 'HKD'))]}
+              currencies={[...new Set(splitCostRows.map(({ b }) => currencyOf(b)).filter((c) => c && c !== 'HKD'))]}
               fx={fx}
             />
           </section>
