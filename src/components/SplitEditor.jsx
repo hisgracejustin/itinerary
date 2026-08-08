@@ -50,6 +50,7 @@ export default function SplitEditor({
   // non-negative numbers. Separate maps keyed by user id.
   const [drafts, setDrafts] = useState({})
   const [extraDrafts, setExtraDrafts] = useState({})
+  const [serviceDraft, setServiceDraft] = useState('')
 
   const includedIds = new Set(splits.map((s) => s.user_id))
   const weightOf = (id) => {
@@ -172,13 +173,30 @@ export default function SplitEditor({
 
   const setFixedAmount = (id, raw) => {
     const clean = raw.replace(/[^0-9.]/g, '')
-    setExtraDrafts((draft) => ({ ...draft, [id]: clean }))
-    const value = parseFloat(clean)
+    const nextDrafts = { ...extraDrafts, [id]: clean }
+    setExtraDrafts(nextDrafts)
+    const multiplier = 1 + (parseFloat(serviceDraft) || 0) / 100
     emit({
-      splits: splits.map((row) =>
-        row.user_id === id
-          ? { ...row, weight: 0, extra_amount: Number.isFinite(value) && value >= 0 ? value : 0 }
-          : row),
+      splits: splits.map((row) => {
+        const value = parseFloat(nextDrafts[row.user_id] ?? String(row.extra_amount || 0))
+        return {
+          ...row,
+          weight: 0,
+          extra_amount: Number.isFinite(value) && value >= 0 ? value * multiplier : 0,
+        }
+      }),
+    })
+  }
+
+  const setServiceCharge = (raw) => {
+    const clean = raw.replace(/[^0-9.]/g, '')
+    setServiceDraft(clean)
+    const multiplier = 1 + (parseFloat(clean) || 0) / 100
+    emit({
+      splits: splits.map((row) => {
+        const base = parseFloat(extraDrafts[row.user_id] ?? String(row.extra_amount || 0))
+        return { ...row, weight: 0, extra_amount: (Number.isFinite(base) ? base : 0) * multiplier }
+      }),
     })
   }
 
@@ -262,6 +280,23 @@ export default function SplitEditor({
                   </button>
                 ))}
               </div>
+              {shareMode === 'amounts' && (
+                <label className="flex items-center justify-between gap-3 text-xs text-on-surface-variant">
+                  <span>Service charge applied to everyone</span>
+                  <span className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={serviceDraft}
+                      onChange={(e) => setServiceCharge(e.target.value)}
+                      placeholder="0"
+                      className="mat-input w-16 text-right"
+                      aria-label="Service charge percent"
+                    />
+                    %
+                  </span>
+                </label>
+              )}
               {includedMembers.map((m) => {
                 const w = weightOf(m.id)
                 const extra = extraOf(m.id)
