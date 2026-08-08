@@ -29,7 +29,7 @@ import { itemShares, itemUnitTransfers } from '../lib/split'
  * @param {number} props.amount   splittable amount, for the live share preview
  * @param {string} props.currency currency code for the preview
  * @param {string|null} props.paidBy  user id who paid, or null
- * @param {Array}  props.splits   [{ user_id, weight, extra_amount }]
+ * @param {Array}  props.splits   [{ user_id, weight, extra_amount, paid_amount }]
  * @param {(next: { paid_by: string|null, splits: Array }) => void} props.onChange
  */
 export default function SplitEditor({
@@ -50,6 +50,7 @@ export default function SplitEditor({
   // non-negative numbers. Separate maps keyed by user id.
   const [drafts, setDrafts] = useState({})
   const [extraDrafts, setExtraDrafts] = useState({})
+  const [paidDrafts, setPaidDrafts] = useState({})
   const [serviceDraft, setServiceDraft] = useState('')
 
   const includedIds = new Set(splits.map((s) => s.user_id))
@@ -61,10 +62,16 @@ export default function SplitEditor({
     const s = splits.find((x) => x.user_id === id)
     return s && s.extra_amount != null ? s.extra_amount : 0
   }
+  const paidOf = (id) => {
+    const s = splits.find((x) => x.user_id === id)
+    return s && s.paid_amount != null ? s.paid_amount : 0
+  }
   const sumW = splits.reduce((acc, r) => acc + (Number(r.weight) || 0), 0)
   const sumExtras = splits.reduce((acc, r) => acc + (Number(r.extra_amount) || 0), 0)
   const remainder = amount - sumExtras
   const extrasExceed = amount > 0 && sumExtras > amount + 0.01
+  const sumPaid = splits.reduce((acc, r) => acc + (Number(r.paid_amount) || 0), 0)
+  const contributionsExceed = sumPaid > amount + 1e-9
 
   const emit = (next) =>
     onChange?.({
@@ -97,13 +104,19 @@ export default function SplitEditor({
   // THIS item alone — same math as split.js (shared helper).
   const previewResult = itemUnitTransfers({ members, parties, amount, paidBy, splits })
   const transferPreview = previewResult?.lines ?? []
-  const payerUnitName = previewResult?.payerName ?? null
-
   const handlePaidBy = (member) => {
     const newPaid = member?.id ?? null
     if (newPaid && !paidBy && splits.length === 0) {
       // Auto-enable: pre-fill everyone equal, no extras.
-      emit({ paid_by: newPaid, splits: members.map((m) => ({ user_id: m.id, weight: 1, extra_amount: 0 })) })
+      emit({
+        paid_by: newPaid,
+        splits: members.map((m) => ({
+          user_id: m.id,
+          weight: 1,
+          extra_amount: 0,
+          paid_amount: 0,
+        })),
+      })
     } else {
       emit({ paid_by: newPaid })
     }
@@ -116,7 +129,12 @@ export default function SplitEditor({
     } else {
       const toAdd = unit.memberIds
         .filter((id) => !includedIds.has(id))
-        .map((id) => ({ user_id: id, weight: shareMode === 'amounts' ? 0 : 1, extra_amount: 0 }))
+        .map((id) => ({
+          user_id: id,
+          weight: shareMode === 'amounts' ? 0 : 1,
+          extra_amount: 0,
+          paid_amount: 0,
+        }))
       emit({ splits: [...splits, ...toAdd] })
     }
   }
@@ -139,6 +157,16 @@ export default function SplitEditor({
     const extra = Number.isFinite(num) && num >= 0 ? num : 0
     emit({
       splits: splits.map((s) => (s.user_id === id ? { ...s, extra_amount: extra } : s)),
+    })
+  }
+
+  const setPaid = (id, raw) => {
+    const clean = raw.replace(/[^0-9.]/g, '')
+    setPaidDrafts((d) => ({ ...d, [id]: clean }))
+    const num = parseFloat(clean)
+    const paid = Number.isFinite(num) && num >= 0 ? num : 0
+    emit({
+      splits: splits.map((s) => (s.user_id === id ? { ...s, paid_amount: paid } : s)),
     })
   }
 
@@ -300,18 +328,22 @@ export default function SplitEditor({
               {includedMembers.map((m) => {
                 const w = weightOf(m.id)
                 const extra = extraOf(m.id)
+                const paid = paidOf(m.id)
                 // share = extra + weight/Σweights × (amount − Σextras); mirrors split.js.
                 const share = extra + (sumW > 0 ? (remainder * w) / sumW : 0)
                 const value = drafts[m.id] !== undefined ? drafts[m.id] : String(w)
                 const extraValue =
                   extraDrafts[m.id] !== undefined ? extraDrafts[m.id] : extra ? String(extra) : ''
+                const paidValue =
+                  paidDrafts[m.id] !== undefined ? paidDrafts[m.id] : paid ? String(paid) : ''
                 return (
-                  <div key={m.id} className="flex items-center gap-1.5 min-w-0">
-                    <Avatar member={m} size="xs" />
-                    <span className="text-xs text-on-surface truncate min-w-0 flex-1">
-                      {memberFirstName(m)}
-                    </span>
-                    {shareMode === 'weights' ? <><input
+                  <div key={m.id} className="rounded-lg border border-outline/20 p-2 space-y-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Avatar member={m} size="xs" />
+                      <span className="text-xs text-on-surface truncate min-w-0 flex-1">
+                        {memberFirstName(m)}
+                      </span>
+                      {shareMode === 'weights' ? <><input
                       type="text"
                       inputMode="decimal"
                       value={value}
@@ -335,9 +367,22 @@ export default function SplitEditor({
                       className="mat-input w-24 text-right shrink-0"
                       aria-label={`Exact amount for ${memberFirstName(m)}`}
                     />}
-                    <span className="text-xs text-on-surface-variant w-20 text-right shrink-0 truncate">
-                      {formatCurrency(share, currency)}
-                    </span>
+                      <span className="text-xs text-on-surface-variant w-20 text-right shrink-0 truncate">
+                        {formatCurrency(share, currency)}
+                      </span>
+                    </div>
+                    <label className="flex items-center justify-end gap-2 text-[11px] text-on-surface-variant">
+                      <span>Paid separately</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={paidValue}
+                        onChange={(e) => setPaid(m.id, e.target.value)}
+                        placeholder="0"
+                        className="mat-input w-24 text-right"
+                        aria-label={`Paid separately by ${memberFirstName(m)}`}
+                      />
+                    </label>
                   </div>
                 )
               })}
@@ -347,6 +392,11 @@ export default function SplitEditor({
               {shareMode === 'amounts' && !extrasExceed && Math.abs(remainder) > 0.01 && (
                 <p className="text-[11px] text-amber-600">
                   {formatCurrency(Math.abs(remainder), currency)} {remainder > 0 ? 'still to assign' : 'over the total'}.
+                </p>
+              )}
+              {contributionsExceed && (
+                <p className="text-[11px] text-amber-600">
+                  Paid separately amounts exceed the total cost.
                 </p>
               )}
             </div>
@@ -359,9 +409,9 @@ export default function SplitEditor({
         <div className="pt-2 border-t border-outline/20 space-y-1">
           {transferPreview.map((t, i) => (
             <p key={i} className="text-[11px] text-on-surface-variant min-w-0 truncate">
-              <span className="font-medium text-on-surface">{t.name}</span>
+              <span className="font-medium text-on-surface">{t.fromName}</span>
               <span aria-hidden> → </span>
-              <span className="font-medium text-on-surface">{payerUnitName}</span>{' '}
+              <span className="font-medium text-on-surface">{t.toName}</span>{' '}
               {formatCurrency(t.amount, currency)}
             </p>
           ))}

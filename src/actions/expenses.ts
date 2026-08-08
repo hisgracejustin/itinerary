@@ -24,7 +24,9 @@ const revalidateApp = () => revalidatePath("/", "layout");
 async function replaceExpenseSplits(
   client: Db,
   expenseId: string,
-  splits: { user_id: string; weight: number; extra_amount?: number }[] | undefined,
+  splits:
+    | { user_id: string; weight: number; extra_amount?: number; paid_amount?: number }[]
+    | undefined,
 ) {
   if (splits === undefined) return;
   await client.delete(tables.expenseSplits).where(eq(tables.expenseSplits.expense_id, expenseId));
@@ -35,6 +37,7 @@ async function replaceExpenseSplits(
         user_id: s.user_id,
         weight: s.weight,
         extra_amount: s.extra_amount ?? 0,
+        paid_amount: s.paid_amount ?? 0,
       })),
     );
   }
@@ -96,6 +99,7 @@ export async function updateExpenseAction(id: string, input: unknown) {
         user_id: tables.expenseSplits.user_id,
         weight: tables.expenseSplits.weight,
         extra_amount: tables.expenseSplits.extra_amount,
+        paid_amount: tables.expenseSplits.paid_amount,
       })
       .from(tables.expenseSplits)
       .where(eq(tables.expenseSplits.expense_id, id));
@@ -117,6 +121,12 @@ export async function updateExpenseAction(id: string, input: unknown) {
       ...(splits ?? []).map((s) => s.user_id),
       ...carriedUserIds,
     ]);
+    const finalSplits = splits ?? existingSplits;
+    const finalAmount = updates.amount ?? existing.amount;
+    const contributed = finalSplits.reduce((sum, split) => sum + (split.paid_amount ?? 0), 0);
+    if (contributed > finalAmount + 1e-9) {
+      throw new AppError("Paid separately amounts cannot exceed the total cost");
+    }
     const row = await transaction(async (tx) => {
       let updated;
       if (Object.keys(updates).length > 0) {

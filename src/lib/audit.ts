@@ -41,7 +41,12 @@ type AuditRow = {
 /** One watched field that actually moved. */
 export type AuditChange = AuditRow & { field: string };
 
-export type SplitRow = { user_id: string; weight: number; extra_amount?: number | null };
+export type SplitRow = {
+  user_id: string;
+  weight: number;
+  extra_amount?: number | null;
+  paid_amount?: number | null;
+};
 
 export function personLabel(p: { name?: string | null; email?: string | null }) {
   return p.name?.trim() || p.email || "Someone";
@@ -104,7 +109,8 @@ export function splitSummary(
   return splits
     .map((s) => {
       const extra = s.extra_amount ? ` (+${money(s.extra_amount, currency)})` : "";
-      return `${names.get(s.user_id) ?? "Someone"} ×${s.weight}${extra}`;
+      const paid = s.paid_amount ? ` (paid ${money(s.paid_amount, currency)})` : "";
+      return `${names.get(s.user_id) ?? "Someone"} ×${s.weight}${extra}${paid}`;
     })
     .join(" · ");
 }
@@ -113,7 +119,7 @@ export function splitSummary(
 // in a different row order is not a change.
 const splitKey = (splits: SplitRow[] | null | undefined) =>
   (splits ?? [])
-    .map((s) => `${s.user_id}:${s.weight}:${s.extra_amount ?? 0}`)
+    .map((s) => `${s.user_id}:${s.weight}:${s.extra_amount ?? 0}:${s.paid_amount ?? 0}`)
     .sort()
     .join("|");
 

@@ -157,6 +157,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
               user_id: s.user_id,
               weight: Number.isFinite(Number(s.weight)) ? Number(s.weight) : 1,
               extra_amount: Number(s.extra_amount) || 0,
+              paid_amount: Number(s.paid_amount) || 0,
             }))
           : [],
         charged_currency: booking.charged_currency || '',
@@ -333,9 +334,12 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
     if (form.cost_amount && (form.splits || []).length > 0 && !errs.paid_by) {
       const splittable = (parseFloat(form.cost_amount) || 0) * (parseFloat(form.cost_share) || 1)
       const sumExtras = form.splits.reduce((s, r) => s + (Number(r.extra_amount) || 0), 0)
+      const sumPaid = form.splits.reduce((s, r) => s + (Number(r.paid_amount) || 0), 0)
       const sumWeights = form.splits.reduce((s, r) => s + (Number(r.weight) || 0), 0)
       if (sumExtras > splittable + 0.01) errs.paid_by = 'Extras exceed the total cost'
-      else if (sumWeights <= 0 && Math.abs(sumExtras - splittable) > 0.01) {
+      else if (sumPaid > splittable + 1e-9) {
+        errs.paid_by = 'Paid separately amounts exceed the total cost'
+      } else if (sumWeights <= 0 && Math.abs(sumExtras - splittable) > 0.01) {
         errs.paid_by = 'Exact amounts must add up to the total'
       }
     }

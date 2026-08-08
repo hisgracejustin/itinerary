@@ -190,9 +190,9 @@ export default function BookingDetails({ booking }) {
             <span className="block space-y-0.5">
               {splitResult.lines.map((l, i) => (
                 <span key={i} className="block">
-                  {l.name}
+                  {l.fromName}
                   <span className="text-on-surface-variant" aria-hidden> → </span>
-                  {splitResult.payerName} {formatCurrency(l.amount, booking.cost_currency || 'USD')}
+                  {l.toName} {formatCurrency(l.amount, booking.cost_currency || 'USD')}
                 </span>
               ))}
             </span>
