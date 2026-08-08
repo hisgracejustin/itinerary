@@ -87,7 +87,6 @@ export default function Expenses({ expenses: allExpenses }) {
                   onClick={() => editable && setModal({ expense, availableTrips: writableTrips })}
                   className={`w-full flex items-center gap-3 py-3 text-left ${editable ? "hover:bg-surface-container/50 cursor-pointer" : "cursor-default"} transition-colors`}
                 >
-                  <span className="text-xl shrink-0" aria-hidden>🧾</span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2 min-w-0">
                       <span className="text-sm font-medium text-on-surface truncate">{expense.title}</span>
