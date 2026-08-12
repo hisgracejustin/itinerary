@@ -1,9 +1,7 @@
 import { Fragment } from 'react'
 import { TYPE_COLORS, TYPE_ICONS, formatTime, getRentalIcon } from '../lib/calendar'
-import { getFlightDuration, wallClockInZone } from '../lib/airports'
-import { resolveZone } from '../lib/booking-zones'
-import { formatCurrency } from '../lib/currencies'
-import { sanitizeCancellationPolicy, applicableTier, nowInstant, formatCutoff } from '../lib/cancellation'
+import { getFlightDuration } from '../lib/airports'
+import { refundHint } from '../lib/refund-hint'
 
 function layoverDuration(arrivalISO, departureISO) {
   const arr = new Date(arrivalISO)
@@ -115,9 +113,6 @@ function FlightDetails({ booking, details }) {
         {details.seat && <span>Seat {details.seat}</span>}
         {booking.confirmation_number && <span>Conf: {booking.confirmation_number}</span>}
       </div>
-      {details.notes && (
-        <div className="text-xs opacity-60 italic whitespace-pre-wrap break-words">{details.notes}</div>
-      )}
     </div>
   )
 }
@@ -157,9 +152,6 @@ function TrainDetails({ booking, details }) {
         {details.seat && <span>Seat {details.seat}</span>}
         {booking.confirmation_number && <span>Conf: {booking.confirmation_number}</span>}
       </div>
-      {details.notes && (
-        <div className="text-xs opacity-60 italic whitespace-pre-wrap break-words">{details.notes}</div>
-      )}
     </div>
   )
 }
@@ -211,9 +203,6 @@ function CruiseDetails({ booking, details }) {
         <span>{formatTime(booking.start_date)}</span>
         {booking.end_date && <span>→ {formatTime(booking.end_date)}</span>}
       </div>
-      {details.notes && (
-        <div className="text-xs opacity-60 italic whitespace-pre-wrap break-words">{details.notes}</div>
-      )}
     </div>
   )
 }
@@ -263,9 +252,6 @@ function HotelDetails({ booking, details }) {
       </div>
       {details.address && (
         <div className="text-xs opacity-70">📍 {details.address}</div>
-      )}
-      {details.notes && (
-        <div className="text-xs opacity-60 italic whitespace-pre-wrap break-words">{details.notes}</div>
       )}
     </div>
   )
@@ -319,9 +305,6 @@ function RentalDetails({ booking, details }) {
       {oneWay && (
         <div className="text-xs opacity-70">🏁 Drop-off: {details.dropoff_location}</div>
       )}
-      {details.notes && (
-        <div className="text-xs opacity-60 italic whitespace-pre-wrap break-words">{details.notes}</div>
-      )}
     </div>
   )
 }
@@ -347,9 +330,6 @@ function ActivityDetails({ booking, details }) {
       {details.address && !details.location && (
         <div className="text-xs opacity-70">📍 {details.address}</div>
       )}
-      {details.notes && (
-        <div className="text-xs opacity-60 italic whitespace-pre-wrap break-words">{details.notes}</div>
-      )}
     </div>
   )
 }
@@ -370,28 +350,10 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
   const DetailComponent = DETAIL_COMPONENTS[booking.type] || ActivityDetails
   const mapsUrl = details.maps_url
 
-  // Refund status at a glance. An expired policy says nothing — non-refundable
-  // is the default assumption, and this is a glance surface.
-  const policyHint = (() => {
-    const policy = sanitizeCancellationPolicy(details.cancellation_policy)
-    // No ↩ here: the arrow means money coming back, and none is.
-    if (policy === 'non_refundable') return 'Non-refundable'
-    // Today in the PROVIDER's zone, so the card reads the same in the departure
-    // lounge as it did at home (see cancellation.js). The card gets no trip
-    // context, so a non-flight falls back to the device clock. Date-only on
-    // purpose — the optimistic same-day reading documented in cancellation.js.
-    const asOf = wallClockInZone(nowInstant(), resolveZone(booking)).slice(0, 10)
-    const tier = policy && applicableTier(policy, asOf)
-    if (!tier) return null
-    const money = formatCurrency(tier.value, booking.cost_currency || 'USD')
-    // The minus keeps a fee from reading as the amount coming back.
-    const value =
-      tier.kind === 'percent' ? `${tier.value}%` : tier.kind === 'fee' ? `−${money} fee` : money
-    // Flag the voucher, don't quantify it — this is a glance surface, and the
-    // '0% +credit' shorthand is exactly what a credit-only fare needs to say.
-    const credit = tier.credit ? ' +credit' : ''
-    return `↩ ${value}${credit} until ${formatCutoff(tier.cutoff)}`
-  })()
+  // Refund status at a glance — shared with the mobile agenda card so the two
+  // surfaces can't drift on which tier they show.
+  const policyHint = refundHint(booking, details)
+  const attachmentCount = booking.attachment_count || 0
 
   // Determine check-in / check-out context for multi-day bookings
   const stayNote = (() => {
@@ -468,7 +430,7 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
       className={`p-4 rounded-xl border-l-4 ${colors.border} bg-white shadow-elevation-1 hover:shadow-elevation-2 transition-all duration-150 cursor-pointer relative mat-press`}
     >
       <DetailComponent booking={booking} details={details} />
-      {((!hideTrip && booking.trip) || mapsUrl || stayNote || policyHint) && (
+      {((!hideTrip && booking.trip) || mapsUrl || stayNote || policyHint || attachmentCount > 0) && (
         <div className="mt-2.5 pt-2 border-t border-outline/20 flex items-center justify-between gap-2">
           <span className="text-xs text-on-surface-variant min-w-0 truncate">
             {stayNote && <span className="text-on-surface font-medium">{stayNote}</span>}
@@ -479,6 +441,15 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
             )}
             {policyHint}
           </span>
+          {attachmentCount > 0 && (
+            <span
+              className="shrink-0 flex items-center gap-0.5 text-xs text-on-surface-variant/70"
+              title={`${attachmentCount} attachment${attachmentCount !== 1 ? 's' : ''}`}
+            >
+              <span aria-hidden>📎</span>
+              {attachmentCount > 1 && <span>{attachmentCount}</span>}
+            </span>
+          )}
           {mapsUrl && (
             <a
               href={mapsUrl}

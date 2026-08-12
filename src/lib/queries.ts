@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, getTableColumns, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, getTableColumns, inArray, isNotNull } from "drizzle-orm";
 import { db, tables } from "@/db";
 import { isAdmin } from "./authz";
 import { personLabel } from "./audit";
@@ -58,6 +58,29 @@ async function bookingSplitsByBooking(bookingIds: string[]) {
     });
     byBooking.set(r.booking_id, list);
   }
+  return byBooking;
+}
+
+/**
+ * How many files each booking carries, grouped `booking_id → count`.
+ *
+ * A COUNT, not the rows: attachment bytes live in a bytea column on the same
+ * table (see the storage note in schema.ts), so selecting metadata here would
+ * still make the planner walk rows that a glance surface never renders. The
+ * agenda only needs to know whether a paperclip belongs on the card.
+ */
+async function attachmentCountsByBooking(bookingIds: string[]) {
+  const byBooking = new Map<string, number>();
+  if (bookingIds.length === 0) return byBooking;
+  const rows = await db
+    .select({
+      booking_id: tables.bookingAttachments.booking_id,
+      n: count(),
+    })
+    .from(tables.bookingAttachments)
+    .where(inArray(tables.bookingAttachments.booking_id, bookingIds))
+    .groupBy(tables.bookingAttachments.booking_id);
+  for (const r of rows) byBooking.set(r.booking_id, Number(r.n));
   return byBooking;
 }
 
@@ -163,8 +186,16 @@ export async function getBookingsForUser(userId: string, tripId?: TripFilter) {
   const rows = ids
     ? await base.where(inArray(tables.bookings.trip_id, ids)).orderBy(asc(tables.bookings.start_date))
     : await base.orderBy(asc(tables.bookings.start_date));
-  const byBooking = await bookingSplitsByBooking(rows.map((b) => b.id));
-  return rows.map((b) => ({ ...b, splits: byBooking.get(b.id) ?? [] }));
+  const ids2 = rows.map((b) => b.id);
+  const [byBooking, attachmentCounts] = await Promise.all([
+    bookingSplitsByBooking(ids2),
+    attachmentCountsByBooking(ids2),
+  ]);
+  return rows.map((b) => ({
+    ...b,
+    splits: byBooking.get(b.id) ?? [],
+    attachment_count: attachmentCounts.get(b.id) ?? 0,
+  }));
 }
 
 /**

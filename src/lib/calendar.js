@@ -185,6 +185,24 @@ export function getRentalIcon(details) {
 }
 
 /**
+ * Where you physically show up, as one line — or '' when the booking doesn't
+ * have one. The field differs per type (`pickup_location` for a rental, `address`
+ * for a stay, `location` for an activity), which is exactly why callers should
+ * not each re-derive it.
+ *
+ * A rental prefers its pick-up point: `location` on a rental tends to be the
+ * city, and the city is not what gets you to the counter.
+ */
+export function getMeetingPoint(booking, details) {
+  const d = details || {}
+  const pick =
+    booking?.type === 'rental'
+      ? d.pickup_location || d.location || d.address
+      : d.location || d.address
+  return typeof pick === 'string' ? pick.trim() : ''
+}
+
+/**
  * Check if a date has overnight accommodation covered by any booking.
  * True when a hotel/cruise/camper spans that night, or a flight/train/bus is
  * still in transit through it (departure day up to, not including, arrival day).

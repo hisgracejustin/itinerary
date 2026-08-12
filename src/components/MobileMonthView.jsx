@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react'
-import { getMonthGrid, getBookingsForDate, isSameDay, TYPE_COLORS, TYPE_ICONS, formatTime, hasOvernightCoverage, getRentalIcon } from '../lib/calendar'
+import { getMonthGrid, getBookingsForDate, isSameDay, TYPE_COLORS, TYPE_ICONS, formatTime, hasOvernightCoverage, getRentalIcon, getMeetingPoint } from '../lib/calendar'
+import { refundHint } from '../lib/refund-hint'
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
 import { useToast } from './Toast'
@@ -822,10 +823,11 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                   </button>
                 ) : null}
 
-                {/* Bookings for this day */}
-                {dayBookings.length === 0 && dayTodos.length === 0 ? (
-                  <p className="text-xs text-on-surface-variant/60 pl-1"></p>
-                ) : (
+                {/* Bookings for this day. An empty day renders nothing at all —
+                    the placeholder that used to sit here was an empty <p>, which
+                    is invisible but still a full line-height of dead space in
+                    every gap between two busy days. */}
+                {(dayBookings.length > 0 || dayTodos.length > 0) && (
                   <div className="space-y-2">
                     {/* Todos on top */}
                     {dayTodos.length > 0 && (
@@ -934,6 +936,11 @@ function AgendaItem({ booking, displayDate, onClick }) {
     return booking.details
   })()
   const mapsUrl = details.maps_url
+  // The address gets READ on its own line and TAPPED at the pin in the corner —
+  // two different jobs, so both stay.
+  const meetingPoint = getMeetingPoint(booking, details)
+  const hint = refundHint(booking, details)
+  const attachmentCount = booking.attachment_count || 0
 
   // Check-in / check-out context for multi-day bookings
   const stayNote = (() => {
@@ -1054,11 +1061,31 @@ function AgendaItem({ booking, displayDate, onClick }) {
           )}
         </div>
       </div>
-      {/* Notes preview — line breaks preserved, but capped so one long note
-          can't push the rest of the day's agenda off screen. */}
-      {details.notes && (
-        <div className="mt-1.5 text-xs text-on-surface-variant italic whitespace-pre-wrap break-words line-clamp-3">
-          {details.notes}
+      {/* Where to show up. Free-text notes used to sit here, but a note is
+          unbounded prose — three clamped lines of it pushed the rest of the day
+          off screen and still buried the one fact worth glancing at. Notes live
+          in the booking modal now; the agenda carries the address instead. */}
+      {meetingPoint && (
+        <div className="mt-1.5 flex items-center gap-1 text-xs text-on-surface-variant">
+          <span className="shrink-0" aria-hidden>📍</span>
+          <span className="min-w-0 truncate">{meetingPoint}</span>
+        </div>
+      )}
+      {/* Meta row: the deadline on the left, the paperclip on the right. */}
+      {(hint || attachmentCount > 0) && (
+        <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+          <span className={`min-w-0 truncate ${hint === 'Non-refundable' ? 'text-on-surface-variant/70' : 'text-primary'}`}>
+            {hint}
+          </span>
+          {attachmentCount > 0 && (
+            <span
+              className="shrink-0 flex items-center gap-0.5 text-on-surface-variant/70"
+              title={`${attachmentCount} attachment${attachmentCount !== 1 ? 's' : ''}`}
+            >
+              <span aria-hidden>📎</span>
+              {attachmentCount > 1 && <span>{attachmentCount}</span>}
+            </span>
+          )}
         </div>
       )}
       {/* Layover route visual */}
