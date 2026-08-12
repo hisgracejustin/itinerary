@@ -11,6 +11,7 @@ const SECTION_TITLES = {
   "/todos": "To-dos",
   "/considering": "Considering",
   "/costs": "Costs",
+  "/refund": "Refund",
   "/expenses": "Expenses",
   "/settle": "Settle up",
   "/settings": "Settings",

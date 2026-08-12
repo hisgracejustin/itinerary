@@ -89,6 +89,17 @@ export default function Sidebar({ user, trips, onNavigate }) {
           label="Costs"
         />
         <NavItem
+          to={navHref("/refund")}
+          active={pathname === "/refund"}
+          onClick={onNavigate}
+          icon={
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 10h10a5 5 0 015 5v2M3 10l4-4M3 10l4 4" />
+            </svg>
+          }
+          label="Refund"
+        />
+        <NavItem
           to={navHref("/expenses")}
           active={pathname === "/expenses"}
           onClick={onNavigate}
