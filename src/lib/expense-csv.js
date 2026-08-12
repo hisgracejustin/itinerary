@@ -1,9 +1,11 @@
 import { itemShares } from './split'
+import { expenseCategory } from './expense-categories'
 
 const HEADERS = [
   'Trip',
   'Date',
   'Expense',
+  'Category',
   'Amount',
   'Currency',
   'Paid by',
@@ -78,6 +80,8 @@ export function buildExpensesCsv(expenses = [], trips = []) {
       trip?.name || expense.trip_id,
       expense.date || '',
       expense.title,
+      // The label, not the stored slug: this file is read in a spreadsheet.
+      expenseCategory(expense.category).label,
       amount,
       expense.currency,
       expense.paid_by ? nameOf(expense.paid_by) : 'Unassigned',

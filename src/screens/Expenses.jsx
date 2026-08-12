@@ -5,6 +5,7 @@ import ExpenseModal from "../components/ExpenseModal";
 import { useTripContext } from "../lib/trip-context";
 import { buildExpensesCsv } from "../lib/expense-csv";
 import { formatCurrency } from "../lib/currencies";
+import { expenseCategory } from "../lib/expense-categories";
 import { itemViewerNet } from "../lib/split";
 import { isTripWritable, writableTripsInSelection } from "../lib/trip-permissions";
 
@@ -223,7 +224,6 @@ export default function Expenses({ expenses: allExpenses, currentUserId }) {
                     const splitNames = (expense.splits || []).map((split) =>
                       nameFor(expense, split.user_id),
                     );
-                    const editable = isTripWritable(trip);
                     const attention = needsAttention(expense);
                     const mine = viewerNet(expense);
                     const showNet = mine && Math.abs(mine.net) >= epsFor(mine.currency);
@@ -231,12 +231,19 @@ export default function Expenses({ expenses: allExpenses, currentUserId }) {
                       <button
                         key={expense.id}
                         type="button"
-                        disabled={!editable}
-                        onClick={() => editable && setModal({ expense, availableTrips: writableTrips })}
-                        className={`w-full flex items-center gap-3 py-3 text-left ${editable ? "hover:bg-surface-container/50 cursor-pointer" : "cursor-default"} transition-colors`}
+                        // Every row opens now, writable or not: the modal shows
+                        // the details read-only and offers no pencil for a trip
+                        // this viewer can't write to.
+                        onClick={() => setModal({ expense, availableTrips: writableTrips })}
+                        className="w-full flex items-center gap-3 py-3 text-left hover:bg-surface-container/50 cursor-pointer transition-colors"
                       >
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-2 min-w-0">
+                            {/* Icon only — the trip and attention pills already
+                                compete for the width the title needs. */}
+                            <span className="shrink-0" title={expenseCategory(expense.category).label}>
+                              {expenseCategory(expense.category).icon}
+                            </span>
                             <span className="text-sm font-medium text-on-surface truncate min-w-0">
                               {expense.title}
                             </span>
@@ -269,16 +276,14 @@ export default function Expenses({ expenses: allExpenses, currentUserId }) {
                             </span>
                           )}
                         </span>
-                        {editable && (
-                          <svg
-                            className="w-4 h-4 text-on-surface-variant shrink-0"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 18l6-6-6-6" />
-                          </svg>
-                        )}
+                        <svg
+                          className="w-4 h-4 text-on-surface-variant shrink-0"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 18l6-6-6-6" />
+                        </svg>
                       </button>
                     );
                   })}

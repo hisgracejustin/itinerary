@@ -10,6 +10,7 @@
 const FIELD_LABELS = {
   title: 'Title',
   type: 'Type',
+  category: 'Category',
   start_date: 'Start',
   end_date: 'End',
   timezone: 'Timezone',

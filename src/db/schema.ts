@@ -426,6 +426,11 @@ export const expenses = pgTable(
       .notNull()
       .references(() => trips.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
+    // What it was for, for the Costs breakdown. Plain text over a PG enum so the
+    // list can change without a migration — the values and their labels live in
+    // lib/expense-categories.js, which falls back to 'other' for anything it
+    // doesn't recognise. Rows predating the column read as 'other' too.
+    category: text("category").notNull().default("other"),
     amount: numeric("amount", { mode: "number" }).notNull(),
     currency: text("currency").notNull(),
     paid_by: text("paid_by").references(() => users.id, { onDelete: "set null" }),

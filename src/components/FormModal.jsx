@@ -11,6 +11,9 @@ export default function FormModal({
   onClose,
   children,
   footer,
+  // Rendered beside the title, left of the close button — for the one control
+  // that belongs to the modal chrome rather than the form (view mode's pencil).
+  headerAction = null,
   maxWidth = "max-w-lg",
 }) {
   const overlayRef = useRef(null);
@@ -95,7 +98,10 @@ export default function FormModal({
         className={`relative bg-white rounded-2xl shadow-elevation-4 w-full ${maxWidth} max-h-full flex flex-col animate-scale-in overflow-hidden`}
       >
         <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-outline/20 shrink-0">
-          <h2 className="text-xl font-medium text-on-surface truncate">{title}</h2>
+          <div className="flex items-center gap-1 min-w-0">
+            <h2 className="text-xl font-medium text-on-surface truncate">{title}</h2>
+            {headerAction}
+          </div>
           <button type="button" onClick={onClose} className="mat-icon-btn" aria-label="Close">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

@@ -16,11 +16,12 @@ import {
   daysUntilCutoff,
 } from '../lib/cancellation'
 import { TYPE_ICONS } from '../lib/calendar'
+import { expenseCategory } from '../lib/expense-categories'
+import { isTripWritable } from '../lib/trip-permissions'
 import FilterChip from '../components/FilterChip'
 import BookingModal from '../components/BookingModal'
+import ExpenseModal from '../components/ExpenseModal'
 import { memberFirstName } from '../components/AssigneePicker'
-
-const EXPENSE_ICON = '🧾'
 
 // Plural labels for the By Type bars — naive `${type}s` gave "Activitys"/"Buss".
 // Wording matches the rest of the app (Sidebar/Header/BookingsByType), with the
@@ -33,8 +34,15 @@ const TYPE_LABELS = {
   cruise: 'Cruises',
   hotel: 'Accommodation',
   activity: 'Activities',
-  expense: 'Expenses',
 }
+
+// Expenses carry a category rather than a booking type, and each one gets its
+// own bar in By Type. The prefix keeps those keys clear of the booking types —
+// an expense filed under Activities is not a booked activity.
+const EXPENSE_TYPE_PREFIX = 'expense:'
+const expenseTypeKey = (category) => `${EXPENSE_TYPE_PREFIX}${expenseCategory(category).value}`
+const expenseTypeEntry = (type) =>
+  type.startsWith(EXPENSE_TYPE_PREFIX) ? expenseCategory(type.slice(EXPENSE_TYPE_PREFIX.length)) : null
 
 // A tier's cash terms on one line. Shared by the refund row's sub-line and its
 // deadline warning, so "drops to 50%" is worded the same as the 50% it will read
@@ -52,6 +60,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   const [scope, setScope] = useState('everyone') // 'everyone' | 'me' | 'us'
   const [modalOpen, setModalOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState(null)
+  const [viewingExpense, setViewingExpense] = useState(null)
   // 'all' | <tripId>. Only offered on the All Trips view — with a sidebar
   // selection the list is already scoped by it, so chips would be dead.
   const [tripFilter, setTripFilter] = useState('all')
@@ -125,7 +134,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     ...expenses.map((e) => ({
       id: `ex-${e.id}`,
       kind: 'expense',
-      type: 'expense',
+      type: expenseTypeKey(e.category),
       title: e.title,
       subtitle: e.date || 'Expense',
       trip_id: e.trip_id,
@@ -134,6 +143,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
       effective: e.amount || 0,
       splits: Array.isArray(e.splits) ? e.splits : [],
       charged: Number(e.charged_rate) > 0 && e.charged_currency ? { rate: Number(e.charged_rate), currency: e.charged_currency } : null,
+      expense: e,
     })),
   ]
 
@@ -359,14 +369,14 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     (a, b) => toHKD(b[1], b[0], rates) - toHKD(a[1], a[0], rates),
   )
 
-  // By type (bookings by type + a single "Expenses" category), in HKD.
+  // By type (each booking type, plus one bar per expense category), in HKD.
   const byType = {}
   scoped.forEach((s) => {
     byType[s.it.type] = (byType[s.it.type] || 0) + hkdOf(s.it, s.amount)
   })
   const typeBreakdown = Object.entries(byType).sort((a, b) => b[1] - a[1])
-  const typeLabel = (type) => TYPE_LABELS[type] || type
-  const typeIcon = (type) => (type === 'expense' ? EXPENSE_ICON : TYPE_ICONS[type] || '📌')
+  const typeLabel = (type) => expenseTypeEntry(type)?.label || TYPE_LABELS[type] || type
+  const typeIcon = (type) => expenseTypeEntry(type)?.icon || TYPE_ICONS[type] || '📌'
 
   const sorted = [...scoped].sort(
     (a, b) => hkdOf(b.it, b.amount) - hkdOf(a.it, a.amount),
@@ -379,6 +389,14 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     setEditingBooking(booking)
     setModalOpen(true)
   }
+
+  // Both kinds open read-only first, so every row is clickable — including a
+  // read-only trip's, where the modal simply offers no pencil.
+  const openItem = (it) => {
+    if (it.kind === 'booking') openEditModal(it.booking)
+    else setViewingExpense(it.expense)
+  }
+  const writableTrips = (trips || []).filter(isTripWritable)
 
   return (
     <div className="w-full max-w-5xl lg:max-w-6xl mx-auto">
@@ -647,7 +665,10 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                     <span className="text-base w-7">{typeIcon(type)}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="capitalize text-on-surface font-medium truncate">{typeLabel(type)}</span>
+                        {/* Not `capitalize`: every label is already cased the
+                            way it should read, and the class would turn "Food
+                            & drink" into "Food & Drink". */}
+                        <span className="text-on-surface font-medium truncate">{typeLabel(type)}</span>
                         <span className="text-on-surface-variant shrink-0 ml-2">
                           ~HK${hkdAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </span>
@@ -670,11 +691,11 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
             <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-4">All Costs (by amount)</div>
             <div className="space-y-1">
               {sorted.map(({ it, amount }) => {
-                const clickable = it.kind === 'booking' && it.booking
+                const clickable = it.kind === 'booking' ? !!it.booking : !!it.expense
                 return (
                 <div
                   key={it.id}
-                  onClick={clickable ? () => openEditModal(it.booking) : undefined}
+                  onClick={clickable ? () => openItem(it) : undefined}
                   className={`flex items-center justify-between py-3 border-b border-outline/20 last:border-0 ${
                     clickable ? 'cursor-pointer hover:bg-surface-container/50 -mx-2 px-2 rounded-lg transition-colors' : ''
                   }`}
@@ -735,6 +756,16 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
           onDelete={async (id) => {
             await deleteBooking(id)
           }}
+        />
+      )}
+
+      {viewingExpense && (
+        <ExpenseModal
+          key={viewingExpense.id}
+          expense={viewingExpense}
+          selectedTrip={selectedTrip}
+          availableTrips={writableTrips}
+          onClose={() => setViewingExpense(null)}
         />
       )}
     </div>

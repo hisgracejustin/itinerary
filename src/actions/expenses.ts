@@ -66,6 +66,7 @@ export async function createExpenseAction(input: unknown) {
         .values({
           trip_id: data.trip_id,
           title: data.title,
+          category: data.category,
           amount: data.amount,
           currency: data.currency,
           paid_by: data.paid_by ?? null,

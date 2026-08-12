@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CURRENCIES } from "./currencies";
+import { EXPENSE_CATEGORY_VALUES, DEFAULT_EXPENSE_CATEGORY } from "./expense-categories";
 import { sanitizeCancellationPolicy } from "./cancellation";
 // The same guard the AI parser and the booking form apply: only a zone this
 // runtime actually knows may reach the column, because a bad one is read as fact
@@ -20,6 +21,11 @@ export const bookingTypeSchema = z.enum([
 // `cost_currency: string` for back-compat with historical rows.
 const CURRENCY_CODES = CURRENCIES.map((c) => c.code) as [string, ...string[]];
 const currencySchema = z.enum(CURRENCY_CODES);
+
+// The column is plain text and defaults to 'other' in the DB, but only a known
+// value may be WRITTEN — a typo'd category would silently become its own bar in
+// the Costs breakdown.
+const expenseCategorySchema = z.enum(EXPENSE_CATEGORY_VALUES as [string, ...string[]]);
 const dateOnlySchema = z.iso.date();
 
 // One person's share of a split. user_id is a text user id (cuid2 / preserved
@@ -228,6 +234,7 @@ export const expenseInsertSchema = z
   .object({
     trip_id: z.string().uuid(),
     title: z.string().min(1),
+    category: expenseCategorySchema.default(DEFAULT_EXPENSE_CATEGORY),
     amount: z.number().positive(),
     currency: currencySchema,
     paid_by: z.string().min(1).nullish(),
@@ -248,6 +255,9 @@ export const expenseUpdateSchema = z
   .object({
     trip_id: z.string().uuid().optional(),
     title: z.string().min(1).optional(),
+    // Optional, never nullable — the column is NOT NULL, so clearing a category
+    // means picking Other (same shape as `date`).
+    category: expenseCategorySchema.optional(),
     amount: z.number().positive().optional(),
     currency: currencySchema.optional(),
     paid_by: z.string().min(1).nullish(),

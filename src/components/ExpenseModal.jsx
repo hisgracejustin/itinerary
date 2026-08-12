@@ -6,7 +6,9 @@ import TripSelect from "./TripSelect";
 import SplitEditor from "./SplitEditor";
 import AttachmentsSection from "./AttachmentsSection";
 import ChargedRateEditor from "./ChargedRateEditor";
+import ExpenseDetails from "./ExpenseDetails";
 import { CURRENCIES } from "../lib/currencies";
+import { EXPENSE_CATEGORIES, expenseCategory } from "../lib/expense-categories";
 import { pruneEmptySplits } from "../lib/split";
 import { createExpense, deleteExpense, updateExpense } from "../lib/client-actions";
 import { friendlyError } from "../lib/friendlyError";
@@ -35,6 +37,10 @@ const todayLocal = () => {
 const initialForm = (expense, selectedTrip) => ({
   trip_id: expense?.trip_id || selectedTrip || "",
   title: expense?.title || "",
+  // Normalized, not raw: a value retired from the list would otherwise leave
+  // the picker with nothing selected and make every save fail validation,
+  // including saves of unrelated fields.
+  category: expenseCategory(expense?.category).value,
   amount: expense?.amount != null ? String(expense.amount) : "",
   currency: expense?.currency || "HKD",
   date: expense?.date || todayLocal(),
@@ -91,6 +97,17 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
   const [form, setForm] = useState(() => initialForm(expense, defaultTrip));
   const [saving, setSaving] = useState(false);
   const [stagedFiles, setStagedFiles] = useState([]); // attachments for a not-yet-saved expense
+  // The expense as last saved — what view mode reads, updated in place after an
+  // edit so the details refresh without waiting on a revalidation round-trip.
+  const [current, setCurrent] = useState(expense);
+  // Existing expense → read-only first, like a booking; brand-new → straight to
+  // the form.
+  const [editing, setEditing] = useState(!expense?.id);
+  // A saved expense whose trip isn't among the writable options is view-only:
+  // the pencil would open a form the server will reject, on a trip its own
+  // select doesn't list. Viewing one is always fine.
+  const canEdit = !current?.id || tripOptions.some((option) => option.id === current.trip_id);
+  const viewMode = !!current?.id && (!editing || !canEdit);
 
   const trip = trips.find((item) => item.id === form.trip_id);
   const roster = trip?.members || [];
@@ -144,6 +161,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
     const payload = {
       trip_id: form.trip_id,
       title: form.title.trim(),
+      category: form.category,
       amount,
       currency: form.currency,
       date: form.date,
@@ -158,8 +176,15 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
     savingRef.current = true;
     setSaving(true);
     try {
-      if (expense?.id) await updateExpense(expense.id, payload);
-      else {
+      if (current?.id) {
+        await updateExpense(current.id, payload);
+        // Back to the read-only view showing what was just saved, rather than
+        // closing — the details are what the modal was opened for, and the
+        // props behind `expense` don't refresh until the page revalidates.
+        setCurrent((row) => ({ ...row, ...payload }));
+        setEditing(false);
+        toast.success("Expense updated");
+      } else {
         const saved = await createExpense(payload);
         if (saved?.id && stagedFiles.length > 0) {
           try {
@@ -170,16 +195,14 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
             toast.error(friendlyError(error));
           }
         }
-      }
-      if (!expense?.id) {
         try {
           window.localStorage.setItem(LAST_EXPENSE_TRIP_KEY, form.trip_id);
         } catch {
           // Remembering the convenience default must never block a save.
         }
+        toast.success("Expense added");
+        onClose();
       }
-      toast.success(expense?.id ? "Expense updated" : "Expense added");
-      onClose();
     } catch (error) {
       toast.error(friendlyError(error));
     } finally {
@@ -189,16 +212,16 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
   };
 
   const remove = async () => {
-    if (!expense?.id) return;
+    if (!current?.id) return;
     const ok = await ask({
       title: "Delete this expense?",
-      message: `"${expense.title}" will be permanently removed. This cannot be undone.`,
+      message: `"${current.title}" will be permanently removed. This cannot be undone.`,
       confirmLabel: "Delete",
     });
     if (!ok) return;
     setSaving(true);
     try {
-      await deleteExpense(expense.id);
+      await deleteExpense(current.id);
       toast.success("Expense deleted");
       onClose();
     } catch (error) {
@@ -212,31 +235,58 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
     <>
       {dialog}
       <FormModal
-        title={expense?.id ? "Edit expense" : "New expense"}
+        title={viewMode ? current.title || "Expense" : current?.id ? "Edit expense" : "New expense"}
         onClose={onClose}
+        headerAction={
+          viewMode && canEdit ? (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="mat-icon-btn shrink-0"
+              title="Edit expense"
+              aria-label="Edit expense"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+          ) : null
+        }
         footer={
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              {expense?.id && (
-                <button type="button" onClick={remove} disabled={saving} className="text-sm text-red-600 disabled:opacity-40">
-                  Delete expense
+          viewMode ? (
+            <div className="flex justify-end">
+              <button type="button" onClick={onClose} className="mat-btn-outlined">Close</button>
+            </div>
+          ) : (
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                {current?.id && (
+                  <button type="button" onClick={remove} disabled={saving} className="text-sm text-red-600 disabled:opacity-40">
+                    Delete expense
+                  </button>
+                )}
+              </div>
+              <div className="flex w-full gap-2 sm:w-auto">
+                <button type="button" onClick={onClose} className="mat-btn-outlined flex-1 sm:flex-none">Cancel</button>
+                <button
+                  type="button"
+                  onClick={() => formRef.current?.requestSubmit()}
+                  disabled={saving}
+                  className="mat-btn-filled flex-1 justify-center disabled:opacity-40 sm:flex-none"
+                >
+                  {saving ? "Saving…" : current?.id ? "Save expense" : "Add expense"}
                 </button>
-              )}
+              </div>
             </div>
-            <div className="flex w-full gap-2 sm:w-auto">
-              <button type="button" onClick={onClose} className="mat-btn-outlined flex-1 sm:flex-none">Cancel</button>
-              <button
-                type="button"
-                onClick={() => formRef.current?.requestSubmit()}
-                disabled={saving}
-                className="mat-btn-filled flex-1 justify-center disabled:opacity-40 sm:flex-none"
-              >
-                {saving ? "Saving…" : expense?.id ? "Save expense" : "Add expense"}
-              </button>
-            </div>
-          </div>
+          )
         }
       >
+        {viewMode ? (
+          <div className="space-y-6">
+            <ExpenseDetails expense={current} />
+            <AttachmentsSection expenseId={current.id} mode="view" />
+          </div>
+        ) : (
         <form ref={formRef} onSubmit={submit} className="space-y-4">
           <TripSelect trips={tripOptions} value={form.trip_id} onChange={changeTrip} />
           <input
@@ -246,6 +296,31 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
             placeholder="What was it? (dinner, taxi…)"
             className="mat-input"
           />
+          {/* Scrolls rather than wraps — on a phone a wrapped chip row pushes
+              the amount field below the fold. Written out instead of reusing
+              FilterChip because that one has no type="button", and inside this
+              form every chip would submit it. */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label="Category">
+            {EXPENSE_CATEGORIES.map((option) => {
+              const active = form.category === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setForm((current) => ({ ...current, category: option.value }))}
+                  aria-pressed={active}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap transition-colors shrink-0 ${
+                    active
+                      ? "bg-primary text-white border-primary"
+                      : "bg-white text-on-surface-variant border-outline/30 hover:bg-surface-container"
+                  }`}
+                >
+                  <span aria-hidden>{option.icon}</span>
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
           <div className="flex gap-2">
             <input
               type="text"
@@ -303,7 +378,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
           )}
           <div className="rounded-xl border border-outline/30 bg-surface-container/40 p-3">
             <AttachmentsSection
-              expenseId={expense?.id ?? null}
+              expenseId={current?.id ?? null}
               mode="edit"
               stagedFiles={stagedFiles}
               setStagedFiles={setStagedFiles}
@@ -324,6 +399,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
           />
           <button type="submit" disabled={saving} className="hidden" />
         </form>
+        )}
       </FormModal>
     </>
   );

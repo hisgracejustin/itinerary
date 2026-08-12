@@ -25,6 +25,22 @@ test("expense updates may omit but cannot clear the date", () => {
   assert.equal(expenseUpdateSchema.safeParse({ date: "2026-08-09" }).success, true);
 });
 
+test("expense category defaults to other and only accepts known values", () => {
+  const defaulted = expenseInsertSchema.safeParse(validExpense);
+  assert.equal(defaulted.success, true);
+  assert.equal(defaulted.data!.category, "other");
+  assert.equal(expenseInsertSchema.safeParse({ ...validExpense, category: "food" }).success, true);
+  assert.equal(expenseInsertSchema.safeParse({ ...validExpense, category: "Food" }).success, false);
+  assert.equal(expenseInsertSchema.safeParse({ ...validExpense, category: "lodging" }).success, false);
+});
+
+test("expense updates may omit but cannot clear the category", () => {
+  assert.equal(expenseUpdateSchema.safeParse({ title: "Coffee beans" }).success, true);
+  assert.equal(expenseUpdateSchema.safeParse({ category: "transport" }).success, true);
+  assert.equal(expenseUpdateSchema.safeParse({ category: null }).success, false);
+  assert.equal(expenseUpdateSchema.safeParse({ category: "" }).success, false);
+});
+
 test("expense creation rejects paid separately contributions above its amount", () => {
   const result = expenseInsertSchema.safeParse({
     ...validExpense,

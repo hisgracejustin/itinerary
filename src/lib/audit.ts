@@ -1,6 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { tables, type Db } from "@/db";
 import { formatCurrency } from "./currencies";
+import { expenseCategory } from "./expense-categories";
 import type { AuditAction, AuditEntityType } from "@/db/schema";
 
 /**
@@ -269,6 +270,7 @@ export async function bookingAuditChanges(
 export type ExpenseSnapshot = {
   trip_id: string;
   title: string;
+  category: string;
   amount: number;
   currency: string;
   charged_currency: string | null;
@@ -310,6 +312,15 @@ export async function expenseAuditChanges(
       field: "charged_rate",
       old_value: text(before.charged_rate),
       new_value: text(after.charged_rate),
+    });
+  }
+  // Logged as the label, not the slug: history is read by people, and "Food &
+  // drink → Transport" is the sentence they'd have said.
+  if (differs(before.category, after.category)) {
+    changes.push({
+      field: "category",
+      old_value: expenseCategory(before.category).label,
+      new_value: expenseCategory(after.category).label,
     });
   }
   // The charge inputs are only provenance for the split rows, but a changed tip

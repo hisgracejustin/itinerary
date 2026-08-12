@@ -7,6 +7,7 @@ import { computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
 // page stays exact per-currency (no ~ conversions).
 import { formatCurrency, FX_RATES_TO_HKD, toHKD } from '../lib/currencies'
 import { TYPE_ICONS } from '../lib/calendar'
+import { expenseCategory } from '../lib/expense-categories'
 import { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
 import BookingModal from '../components/BookingModal'
 import ExpenseModal from '../components/ExpenseModal'
@@ -169,11 +170,13 @@ export default function Settle({
       ? (row.cost_amount || 0) * (row.cost_share != null ? row.cost_share : 1)
       : row.amount || 0
   const currencyOf = (row) => row.cost_currency ?? row.currency
-  const iconOf = (row) => (row.type ? TYPE_ICONS[row.type] || '🗂️' : '🧾')
+  const iconOf = (row) => (row.type ? TYPE_ICONS[row.type] || '🗂️' : expenseCategory(row.category).icon)
   const rowKey = (row) => `${row.type ? 'bk' : 'ex'}-${row.id}`
   const openSplitItem = (row) => {
     if (row.type) return openBooking(row)
-    if (writableTripIds.has(row.trip_id)) setEditingExpense(row)
+    // Opens for read-only trips too — the modal shows the details and simply
+    // offers no pencil there, the same as a booking.
+    setEditingExpense(row)
   }
 
   // How many WAYS an item is split — settlement units, not people: a couple in
@@ -1021,7 +1024,7 @@ function BalanceRow({ unit, memberByUserId }) {
 function NeedsAttentionRow({ item, reason, onOpen, onSplitEven, busy }) {
   const isBooking = !!item.type
   const title = item.title || 'Untitled'
-  const icon = isBooking ? (TYPE_ICONS[item.type] || '🗂️') : '🧾'
+  const icon = isBooking ? (TYPE_ICONS[item.type] || '🗂️') : expenseCategory(item.category).icon
   const content = (
     <>
       <span className="text-base shrink-0">{icon}</span>
