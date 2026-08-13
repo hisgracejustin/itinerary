@@ -183,6 +183,13 @@
       "when": 1786548978972,
       "tag": "0025_futuristic_lord_hawal",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786596225166,
+      "tag": "0026_cynical_electro",
+      "breakpoints": true
     }
   ]
 }

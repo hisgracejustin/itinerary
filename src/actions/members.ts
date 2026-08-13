@@ -727,6 +727,40 @@ export async function deleteUserAction(input: unknown) {
   });
 }
 
+const setMemberSharesCostsSchema = z.object({
+  trip_id: z.string().uuid(),
+  user_id: z.string().min(1),
+  shares_costs: z.boolean(),
+});
+
+/**
+ * Whether a member takes a share of this trip's costs. Owner-only, and scoped to
+ * the one trip: the same person can be a full participant on one trip and an
+ * advisor on another.
+ *
+ * Only changes what FUTURE splits default to. Splits already saved with this
+ * person in them are untouched — silently rewriting settled money because a
+ * setting flipped is not something a checkbox should do.
+ */
+export async function setMemberSharesCostsAction(input: unknown) {
+  return runAction(async (user) => {
+    const data = setMemberSharesCostsSchema.parse(input);
+    await requireTripAccess(user.id, data.trip_id, OWNER_ONLY_ARR);
+    await requireTripMembers(data.trip_id, [data.user_id]);
+    await db
+      .update(tables.tripMembers)
+      .set({ shares_costs: data.shares_costs })
+      .where(
+        and(
+          eq(tables.tripMembers.trip_id, data.trip_id),
+          eq(tables.tripMembers.user_id, data.user_id),
+        ),
+      );
+    revalidateApp();
+    return { user_id: data.user_id, shares_costs: data.shares_costs };
+  });
+}
+
 const setMemberPartySchema = z.object({
   trip_id: z.string().uuid(),
   user_id: z.string().min(1),

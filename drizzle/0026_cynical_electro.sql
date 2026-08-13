@@ -1,0 +1,1 @@
+ALTER TABLE "trip_members" ADD COLUMN "shares_costs" boolean DEFAULT true NOT NULL;

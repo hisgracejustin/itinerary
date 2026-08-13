@@ -133,6 +133,18 @@ export const tripMembers = pgTable(
     // Settlement unit this member belongs to (couple/group). At most one; null =
     // solo. Set-null on party delete so ungrouping is just deleting the party.
     party_id: uuid("party_id").references(() => tripParties.id, { onDelete: "set null" }),
+    // Whether this member takes a share of the trip's costs. False for someone
+    // who is on the trip without being party to its money — a travel advisor, a
+    // guide, a host — so new splits stop defaulting them in.
+    //
+    // Deliberately NOT the same axis as `role`: a view-only partner still owes
+    // for dinner, and an advisor with edit rights still doesn't. It also does
+    // not stop them being `paid_by` — an advisor who fronts a deposit is owed
+    // that money, which is exactly the case this must not make unrecordable.
+    //
+    // Defaults true, so every existing row keeps today's behaviour with no
+    // backfill.
+    shares_costs: boolean("shares_costs").notNull().default(true),
     created_at: createdAt(),
   },
   (t) => [

@@ -275,6 +275,7 @@ export async function getTripsWithMembers(userId: string) {
       trip_id: tables.tripMembers.trip_id,
       role: tables.tripMembers.role,
       party_id: tables.tripMembers.party_id,
+      shares_costs: tables.tripMembers.shares_costs,
       id: tables.users.id,
       name: tables.users.name,
       email: tables.users.email,

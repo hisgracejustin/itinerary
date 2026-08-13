@@ -4,6 +4,12 @@ import { formatCurrency } from '../lib/currencies'
 import { applyItemCharges, itemShares, itemUnitTransfers } from '../lib/split'
 
 /**
+ * Does this member take a share of the trip's costs? Absent reads as yes, which
+ * is what every row predating the column means and what almost every member is.
+ */
+const sharesCosts = (m) => m?.shares_costs !== false
+
+/**
  * Shared split editor, used by BookingForm (and the expense form in commit 3).
  *
  * Controlled: the parent owns `paidBy` + `splits` and receives every change via
@@ -14,9 +20,9 @@ import { applyItemCharges, itemShares, itemUnitTransfers } from '../lib/split'
  * the members of `form.trip_id`), NOT the sidebar selection.
  *
  * Auto-enable (decision 4): when a payer is picked while there are no splits yet,
- * pre-fill every member at weight 1 (extra 0). Clearing the payer keeps the
- * splits (they surface as "needs a payer" until one is picked — validation
- * blocks save).
+ * pre-fill every COST-SHARING member at weight 1 (extra 0). Clearing the payer
+ * keeps the splits (they surface as "needs a payer" until one is picked —
+ * validation blocks save).
  *
  * Extras: each person can carry an itemized `extra_amount` attributed off the
  * top (e.g. their baggage on a shared flight). The live share is
@@ -155,10 +161,14 @@ export default function SplitEditor({
   const handlePaidBy = (member) => {
     const newPaid = member?.id ?? null
     if (newPaid && !paidBy && splits.length === 0) {
-      // Auto-enable: pre-fill everyone equal, no extras.
+      // Auto-enable: pre-fill everyone equal, no extras — everyone who actually
+      // takes a share. Someone on the trip without being party to its money (an
+      // advisor, a guide) stays out of the default, but keeps their row in the
+      // list below so a one-off can still tick them on, and stays selectable as
+      // the payer above: not sharing a cost is not the same as not fronting it.
       emit({
         paid_by: newPaid,
-        splits: members.map((m) => ({
+        splits: members.filter(sharesCosts).map((m) => ({
           user_id: m.id,
           weight: 1,
           extra_amount: 0,
@@ -318,12 +328,17 @@ export default function SplitEditor({
                 ? 'border-primary/50 bg-white text-primary'
                 : 'border-outline/30 bg-white text-on-surface-variant hover:bg-surface-container'
             if (unit.kind === 'solo') {
+              // Someone who doesn't share costs is still tappable — they're just
+              // never pre-filled. Say so on the chip, or their absence from a
+              // fresh split reads as a bug rather than a setting.
+              const offBook = !sharesCosts(unit.members[0])
               return (
                 <button
                   key={unit.key}
                   type="button"
                   onClick={() => toggleUnit(unit)}
-                  className={`inline-flex items-center gap-1.5 min-w-0 max-w-[10rem] pl-1 pr-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${chipTone}`}
+                  title={offBook ? `${unit.name} doesn't share trip costs — tap to add them to this one` : undefined}
+                  className={`inline-flex items-center gap-1.5 min-w-0 max-w-[10rem] pl-1 pr-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${chipTone} ${offBook && !some ? 'border-dashed opacity-60' : ''}`}
                 >
                   <span className="flex -space-x-1.5 shrink-0">
                     <Avatar member={unit.members[0]} size="xs" />

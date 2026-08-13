@@ -4,7 +4,7 @@ import { useState } from 'react'
 import {
   createTrip, updateTrip, deleteTrip,
   addTripMember, removeTripMember, setTripMemberRole, updateMemberProfile, setMemberPin, setMyAvatar, setMemberAvatar, deleteUser,
-  createParty, renameParty, deleteParty, getTripAudit,
+  createParty, renameParty, deleteParty, getTripAudit, setMemberSharesCosts,
 } from '@/lib/client-actions'
 import { friendlyError } from '../lib/friendlyError'
 import { useToast } from '../components/Toast'
@@ -57,7 +57,9 @@ export default function Settings({ trips: tripsProp, currentUserId, isAdmin = fa
 
   // Union of everyone across the viewer's trips, deduped by user id. Name,
   // email, image, has_account and has_pin are user-level, so the first
-  // occurrence is as good as any; role/party_id are trip-scoped and ignored here.
+  // occurrence is as good as any; role/party_id/shares_costs are trip-scoped and
+  // ignored here (the same person can be an advisor on one trip and a full
+  // participant on another).
   const peopleById = new Map()
   for (const trip of trips) {
     for (const m of trip.members) {
@@ -986,6 +988,12 @@ function MemberRow({ m, trip, currentUserId, isOwner, lastOwner, partyById, busy
             <span className="truncate min-w-0">{partyById.get(m.party_id).name}</span>
           </span>
         )}
+        {m.shares_costs === false && (
+          <span className="inline-flex items-center gap-1 mt-0.5 max-w-full text-[10px] font-medium text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded-full">
+            <span aria-hidden>🚫</span>
+            <span className="truncate min-w-0">No cost share</span>
+          </span>
+        )}
       </span>
       {isOwner ? (
         <select
@@ -1008,6 +1016,28 @@ function MemberRow({ m, trip, currentUserId, isOwner, lastOwner, partyById, busy
         <span className="text-[10px] uppercase tracking-wide text-on-surface-variant shrink-0">
           {m.role}
         </span>
+      )}
+      {isOwner && (
+        <label
+          className="flex items-center gap-1 shrink-0 cursor-pointer"
+          title={`${memberLabel(m)} takes a share of this trip's costs. Untick for someone on the trip who isn't party to its money — an advisor, a guide. They can still be the payer, and splits already saved are left alone.`}
+        >
+          <input
+            type="checkbox"
+            checked={m.shares_costs !== false}
+            disabled={busy}
+            onChange={(e) =>
+              run(
+                () => setMemberSharesCosts({ trip_id: trip.id, user_id: m.id, shares_costs: e.target.checked }),
+                e.target.checked
+                  ? `${memberLabel(m)} shares costs`
+                  : `${memberLabel(m)} no longer shares costs`,
+              )
+            }
+            className="w-3.5 h-3.5 rounded border-outline/50 text-primary focus:ring-primary/30"
+          />
+          <span className="text-[10px] uppercase tracking-wide text-on-surface-variant">Splits</span>
+        </label>
       )}
       {isOwner && (
         <button
