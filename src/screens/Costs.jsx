@@ -102,23 +102,52 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   const contribution = (item) =>
     itemContribution(item, scopeUserIds({ scope, trip: tripById.get(item.trip_id), currentUserId }))
 
-  // Items with a cost but no split rows: excluded from Me/Us, surfaced as a note
-  // (with the total still-to-assign, so the low personal figure reads correctly).
-  const unsplitItems = scope === 'everyone' ? [] : filteredItems.filter((it) => it.splits.length === 0)
-  const unsplitCount = unsplitItems.length
-  const unsplitTotalHKD = unsplitItems.reduce((sum, it) => sum + hkdOf(it, it.effective), 0)
-
   // Which costs still have a cancellation decision to make: an upcoming booking
-  // with nothing recorded. Same set the amber note counts (minus its scope
-  // nuances), flagged inline so the culprits are findable.
+  // with nothing recorded, flagged inline so the culprits are findable.
   const missingPolicy = (it) =>
     it.kind === 'booking' &&
     !sanitizeCancellationPolicy(it.booking.details?.cancellation_policy) &&
     String(it.booking.start_date).slice(0, 16) >= wallClockInZone(nowMs, zoneOf(it.booking))
 
-  const scoped = filteredItems
+  // Everything the scope chips let through, BEFORE the category chips narrow
+  // it. The chips are built from this set, so picking one never takes the other
+  // chips (or its own) away.
+  const scopedAll = filteredItems
     .map((it) => ({ it, amount: contribution(it) }))
     .filter((s) => s.amount != null && (scope === 'everyone' || s.amount > 0))
+
+  // Category chips. Only categories actually present are offered — a chip that
+  // can only ever show an empty page is noise — and they narrow the WHOLE page:
+  // total, currency pills, By Type bars and the list all follow, which is what
+  // makes the total read as a subtotal for the categories picked. Bookings drop
+  // out while any category is selected; they have no category to match.
+  const categoryCounts = new Map()
+  scopedAll.forEach(({ it }) => {
+    const entry = expenseTypeEntry(it.type)
+    if (entry) categoryCounts.set(entry.value, (categoryCounts.get(entry.value) || 0) + 1)
+  })
+  const categoryChips = EXPENSE_CATEGORIES.filter((c) => categoryCounts.has(c.value))
+  const toggleCategory = (value) =>
+    setCategoryFilter((prev) => {
+      const next = new Set(prev)
+      if (next.has(value)) next.delete(value)
+      else next.add(value)
+      return next
+    })
+  // Selections for categories that have since left the page (a trip chip
+  // changed, an expense was recategorized) would silently empty it.
+  const activeCategories = new Set([...categoryFilter].filter((v) => categoryCounts.has(v)))
+  const inCategory = (it) =>
+    activeCategories.size === 0 || activeCategories.has(expenseTypeEntry(it.type)?.value)
+
+  const scoped = activeCategories.size === 0 ? scopedAll : scopedAll.filter((s) => inCategory(s.it))
+
+  // Items with a cost but no split rows: excluded from Me/Us, surfaced as a note
+  // (with the total still-to-assign, so the low personal figure reads correctly).
+  const unsplitItems =
+    scope === 'everyone' ? [] : filteredItems.filter((it) => it.splits.length === 0 && inCategory(it))
+  const unsplitCount = unsplitItems.length
+  const unsplitTotalHKD = unsplitItems.reduce((sum, it) => sum + hkdOf(it, it.effective), 0)
 
   const totalHKD = scoped.reduce((sum, s) => sum + hkdOf(s.it, s.amount), 0)
 
@@ -144,34 +173,17 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
     (a, b) => hkdOf(b.it, b.amount) - hkdOf(a.it, a.amount),
   )
 
-  // Category chips for the All Costs list. Only categories actually present are
-  // offered — a chip that can only ever show an empty list is noise — and
-  // picking any of them narrows to expenses, so bookings drop out. They filter
-  // that list ALONE: the total, the currency pills and the By Type bars keep
-  // answering for the whole scope, which is what the cards above them claim.
-  const categoryCounts = new Map()
-  sorted.forEach(({ it }) => {
-    const entry = expenseTypeEntry(it.type)
-    if (entry) categoryCounts.set(entry.value, (categoryCounts.get(entry.value) || 0) + 1)
-  })
-  const categoryChips = EXPENSE_CATEGORIES.filter((c) => categoryCounts.has(c.value))
-  const toggleCategory = (value) =>
-    setCategoryFilter((prev) => {
-      const next = new Set(prev)
-      if (next.has(value)) next.delete(value)
-      else next.add(value)
-      return next
-    })
-  // Selections for categories that have since left the list (a trip chip
-  // changed, an expense was recategorized) would silently empty it.
-  const activeCategories = new Set([...categoryFilter].filter((v) => categoryCounts.has(v)))
-  const listed =
-    activeCategories.size === 0
-      ? sorted
-      : sorted.filter(({ it }) => activeCategories.has(expenseTypeEntry(it.type)?.value))
-
   const headerLabel =
     scope === 'everyone' ? 'Trip total' : scope === 'me' ? 'Your share' : `${usParty?.name || 'Our'}'s share`
+  // What the headline figure is a subtotal OF, spelled out — without it a
+  // filtered total looks like the trip suddenly got cheaper. Named beyond two
+  // because the full list wraps to three lines on a phone.
+  const categoryNote =
+    activeCategories.size === 0
+      ? ''
+      : activeCategories.size > 2
+        ? `${activeCategories.size} categories`
+        : categoryChips.filter((c) => activeCategories.has(c.value)).map((c) => c.label).join(' + ')
 
   const openEditModal = (booking) => {
     setEditingBooking(booking)
@@ -220,6 +232,27 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
         </div>
       )}
 
+      {/* Category filter — page-wide, so it sits with the other page-wide
+          filters rather than inside the list it used to belong to. */}
+      {categoryChips.length > 0 && (
+        <div className="flex items-center gap-1.5 mb-5 overflow-x-auto pb-1 shrink-0">
+          <FilterChip
+            active={activeCategories.size === 0}
+            onClick={() => setCategoryFilter(new Set())}
+            label="All costs"
+          />
+          {categoryChips.map((category) => (
+            <FilterChip
+              key={category.value}
+              active={activeCategories.has(category.value)}
+              onClick={() => toggleCategory(category.value)}
+              label={`${category.icon} ${category.label}`}
+              count={categoryCounts.get(category.value)}
+            />
+          ))}
+        </div>
+      )}
+
       {items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant">
           <div className="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center mb-4">
@@ -233,7 +266,8 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
           {/* Total */}
           <div className="mat-surface p-6 lg:col-span-2 min-w-0">
             <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1">
-              {headerLabel} (approx. HKD)
+              {headerLabel}
+              {categoryNote && <span className="normal-case"> · {categoryNote}</span>} (approx. HKD)
             </div>
             <div className="text-3xl font-medium text-on-surface">
               ~HK${totalHKD.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -293,27 +327,9 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
 
           {/* Individual items */}
           <div className="mat-surface p-6 min-w-0">
-            <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-3">All Costs (by amount)</div>
-            {categoryChips.length > 0 && (
-              <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1">
-                <FilterChip
-                  active={activeCategories.size === 0}
-                  onClick={() => setCategoryFilter(new Set())}
-                  label="All"
-                />
-                {categoryChips.map((category) => (
-                  <FilterChip
-                    key={category.value}
-                    active={activeCategories.has(category.value)}
-                    onClick={() => toggleCategory(category.value)}
-                    label={`${category.icon} ${category.label}`}
-                    count={categoryCounts.get(category.value)}
-                  />
-                ))}
-              </div>
-            )}
+            <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-4">All Costs (by amount)</div>
             <div className="space-y-1">
-              {listed.map(({ it, amount }) => {
+              {sorted.map(({ it, amount }) => {
                 const clickable = it.kind === 'booking' ? !!it.booking : !!it.expense
                 return (
                 <div
