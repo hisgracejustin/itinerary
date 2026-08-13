@@ -48,10 +48,15 @@ const DETAIL_LABELS = {
   duration: 'Duration',
   notes: 'Notes',
   maps_url: 'Map',
+  laundry: 'Laundry',
 }
 
 // details keys that aren't shown as plain rows here
 const SKIP_DETAIL_KEYS = new Set(['informal', 'layovers', 'maps_url', 'cancellation_policy'])
+
+// Booleans read as "true"/"false" through the generic row loop; only the true
+// ones are worth a row at all ("Laundry: No" on every other stay is noise).
+const detailText = (value) => (value === true ? 'Yes' : Array.isArray(value) ? value.join(' · ') : String(value))
 
 function formatDate(iso, dateOnly) {
   if (!iso) return null
@@ -119,7 +124,7 @@ export default function BookingDetails({ booking }) {
   const start = formatDate(booking.start_date, dateOnly)
   const end = formatDate(booking.end_date, dateOnly)
   const detailEntries = Object.entries(details).filter(
-    ([k, v]) => !SKIP_DETAIL_KEYS.has(k) && v != null && v !== '' && !(Array.isArray(v) && v.length === 0),
+    ([k, v]) => !SKIP_DETAIL_KEYS.has(k) && v != null && v !== '' && v !== false && !(Array.isArray(v) && v.length === 0),
   )
   // Re-sanitized on read: seeded and legacy rows never passed through the Zod layer.
   const policy = sanitizeCancellationPolicy(details.cancellation_policy)
@@ -207,7 +212,7 @@ export default function BookingDetails({ booking }) {
           <h3 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">Details</h3>
           <div className="rounded-xl border border-outline/20 px-4 py-1">
             {detailEntries.map(([key, value]) => {
-              const text = Array.isArray(value) ? value.join(' · ') : String(value)
+              const text = detailText(value)
               return (
                 <Row key={key} label={DETAIL_LABELS[key] || key.replace(/_/g, ' ')}>
                   {/* Notes are typed with Enter; without pre-wrap every line

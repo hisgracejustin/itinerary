@@ -587,6 +587,21 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         </label>
       )}
 
+      {/* Laundry (hotel only). Written as an explicit false rather than dropped,
+          so a stay that was checked and unchecked reads as "no laundry" instead
+          of "nobody said" — older stays with no key at all read as no. */}
+      {form.type === 'hotel' && (
+        <label className="flex items-center gap-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={form.details.laundry === true}
+            onChange={(e) => setDetail('laundry', e.target.checked)}
+            className="w-4 h-4 rounded border-outline/50 text-primary focus:ring-primary/30"
+          />
+          <span className="text-sm text-on-surface-variant">🧺 Laundry available</span>
+        </label>
+      )}
+
       {/* Common fields */}
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2">

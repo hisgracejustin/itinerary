@@ -75,7 +75,7 @@ Type-specific detail fields to extract:
 - Bus: departure_station, arrival_station, bus_number, seat
 - Rental (rental car/motorcycle/RV — agencies like Hertz/Avis or platforms like Turo, Riders Share, Getaround): vehicle_type (one of: Car, Motorcycle, RV / Camper, Scooter, Bicycle, Other), pickup_location, dropoff_location (only if different from pickup), insurance, maps_url. Title = the vehicle (e.g. "2025 Royal Enfield Himalayan 450"), provider = the rental company or platform, start_date = pick-up time, end_date = drop-off/return time.
 - Cruise: ship_name, cabin, deck, departure_port, arrival_port, ports_of_call (array of intermediate port names, in order)
-- Hotel: address, check_in_time, check_out_time, room_type, maps_url
+- Hotel: address, check_in_time, check_out_time, room_type, maps_url, laundry (boolean true ONLY when the document says the property has a washer or laundry facilities — omit the field otherwise, never guess false)
 - Activity: location, address, duration, maps_url
 
 All types may also include:
@@ -313,6 +313,7 @@ export async function POST(req: Request) {
         else delete d.cancellation_policy;
         if (d.ports_of_call !== undefined && (!Array.isArray(d.ports_of_call) || d.ports_of_call.length === 0)) delete d.ports_of_call;
         if (d.notes !== undefined && typeof d.notes !== "string") delete d.notes;
+        if (d.laundry !== undefined && typeof d.laundry !== "boolean") delete d.laundry;
         // Layover timestamps are the only parsed dates that reach the DB
         // verbatim — start/end go through the form's wall-clock laundering,
         // these are assembled straight into details at merge time. Storage is

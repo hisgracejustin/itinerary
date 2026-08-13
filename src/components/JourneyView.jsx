@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getRangeGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, tripColorMap, TYPE_ICONS } from '../lib/calendar'
 import BookingCard from './BookingCard'
+import { parseDetails } from '../lib/bookingStats'
 import DayReminders from './DayReminders'
 import { useToast } from './Toast'
 import useDayNoteEditor, { noteTripId } from '../hooks/useDayNoteEditor'
@@ -387,6 +388,9 @@ function DaySection({
               >
                 <span className="shrink-0" aria-hidden>{isCruise ? '🚢' : TYPE_ICONS[bk.type] || '🏡'}</span>
                 <span className="truncate">{isCruise ? 'On board' : bk.title}</span>
+                {bk.type === 'hotel' && parseDetails(bk).laundry === true && (
+                  <span className="shrink-0" aria-label="Laundry available">🧺</span>
+                )}
                 {totalNights != null && totalNights > 0 && (
                   <span className={`font-normal shrink-0 ${isCruise ? 'text-purple-600' : 'text-amber-600'}`}>
                     {nightNumber}/{totalNights}

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react'
 import { getMonthGrid, getBookingsForDate, isSameDay, TYPE_COLORS, TYPE_ICONS, formatTime, hasOvernightCoverage, getRentalIcon, getMeetingPoint } from '../lib/calendar'
 import { refundHint } from '../lib/refund-hint'
+import { parseDetails } from '../lib/bookingStats'
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
 import { useToast } from './Toast'
@@ -640,6 +641,9 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       >
                         <span className="shrink-0">🏡</span>
                         <span className="truncate">{b.title}</span>
+                        {parseDetails(b).laundry === true && (
+                          <span className="shrink-0" aria-label="Laundry available">🧺</span>
+                        )}
                         <span className="text-amber-600 font-normal shrink-0">{nightNumber}/{totalNights}</span>
                       </button>
                     )

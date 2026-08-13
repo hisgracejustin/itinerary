@@ -244,6 +244,11 @@ function HotelDetails({ booking, details }) {
             <span className="opacity-60">Room:</span> <span className="font-medium">{details.room_type}</span>
           </div>
         )}
+        {details.laundry === true && (
+          <div>
+            <span className="opacity-60">Laundry:</span> <span className="font-medium">🧺 Yes</span>
+          </div>
+        )}
         {booking.confirmation_number && (
           <div>
             <span className="opacity-60">Conf:</span> <span className="font-medium">{booking.confirmation_number}</span>
@@ -349,6 +354,10 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
   const details = parseDetails(booking)
   const DetailComponent = DETAIL_COMPONENTS[booking.type] || ActivityDetails
   const mapsUrl = details.maps_url
+  // Somewhere to do laundry mid-trip is worth a glance where the row is too
+  // tight for the words the big card uses (the stay card states it outright).
+  // Absent on older stays, which reads as no.
+  const hasLaundry = booking.type === 'hotel' && details.laundry === true
 
   // Refund status at a glance — shared with the mobile agenda card so the two
   // surfaces can't drift on which tier they show.
@@ -417,6 +426,9 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
           {booking.type === 'rental' ? getRentalIcon(details) : TYPE_ICONS[booking.type] || '🎯'}
         </span>
         <span className="flex-1 min-w-0 truncate text-sm font-medium text-on-surface">{booking.title}</span>
+        {hasLaundry && (
+          <span className="shrink-0 text-xs" aria-label="Laundry available">🧺</span>
+        )}
         {fact && (
           <span className="shrink-0 whitespace-nowrap text-xs text-on-surface-variant">{fact}</span>
         )}
