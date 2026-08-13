@@ -75,13 +75,27 @@ await booking('bk-fjord', 'activity', 'Northwestern Fjord Tour', '2026-08-13T08:
 await booking('bk-train', 'train', 'Coastal Classic to Anchorage', '2026-08-15T18:00:00', '2026-08-15T22:15:00', {
   conf: 'AKRR-88213',
   provider: 'Alaska Railroad',
-  details: { notes: 'Seat assignment at the counter.', cancellation_policy: 'non_refundable' },
+  // No maps_url on purpose: this pin must come from the DERIVED search, built
+  // off departure_station — the arrival station is never the meeting point.
+  details: {
+    notes: 'Seat assignment at the counter.',
+    departure_station: 'Seward Railroad Depot, 410 Port Ave',
+    arrival_station: 'Anchorage Depot, 411 W 1st Ave',
+    cancellation_policy: 'non_refundable',
+  },
 })
 
 const file = (bookingId, name, n) =>
   q(`INSERT INTO booking_attachments (id, booking_id, filename, mime_type, size_bytes, content, uploaded_by)
      VALUES ($1,$2,$3,'application/pdf',$4,$5,$6)`,
     [`att-${bookingId}-${n}`, bookingId, name, 1024, new Uint8Array([37, 80, 68, 70]), USER_ID])
+
+// A flight, to prove getMeetingPoint stays silent for one even with an address.
+await booking('bk-flight', 'flight', 'ANC to SEA', '2026-08-16T09:00:00', '2026-08-16T13:40:00', {
+  conf: 'AS-4471',
+  provider: 'Alaska Airlines',
+  details: { departure_airport: 'ANC', arrival_airport: 'SEA', address: 'Ted Stevens Intl' },
+})
 
 await file('bk-heli', 'heli-ticket.pdf', 1)
 await file('bk-heli', 'waiver.pdf', 2)

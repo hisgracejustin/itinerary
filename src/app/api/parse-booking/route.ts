@@ -71,10 +71,10 @@ Return ONLY valid JSON with this exact structure:
 
 Type-specific detail fields to extract:
 - Flight: departure_airport, arrival_airport, flight_number, seat, terminal, gate
-- Train: departure_station, arrival_station, train_number, car, seat
-- Bus: departure_station, arrival_station, bus_number, seat
+- Train: departure_station, arrival_station, train_number, car, seat, maps_url
+- Bus: departure_station, arrival_station, bus_number, seat, maps_url
 - Rental (rental car/motorcycle/RV — agencies like Hertz/Avis or platforms like Turo, Riders Share, Getaround): vehicle_type (one of: Car, Motorcycle, RV / Camper, Scooter, Bicycle, Other), pickup_location, dropoff_location (only if different from pickup), insurance, maps_url. Title = the vehicle (e.g. "2025 Royal Enfield Himalayan 450"), provider = the rental company or platform, start_date = pick-up time, end_date = drop-off/return time.
-- Cruise: ship_name, cabin, deck, departure_port, arrival_port, ports_of_call (array of intermediate port names, in order)
+- Cruise: ship_name, cabin, deck, departure_port, arrival_port, ports_of_call (array of intermediate port names, in order), maps_url
 - Hotel: address, check_in_time, check_out_time, room_type, maps_url, laundry (boolean true ONLY when the document says the property has a washer or laundry facilities — omit the field otherwise, never guess false)
 - Activity: location, address, duration, maps_url
 
@@ -104,7 +104,7 @@ Rules:
 - Use null for any field you cannot find in the document. NEVER hallucinate data.
 - IMPORTANT: Do NOT apply any timezone conversions. Use times EXACTLY as they appear in the document. If it says "7:30 AM" then use "07:30:00". If it says "3:30 PM" use "15:30:00". Never convert between timezones.
 - For round-trip flights, return each direction as a separate booking.
-- For maps_url (hotel, rental and activity): if an address is available, generate a Google Maps search URL like "https://www.google.com/maps/search/" followed by the URL-encoded address.
+- maps_url is an OVERRIDE, not something to manufacture: return it only when the document itself contains a map or location link. Do NOT build a Google Maps search URL out of an address — the app derives that from the meeting point at render time, and a generated URL saved onto the booking would go stale the moment the address is edited. Omit the field when the document has no such link, and never emit one for a flight.
 - If the document is NOT a booking/travel document, return: { "error": "This doesn't appear to be a booking confirmation. Please upload a screenshot of a flight, hotel, train, bus, cruise, rental, or activity booking." }
 - Return ONLY the JSON object, no markdown fencing, no explanation.`;
 

@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { TYPE_COLORS, TYPE_ICONS, formatTime, getRentalIcon } from '../lib/calendar'
+import { TYPE_COLORS, TYPE_ICONS, formatTime, getRentalIcon, getMapsHref } from '../lib/calendar'
 import { getFlightDuration } from '../lib/airports'
 import { refundHint } from '../lib/refund-hint'
 
@@ -353,7 +353,7 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
   const colors = TYPE_COLORS[booking.type] || TYPE_COLORS.activity
   const details = parseDetails(booking)
   const DetailComponent = DETAIL_COMPONENTS[booking.type] || ActivityDetails
-  const mapsUrl = details.maps_url
+  const mapsUrl = getMapsHref(booking, details)
   // Somewhere to do laundry mid-trip is worth a glance where the row is too
   // tight for the words the big card uses (the stay card states it outright).
   // Absent on older stays, which reads as no.

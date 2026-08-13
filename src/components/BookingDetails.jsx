@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { formatCurrency } from '../lib/currencies'
+import { getMapsHref } from '../lib/calendar'
 import { sanitizeCancellationPolicy, formatCutoff, formatExpiry } from '../lib/cancellation'
 import { itemUnitTransfers } from '../lib/split'
 import { useTripContext } from '../lib/trip-context'
@@ -95,6 +96,10 @@ export default function BookingDetails({ booking }) {
   }, [bookingId])
   if (!booking) return null
   const details = booking.details || {}
+  // The same href the cards' pin uses: the saved override, else a search derived
+  // from the meeting point. Sharing the helper keeps the modal from disagreeing
+  // with the card that opened it.
+  const mapsHref = getMapsHref(booking, details)
 
   // The creator's name comes from the roster the viewer already has; the column
   // is permanently nullable, so bookings older than it say so rather than
@@ -299,9 +304,9 @@ export default function BookingDetails({ booking }) {
         </div>
       )}
 
-      {details.maps_url && (
+      {mapsHref && (
         <a
-          href={details.maps_url}
+          href={mapsHref}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"

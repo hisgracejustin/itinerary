@@ -129,8 +129,9 @@ function requireChargedRatePair(
 
 // A booking's `details` is a free-form record, but `maps_url` is rendered as an
 // anchor href in the calendar/booking views. It can arrive from the AI parser,
-// which is instructed to *generate* a Maps URL from document content — a hostile
-// booking document could inject a `javascript:` scheme (stored XSS run in the app
+// which now *copies* a link out of the uploaded document rather than generating
+// one — which makes this guard matter more, not less: a hostile booking document
+// could carry a `javascript:` scheme straight through (stored XSS run in the app
 // origin for every trip member). Drop any non-http(s) maps_url rather than fail
 // the whole save, so a bad parser value doesn't block a legitimate booking. (H5)
 function stripUnsafeMapsUrl(details: Record<string, unknown>) {

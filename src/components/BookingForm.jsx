@@ -38,6 +38,7 @@ const TYPE_FIELDS = {
     { key: 'train_number', label: 'Train Number', placeholder: 'Nozomi 1' },
     { key: 'car', label: 'Car', placeholder: '5' },
     { key: 'seat', label: 'Seat', placeholder: '3A' },
+    { key: 'maps_url', label: 'Google Maps URL', placeholder: 'Optional — defaults to a search for the departure station' },
     { key: 'notes', label: 'Notes', placeholder: 'Reserved luggage rack', multiline: true },
   ],
   bus: [
@@ -45,6 +46,7 @@ const TYPE_FIELDS = {
     { key: 'arrival_station', label: 'Arrival Stop', placeholder: 'Airport Terminal 1' },
     { key: 'bus_number', label: 'Bus/Route Number', placeholder: 'A1' },
     { key: 'seat', label: 'Seat', placeholder: '12' },
+    { key: 'maps_url', label: 'Google Maps URL', placeholder: 'Optional — defaults to a search for the departure stop' },
     { key: 'notes', label: 'Notes', placeholder: 'Pick-up at the north exit', multiline: true },
   ],
   rental: [
@@ -52,7 +54,7 @@ const TYPE_FIELDS = {
     { key: 'pickup_location', label: 'Pick-up Location', placeholder: '51840 Dale Ln, Oakhurst, CA' },
     { key: 'dropoff_location', label: 'Drop-off Location', placeholder: 'Same as pick-up' },
     { key: 'insurance', label: 'Insurance', placeholder: 'Minimum coverage' },
-    { key: 'maps_url', label: 'Google Maps URL', placeholder: 'https://maps.google.com/...' },
+    { key: 'maps_url', label: 'Google Maps URL', placeholder: 'Optional — defaults to a search for the pick-up location' },
     { key: 'notes', label: 'Notes', placeholder: 'Host: Brian · +1 559 580 5820', multiline: true },
   ],
   cruise: [
@@ -62,6 +64,7 @@ const TYPE_FIELDS = {
     { key: 'departure_port', label: 'Departure Port', placeholder: 'Yokohama' },
     { key: 'arrival_port', label: 'Arrival Port', placeholder: 'Kobe' },
     { key: 'ports_of_call', label: 'Ports of Call (comma-separated)', placeholder: 'Nagasaki, Busan, Kagoshima' },
+    { key: 'maps_url', label: 'Google Maps URL', placeholder: 'Optional — defaults to a search for the departure port' },
     { key: 'notes', label: 'Notes', placeholder: 'Dinner seating 19:30', multiline: true },
   ],
   hotel: [
@@ -69,14 +72,14 @@ const TYPE_FIELDS = {
     { key: 'check_in_time', label: 'Check-in Time', placeholder: '15:00' },
     { key: 'check_out_time', label: 'Check-out Time', placeholder: '11:00' },
     { key: 'room_type', label: 'Room Type', placeholder: 'Deluxe King' },
-    { key: 'maps_url', label: 'Google Maps URL', placeholder: 'https://maps.google.com/...' },
+    { key: 'maps_url', label: 'Google Maps URL', placeholder: 'Optional — defaults to a search for the address' },
     { key: 'notes', label: 'Notes', placeholder: 'Host: +81 90 1234 5678 · late check-in', multiline: true },
   ],
   activity: [
     { key: 'location', label: 'Location', placeholder: 'Fushimi Inari Shrine' },
     { key: 'address', label: 'Address', placeholder: '68 Fukakusa, Fushimi-ku, Kyoto' },
     { key: 'duration', label: 'Duration', placeholder: '2 hours' },
-    { key: 'maps_url', label: 'Google Maps URL', placeholder: 'https://maps.google.com/...' },
+    { key: 'maps_url', label: 'Google Maps URL', placeholder: 'Optional — defaults to a search for the location' },
     { key: 'notes', label: 'Notes', placeholder: 'Bring comfortable shoes', multiline: true },
   ],
 }

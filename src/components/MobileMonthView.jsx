@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react'
-import { getMonthGrid, getBookingsForDate, isSameDay, TYPE_COLORS, TYPE_ICONS, formatTime, hasOvernightCoverage, getRentalIcon, getMeetingPoint } from '../lib/calendar'
+import { getMonthGrid, getBookingsForDate, isSameDay, TYPE_COLORS, TYPE_ICONS, formatTime, hasOvernightCoverage, getRentalIcon, getMeetingPoint, getMapsHref } from '../lib/calendar'
 import { refundHint } from '../lib/refund-hint'
 import { parseDetails } from '../lib/bookingStats'
 import BookingCard from './BookingCard'
@@ -931,7 +931,6 @@ function AgendaItem({ booking, displayDate, onClick }) {
   const colors = TYPE_COLORS[booking.type] || TYPE_COLORS.activity
   const icon = TYPE_ICONS[booking.type] || '📌'
 
-  // Parse details for maps_url
   const details = (() => {
     if (!booking.details) return {}
     if (typeof booking.details === 'string') {
@@ -939,10 +938,10 @@ function AgendaItem({ booking, displayDate, onClick }) {
     }
     return booking.details
   })()
-  const mapsUrl = details.maps_url
   // The address gets READ on its own line and TAPPED at the pin in the corner —
   // two different jobs, so both stay.
   const meetingPoint = getMeetingPoint(booking, details)
+  const mapsUrl = getMapsHref(booking, details)
   const hint = refundHint(booking, details)
   const attachmentCount = booking.attachment_count || 0
 

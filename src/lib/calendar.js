@@ -186,20 +186,54 @@ export function getRentalIcon(details) {
 
 /**
  * Where you physically show up, as one line — or '' when the booking doesn't
- * have one. The field differs per type (`pickup_location` for a rental, `address`
- * for a stay, `location` for an activity), which is exactly why callers should
- * not each re-derive it.
+ * have one. The field differs per type, which is exactly why callers should not
+ * each re-derive it: `pickup_location` for a rental, `departure_station` for a
+ * train or bus, `departure_port` for a cruise, `address` for a stay, `location`
+ * for an activity.
  *
- * A rental prefers its pick-up point: `location` on a rental tends to be the
- * city, and the city is not what gets you to the counter.
+ * Always the PICK-UP end for transport, never the arrival end. Transport has two
+ * endpoints, but only one is somewhere you have to find your way to — you reach
+ * the other by being on the train.
+ *
+ * A rental prefers its pick-up point for the same reason: `location` on a rental
+ * tends to be the city, and the city is not what gets you to the counter.
+ *
+ * Flights are deliberately excluded. Nobody navigates to an airport off a
+ * calendar card, and a pin on one is noise.
  */
 export function getMeetingPoint(booking, details) {
   const d = details || {}
+  const type = booking?.type
+  if (type === 'flight') return ''
   const pick =
-    booking?.type === 'rental'
+    type === 'rental'
       ? d.pickup_location || d.location || d.address
-      : d.location || d.address
+      : type === 'train' || type === 'bus'
+        ? d.departure_station || d.location || d.address
+        : type === 'cruise'
+          ? d.departure_port || d.location || d.address
+          : d.location || d.address
   return typeof pick === 'string' ? pick.trim() : ''
+}
+
+/**
+ * The href behind the map pin: whatever was saved on the booking, else a Google
+ * Maps search for the meeting point. '' when there is nothing to point at, so
+ * callers can skip rendering the pin entirely.
+ *
+ * Derived at render rather than written into `details` on save. A generated URL
+ * that gets persisted goes stale the moment someone edits the address — it keeps
+ * pointing at the old place, and looks perfectly correct doing it.
+ *
+ * `maps_url` is only ever an override. It is already restricted to http(s) at
+ * the schema boundary (see src/lib/schemas.ts), so it needs no check here.
+ */
+export function getMapsHref(booking, details) {
+  const saved = details?.maps_url
+  if (typeof saved === 'string' && saved.trim()) return saved.trim()
+  const point = getMeetingPoint(booking, details)
+  if (!point) return ''
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(point)}`
 }
 
 /**
