@@ -10,7 +10,6 @@
 
 import { toHKD } from './currencies'
 import { expenseCategory } from './expense-categories'
-import { bookingZone, chronologicalZone, tripZone } from './booking-zones'
 
 // Expenses carry a category rather than a booking type, and each one gets its
 // own bar in the By Type card. The prefix keeps those keys clear of the booking
@@ -77,25 +76,6 @@ export function hkdOf(item, amount, rates) {
     return item.charged.currency === 'HKD' ? value : toHKD(value, item.charged.currency, rates)
   }
   return toHKD(amount, item.currency, rates)
-}
-
-/**
- * resolveZone for a whole list, with the trip fallback memoized: resolving one
- * trip's zone scans every booking, and these screens ask once per row.
- *
- * @returns {(booking: any) => string | null}
- */
-export function makeZoneResolver(bookings = []) {
-  const tripZones = new Map()
-  return (booking) => {
-    // Same chain as resolveZone, kept open here so only the trip step memoizes.
-    const own = booking?.timezone || bookingZone(booking) || chronologicalZone(booking, bookings)
-    if (own) return own
-    if (!tripZones.has(booking.trip_id)) {
-      tripZones.set(booking.trip_id, tripZone(booking.trip_id, bookings))
-    }
-    return tripZones.get(booking.trip_id)
-  }
 }
 
 /**

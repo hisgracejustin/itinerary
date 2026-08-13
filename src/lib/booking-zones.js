@@ -136,6 +136,25 @@ export function resolveZone(booking, trip, bookings) {
   return bookingZone(booking) ?? chronologicalZone(booking, bookings) ?? tripZone(trip, bookings)
 }
 
+/**
+ * resolveZone for a whole list, with the trip fallback memoized: resolving one
+ * trip's zone scans every booking, and the money screens ask once per row.
+ *
+ * @returns {(booking: any) => string | null}
+ */
+export function makeZoneResolver(bookings = []) {
+  const tripZones = new Map()
+  return (booking) => {
+    // Same chain as resolveZone, kept open here so only the trip step memoizes.
+    const own = booking?.timezone || bookingZone(booking) || chronologicalZone(booking, bookings)
+    if (own) return own
+    if (!tripZones.has(booking.trip_id)) {
+      tripZones.set(booking.trip_id, tripZone(booking.trip_id, bookings))
+    }
+    return tripZones.get(booking.trip_id)
+  }
+}
+
 /** An airport code as the traveller wrote it on the booking. */
 const code = (value) => String(value || '').trim().toUpperCase()
 

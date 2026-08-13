@@ -5,6 +5,7 @@ import { useTripContext } from '../lib/trip-context'
 import { updateBooking, deleteBooking } from '@/lib/client-actions'
 import { formatCurrency } from '../lib/currencies'
 import { wallClockInZone } from '../lib/airports'
+import { makeZoneResolver } from '../lib/booking-zones'
 import {
   sanitizeCancellationPolicy,
   refundableAsOf,
@@ -18,7 +19,6 @@ import {
   bookingCostItem,
   hkdOf,
   itemContribution,
-  makeZoneResolver,
   scopeUserIds,
 } from '../lib/cost-items'
 import { TYPE_ICONS } from '../lib/calendar'

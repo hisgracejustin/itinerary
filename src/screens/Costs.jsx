@@ -5,6 +5,7 @@ import { useTripContext } from '../lib/trip-context'
 import { updateBooking, deleteBooking } from '@/lib/client-actions'
 import { toHKD, formatCurrency } from '../lib/currencies'
 import { wallClockInZone } from '../lib/airports'
+import { makeZoneResolver } from '../lib/booking-zones'
 import { sanitizeCancellationPolicy, nowInstant } from '../lib/cancellation'
 import { TYPE_ICONS } from '../lib/calendar'
 import { EXPENSE_CATEGORIES } from '../lib/expense-categories'
@@ -14,7 +15,6 @@ import {
   expenseTypeEntry,
   hkdOf as itemHkd,
   itemContribution,
-  makeZoneResolver,
   scopeUserIds,
 } from '../lib/cost-items'
 import { isTripWritable } from '../lib/trip-permissions'
