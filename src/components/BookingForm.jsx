@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { CURRENCIES, formatCurrency } from '../lib/currencies'
+import { CURRENCIES, formatCurrency, defaultCurrency, HOME_CURRENCY } from '../lib/currencies'
 import { sanitizeCancellationPolicy } from '../lib/cancellation'
 import { suggestZone } from '../lib/booking-zones'
 import { SUPPORTED_ZONES } from '../lib/timezones'
@@ -126,7 +126,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
     confirmation_number: '',
     provider: '',
     cost_amount: '',
-    cost_currency: 'USD',
+    cost_currency: defaultCurrency(null, (trips || []).find((t) => t.id === selectedTrip)),
     cost_share: '1',
     paid_by: '',
     splits: [],
@@ -143,6 +143,22 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
   })
 
   const [errors, setErrors] = useState({})
+  // Whether the currency was set by hand. Until it is, changing the trip
+  // re-points it at that trip's currency; after it is, the choice sticks.
+  const [currencyTouched, setCurrencyTouched] = useState(false)
+
+  // Changing the trip moves the item's whole money context, so an untouched
+  // currency should follow it.
+  const changeTrip = (trip_id) => {
+    setForm((prev) => ({
+      ...prev,
+      trip_id,
+      cost_currency: currencyTouched
+        ? prev.cost_currency
+        : defaultCurrency(null, (trips || []).find((t) => t.id === trip_id)),
+    }))
+    setErrors((prev) => ({ ...prev, trip_id: undefined }))
+  }
 
   useEffect(() => {
     if (booking) {
@@ -155,7 +171,10 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
         confirmation_number: booking.confirmation_number || '',
         provider: booking.provider || '',
         cost_amount: booking.cost_amount != null ? String(booking.cost_amount) : '',
-        cost_currency: booking.cost_currency || 'USD',
+        cost_currency: defaultCurrency(
+          booking.cost_currency,
+          (trips || []).find((t) => t.id === (booking.trip_id || selectedTrip)),
+        ),
         cost_share: booking.cost_share != null ? String(booking.cost_share) : '1',
         paid_by: booking.paid_by || '',
         splits: Array.isArray(booking.splits)
@@ -625,7 +644,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
           <select
             data-field="trip_id"
             value={form.trip_id}
-            onChange={(e) => setField('trip_id', e.target.value)}
+            onChange={(e) => changeTrip(e.target.value)}
             className={`mat-input ${errors.trip_id ? 'border-red-400 focus:ring-red-200' : ''}`}
           >
             <option value="">Select a trip...</option>
@@ -701,7 +720,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
           <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Currency</label>
           <select
             value={form.cost_currency}
-            onChange={(e) => setField('cost_currency', e.target.value)}
+            onChange={(e) => { setCurrencyTouched(true); setField('cost_currency', e.target.value) }}
             className="mat-select w-full"
           >
             {CURRENCIES.map((c) => (
@@ -852,7 +871,7 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
               const cutoffDate = (tier.cutoff || '').slice(0, 10)
               const cutoffTime = (tier.cutoff || '').length > 10 ? tier.cutoff.slice(11, 16) : ''
               const kind = tier.kind || 'percent'
-              const cur = form.cost_currency || 'USD'
+              const cur = form.cost_currency || HOME_CURRENCY
               // Live plain-English readout of what this tier means — the
               // controls alone ("100", "%") read as gibberish without it.
               // Mirrors src/lib/cancellation.js semantics: percent/fee apply to

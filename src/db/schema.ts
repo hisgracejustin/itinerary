@@ -117,6 +117,16 @@ export const trips = pgTable("trips", {
   name: text("name").notNull(),
   start_date: text("start_date").notNull(),
   end_date: text("end_date").notNull(),
+  // What you mostly spend in on this trip. A UI DEFAULT AND NOTHING ELSE: it
+  // seeds the currency field on a new booking or expense and never takes part
+  // in a calculation. Settlement converts through the home currency, an item
+  // that was billed at a known rate carries its own charged_currency/rate, and
+  // neither of those should ever consult this column.
+  //
+  // Nullable on purpose — null means "no answer", so trips that predate this
+  // fall back to the home currency exactly as they do today, and nothing has
+  // to be backfilled with a guess.
+  currency: text("currency"),
   created_at: createdAt(),
 });
 

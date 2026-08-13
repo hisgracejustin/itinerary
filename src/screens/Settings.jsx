@@ -6,6 +6,7 @@ import {
   addTripMember, removeTripMember, setTripMemberRole, updateMemberProfile, setMemberPin, setMyAvatar, setMemberAvatar, deleteUser,
   createParty, renameParty, deleteParty, getTripAudit, setMemberSharesCosts,
 } from '@/lib/client-actions'
+import { CURRENCIES, HOME_CURRENCY } from '../lib/currencies'
 import { friendlyError } from '../lib/friendlyError'
 import { useToast } from '../components/Toast'
 import { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
@@ -19,7 +20,7 @@ const ROLES = [
   { value: 'viewer', label: 'Viewer', hint: 'Read-only' },
 ]
 
-const blankTrip = { name: '', start_date: '', end_date: '' }
+const blankTrip = { name: '', start_date: '', end_date: '', currency: null }
 
 // `allPeople` is the admin-only full account list (null for everyone else).
 export default function Settings({ trips: tripsProp, currentUserId, isAdmin = false, allPeople: adminPeople }) {
@@ -181,6 +182,21 @@ export default function Settings({ trips: tripsProp, currentUserId, isAdmin = fa
                 />
               </label>
             </div>
+            <label className="block">
+              <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">
+                Currency
+              </span>
+              <select
+                value={newTrip.currency || ''}
+                onChange={(e) => setNewTrip({ ...newTrip, currency: e.target.value || null })}
+                className="mat-select w-full"
+              >
+                <option value="">No default ({HOME_CURRENCY})</option>
+                {CURRENCIES.map((c) => (
+                  <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
+                ))}
+              </select>
+            </label>
             <button type="submit" disabled={busy} className="mat-btn-filled w-full justify-center disabled:opacity-40">
               {busy ? 'Creating…' : 'Create trip'}
             </button>
@@ -622,6 +638,7 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
     name: trip.name,
     start_date: trip.start_date,
     end_date: trip.end_date,
+    currency: trip.currency ?? null,
   })
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [email, setEmail] = useState('')
@@ -684,6 +701,25 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
               />
             </label>
           </div>
+          <label className="block">
+            <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">
+              Currency
+            </span>
+            <select
+              value={draft.currency || ''}
+              onChange={(e) => setDraft({ ...draft, currency: e.target.value || null })}
+              className="mat-select w-full"
+            >
+              <option value="">No default ({HOME_CURRENCY})</option>
+              {CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
+              ))}
+            </select>
+            <span className="block mt-1 text-[11px] text-on-surface-variant">
+              What new bookings and expenses on this trip start in. You can still
+              change it on any single one.
+            </span>
+          </label>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setEditing(false)} className="mat-btn-outlined">
               Cancel
@@ -726,7 +762,7 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
           </button>
           <div className="flex items-center gap-1 shrink-0">
             <button
-              onClick={() => { setDraft({ name: trip.name, start_date: trip.start_date, end_date: trip.end_date }); setEditing(true) }}
+              onClick={() => { setDraft({ name: trip.name, start_date: trip.start_date, end_date: trip.end_date, currency: trip.currency ?? null }); setEditing(true) }}
               className="mat-btn-outlined text-xs"
             >
               Edit

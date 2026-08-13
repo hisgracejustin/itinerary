@@ -239,7 +239,12 @@ export async function createTripAction(input: unknown) {
     const trip = await transaction(async (tx) => {
       const [created] = await tx
         .insert(tables.trips)
-        .values({ name: data.name, start_date: data.start_date, end_date: data.end_date })
+        .values({
+          name: data.name,
+          start_date: data.start_date,
+          end_date: data.end_date,
+          currency: data.currency,
+        })
         .returning();
       // Auto-assign the creator as owner.
       await tx.insert(tables.tripMembers).values({

@@ -143,6 +143,7 @@ export function getTripsForUser(userId: string) {
       name: tables.trips.name,
       start_date: tables.trips.start_date,
       end_date: tables.trips.end_date,
+      currency: tables.trips.currency,
     })
     .from(tables.trips)
     .innerJoin(

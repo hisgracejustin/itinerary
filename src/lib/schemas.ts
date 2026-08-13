@@ -354,6 +354,12 @@ export const tripInsertSchema = z.object({
   name: z.string().min(1),
   start_date: z.string().min(1),
   end_date: z.string().min(1),
+  // Nullable, and '' from an unset <select> normalizes to null — "no answer" is
+  // a real state here, not a validation failure (see trips.currency).
+  currency: z
+    .union([currencySchema, z.literal("")])
+    .nullish()
+    .transform((v) => v || null),
 });
 
 export const tripUpdateSchema = tripInsertSchema.partial();

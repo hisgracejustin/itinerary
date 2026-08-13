@@ -7,7 +7,7 @@ import SplitEditor from "./SplitEditor";
 import AttachmentsSection from "./AttachmentsSection";
 import ChargedRateEditor from "./ChargedRateEditor";
 import ExpenseDetails from "./ExpenseDetails";
-import { CURRENCIES } from "../lib/currencies";
+import { CURRENCIES, defaultCurrency } from "../lib/currencies";
 import { EXPENSE_CATEGORIES, expenseCategory } from "../lib/expense-categories";
 import { pruneEmptySplits } from "../lib/split";
 import { createExpense, deleteExpense, updateExpense } from "../lib/client-actions";
@@ -34,7 +34,7 @@ const todayLocal = () => {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 };
 
-const initialForm = (expense, selectedTrip) => ({
+const initialForm = (expense, selectedTrip, trip) => ({
   trip_id: expense?.trip_id || selectedTrip || "",
   title: expense?.title || "",
   // Normalized, not raw: a value retired from the list would otherwise leave
@@ -42,7 +42,7 @@ const initialForm = (expense, selectedTrip) => ({
   // including saves of unrelated fields.
   category: expenseCategory(expense?.category).value,
   amount: expense?.amount != null ? String(expense.amount) : "",
-  currency: expense?.currency || "HKD",
+  currency: defaultCurrency(expense?.currency, trip),
   date: expense?.date || todayLocal(),
   paid_by: expense?.paid_by ?? null,
   splits: (expense?.splits || []).map((split) => ({
@@ -94,7 +94,13 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
   const { ask, dialog } = useConfirmDanger();
   const formRef = useRef(null);
   const savingRef = useRef(false);
-  const [form, setForm] = useState(() => initialForm(expense, defaultTrip));
+  const [form, setForm] = useState(() =>
+    initialForm(expense, defaultTrip, trips.find((t) => t.id === (expense?.trip_id || defaultTrip))),
+  );
+  // Whether the currency was set by hand. Until it is, switching trips re-points
+  // it at the new trip's currency; after it is, the choice sticks — a default
+  // that overwrites what you just typed is worse than no default at all.
+  const [currencyTouched, setCurrencyTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [stagedFiles, setStagedFiles] = useState([]); // attachments for a not-yet-saved expense
   // The expense as last saved — what view mode reads, updated in place after an
@@ -121,10 +127,13 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
         // Storage can be unavailable in private browsing; the form still works.
       }
     }
-    const ids = new Set((trips.find((item) => item.id === trip_id)?.members || []).map((member) => member.id));
+    const nextTrip = trips.find((item) => item.id === trip_id);
+    const ids = new Set((nextTrip?.members || []).map((member) => member.id));
     setForm((current) => ({
       ...current,
       trip_id,
+      // Follow the new trip's currency only while the field is untouched.
+      currency: currencyTouched ? current.currency : defaultCurrency(null, nextTrip),
       splits: current.splits.filter((split) => ids.has(split.user_id)),
       paid_by: current.paid_by && ids.has(current.paid_by) ? current.paid_by : null,
     }));
@@ -332,7 +341,10 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
             />
             <select
               value={form.currency}
-              onChange={(event) => setForm((current) => ({ ...current, currency: event.target.value }))}
+              onChange={(event) => {
+                setCurrencyTouched(true);
+                setForm((current) => ({ ...current, currency: event.target.value }));
+              }}
               aria-label="Currency"
               className="mat-select shrink-0"
             >

@@ -21,6 +21,32 @@ export const CURRENCIES = [
   { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
 ]
 
+/**
+ * The currency everything ultimately settles in. Also the last-resort default
+ * for a new item, which is why it lives here rather than being written out at
+ * each form: the two forms used to disagree (bookings fell back to USD,
+ * expenses to HKD), so the same trip defaulted differently depending on which
+ * one you opened.
+ */
+export const HOME_CURRENCY = 'HKD'
+
+/**
+ * Which currency a money field should start in.
+ *
+ * Order: an item already has one, so editing never rewrites it; otherwise the
+ * trip's own currency, because that's what you're mostly spending in; otherwise
+ * home. Purely a starting value — every caller lets the user change it, and
+ * nothing downstream consults the trip's currency again.
+ *
+ * @param {string|null|undefined} itemCurrency the item's saved currency, if any
+ * @param {{ currency?: string|null }|null|undefined} trip the item's OWN trip
+ *   (the one picked in the form), not the sidebar selection — with several trips
+ *   selected at once the sidebar has no single answer.
+ */
+export function defaultCurrency(itemCurrency, trip) {
+  return itemCurrency || trip?.currency || HOME_CURRENCY
+}
+
 // Rates: 1 unit of currency = X HKD
 export const FX_RATES_TO_HKD = {
   HKD: 1,
