@@ -18,13 +18,22 @@ function toLocalDateStr(date) {
 }
 
 export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, tripMetas = [], trips = [], selectedTrip, spanStart, spanEnd, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, onNavigateMonth, collapsed = false, onCollapsedChange }) {
-  // Default: if trip selected → first day of trip, else today
+  // The selection's span as plain YYYY-MM-DD. The Date props are rebuilt on
+  // every parent render, so effects and memos key on these strings instead.
+  const spanStartStr = spanStart ? toLocalDateStr(spanStart) : null
+  const spanEndStr = spanEnd ? toLocalDateStr(spanEnd) : null
+
+  // Default: today when today falls inside the selection's span (the usual
+  // mid-journey case), else the span's first day. Anchoring on the trip start
+  // meant an in-progress trip opened weeks back in its own history.
   const getDefaultDay = useCallback(() => {
-    if (selectedTrip && tripMeta?.start_date) {
-      return new Date(tripMeta.start_date + 'T00:00:00')
-    }
-    return new Date()
-  }, [selectedTrip, tripMeta])
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    if (!spanStartStr || !spanEndStr) return today
+    const todayStr = toLocalDateStr(today)
+    if (todayStr >= spanStartStr && todayStr <= spanEndStr) return today
+    return new Date(spanStartStr + 'T00:00:00')
+  }, [spanStartStr, spanEndStr])
 
   const [selectedDay, setSelectedDay] = useState(getDefaultDay)
   const { toast } = useToast()
@@ -105,7 +114,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
       calendarRef.current.style.transition = ''
       calendarRef.current.style.opacity = ''
     }
-  }, [selectedTrip, tripMeta?.start_date, getDefaultDay])
+  }, [selectedTrip, tripMeta?.start_date, spanStartStr, spanEndStr, getDefaultDay])
 
   const animateCollapse = () => {
     const el = calendarRef.current
@@ -206,22 +215,30 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
     })
   }
 
-  // Get bookings from start of trip (or 30 days back) through end of trip (or 30 days forward)
-  const agendaEndDate = (() => {
-    if (tripMeta?.end_date) {
-      return new Date(tripMeta.end_date + 'T23:59:59')
-    }
-    return new Date(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate() + 30)
-  })()
+  // The agenda covers the WHOLE selection — earliest selected trip start through
+  // latest end — not just a single trip. The old single-trip fallback started the
+  // list at today whenever 2+ trips were selected, so the days already travelled
+  // couldn't be scrolled back to at all. With nothing selected ("All Trips") fall
+  // back to every trip's union; days outside a trip only render when they carry
+  // content, so the list stays short either way.
+  const allStartStr = trips.reduce((min, t) => (t.start_date && (!min || t.start_date < min) ? t.start_date : min), null)
+  const allEndStr = trips.reduce((max, t) => (t.end_date && (!max || t.end_date > max) ? t.end_date : max), null)
+  const selectedDayMidnight = new Date(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate())
 
-  // When expanded: start from selected day. When collapsed: start from trip start (or today) so user can scroll back.
-  // Always render full agenda from trip start (or today). Scroll position controls what's visible.
+  // Both ends stretch to cover the selected day, so tapping a date outside the
+  // span (an earlier month, a gap between trips) still has a row to scroll to.
   const agendaStartDate = (() => {
-    if (tripMeta?.start_date) {
-      return new Date(tripMeta.start_date + 'T00:00:00')
-    }
-    const now = new Date()
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const startStr = spanStartStr ?? allStartStr
+    const start = startStr ? new Date(startStr + 'T00:00:00') : selectedDayMidnight
+    return start < selectedDayMidnight ? start : selectedDayMidnight
+  })()
+  const agendaEndDate = (() => {
+    const endStr = spanEndStr ?? allEndStr
+    const end = endStr
+      ? new Date(endStr + 'T23:59:59')
+      : new Date(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate() + 30)
+    const selectedEnd = new Date(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate(), 23, 59, 59)
+    return end > selectedEnd ? end : selectedEnd
   })()
 
   const agendaDays = []
@@ -232,9 +249,12 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
     const dateStr = toLocalDateStr(d)
     const hasDayNote = dayNotes.some((n) => n.date === dateStr)
     const hasReminder = dayReminders.some((r) => r.date === dateStr)
-    const showDay = tripMeta?.start_date
-      ? true
-      : (dayBookings.length > 0 || dayTodos.length > 0 || hasDayNote || hasReminder || d.getTime() === new Date(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate()).getTime())
+    // Every day inside a selected trip is part of the itinerary, empty or not.
+    // Outside the trips, only days that actually carry something (plus the
+    // selected day itself) earn a row.
+    const showDay = inAnyTrip(d)
+      || dayBookings.length > 0 || dayTodos.length > 0 || hasDayNote || hasReminder
+      || d.getTime() === selectedDayMidnight.getTime()
     if (showDay) {
       agendaDays.push({ date: new Date(d), bookings: dayBookings, todos: dayTodos })
     }

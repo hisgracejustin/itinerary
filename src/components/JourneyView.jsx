@@ -108,6 +108,28 @@ export default function JourneyView({
     return () => clearTimeout(t)
   }, [scrollRequest])
 
+  // The timeline covers the whole selection, past days included, so its top is
+  // usually history. Open it on today (or the first day after it, when today
+  // sits inside a collapsed run) and let the user scroll UP into the days
+  // already travelled. Runs once per span — a new selection rebuilds the list
+  // and re-anchors it, but scroll-requests and manual scrolling are left alone.
+  const spanKey = spanStart && spanEnd ? `${toLocalDateStr(spanStart)}_${toLocalDateStr(spanEnd)}` : null
+  const anchoredSpan = useRef(null)
+  useEffect(() => {
+    if (!spanKey || anchoredSpan.current === spanKey) return
+    const container = scrollerRef.current
+    if (!container) return
+    anchoredSpan.current = spanKey
+    const todayStr = toLocalDateStr(new Date())
+    const sections = Array.from(container.querySelectorAll('[data-journey-date]'))
+    // First day on or after today; nothing means the journey is entirely past,
+    // where the top of the list is already the right place to land.
+    const el = sections.find((s) => s.getAttribute('data-journey-date') >= todayStr)
+    if (!el) return
+    const top = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 8
+    container.scrollTo({ top: Math.max(0, top) })
+  }, [spanKey])
+
   if (!spanStart || !spanEnd) return null
 
   const spanStartDay = midnight(spanStart)
