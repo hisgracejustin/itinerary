@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getRangeGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, tripColorMap, TYPE_ICONS } from '../lib/calendar'
 import BookingCard from './BookingCard'
+import { isCancelled } from '../lib/booking-cost'
 import { parseDetails } from '../lib/bookingStats'
 import DayReminders from './DayReminders'
 import { useToast } from './Toast'
@@ -406,10 +407,12 @@ function DaySection({
                   isCruise
                     ? 'bg-purple-100 text-purple-800 hover:bg-purple-200'
                     : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
-                }`}
+                } ${isCancelled(bk) ? 'opacity-60' : ''}`}
               >
                 <span className="shrink-0" aria-hidden>{isCruise ? '🚢' : TYPE_ICONS[bk.type] || '🏡'}</span>
-                <span className="truncate">{isCruise ? 'On board' : bk.title}</span>
+                <span className={`truncate ${isCancelled(bk) ? 'line-through' : ''}`}>
+                  {isCruise ? 'On board' : bk.title}
+                </span>
                 {bk.type === 'hotel' && parseDetails(bk).laundry === true && (
                   <span className="shrink-0" aria-label="Laundry available">🧺</span>
                 )}

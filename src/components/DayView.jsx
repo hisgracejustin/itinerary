@@ -1,4 +1,5 @@
 import { getBookingsForDate, getHour, TYPE_COLORS, TYPE_ICONS, isSameDay } from '../lib/calendar'
+import { isCancelled } from '../lib/booking-cost'
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
 
@@ -142,10 +143,13 @@ export default function DayView({ currentDate, bookings, todos = [], dayReminder
                   <button
                     key={booking.id}
                     onClick={() => onBookingClick?.(booking)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100 text-amber-800 text-sm font-medium hover:bg-amber-200 transition-colors cursor-pointer"
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100 text-amber-800 text-sm font-medium hover:bg-amber-200 transition-colors cursor-pointer ${isCancelled(booking) ? 'opacity-60' : ''}`}
                   >
-                    🏡 {booking.title}
+                    <span className={isCancelled(booking) ? 'line-through' : ''}>🏡 {booking.title}</span>
                     <span className="text-amber-600 font-normal text-xs">{nightNumber}/{totalNights}</span>
+                    {isCancelled(booking) && (
+                      <span className="font-normal text-[10px] uppercase tracking-wide">Cancelled</span>
+                    )}
                   </button>
                 )
               }
@@ -153,10 +157,13 @@ export default function DayView({ currentDate, bookings, todos = [], dayReminder
                 <div
                   key={booking.id}
                   onClick={() => onBookingClick?.(booking)}
-                  className={`px-3.5 py-2 rounded-full text-sm border cursor-pointer hover:shadow-elevation-1 transition-all duration-150 ${colors.bg} ${colors.border} ${colors.text}`}
+                  className={`px-3.5 py-2 rounded-full text-sm border cursor-pointer hover:shadow-elevation-1 transition-all duration-150 ${colors.bg} ${colors.border} ${colors.text} ${isCancelled(booking) ? 'opacity-60' : ''}`}
                 >
                   <span className="mr-1.5">{icon}</span>
-                  <span className="font-medium">{booking.title}</span>
+                  <span className={`font-medium ${isCancelled(booking) ? 'line-through' : ''}`}>{booking.title}</span>
+                  {isCancelled(booking) && (
+                    <span className="ml-2 text-[10px] uppercase tracking-wide">Cancelled</span>
+                  )}
                   {booking.provider && <span className="opacity-60 ml-2 hidden sm:inline">· {booking.provider}</span>}
                 </div>
               )

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
 import { computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
+import { bookingEffective, scaledSplits } from '../lib/booking-cost'
 // toHKD is for the Split-costs SORT ORDER only — every displayed amount on this
 // page stays exact per-currency (no ~ conversions).
 import { formatCurrency, FX_RATES_TO_HKD, toHKD } from '../lib/currencies'
@@ -165,10 +166,13 @@ export default function Settle({
   // pair computeBalances settles), so these accessors take either shape: a
   // booking carries cost_amount/cost_share/cost_currency/type, an expense just
   // amount + currency.
+  // Bookings go through the shared rule so a cancellation is reflected
+  // identically here, in computeBalances and on /costs — a per-item figure that
+  // disagreed with the balance above it is worse than no figure at all.
   const effectiveOf = (row) =>
-    row.cost_amount != null
-      ? (row.cost_amount || 0) * (row.cost_share != null ? row.cost_share : 1)
-      : row.amount || 0
+    row.cost_amount != null ? bookingEffective(row) : row.amount || 0
+  // Expenses have no split rescaling; bookings do once cancelled.
+  const splitsOf = (row) => (row.cost_amount != null ? scaledSplits(row, row.splits) : row.splits)
   const currencyOf = (row) => row.cost_currency ?? row.currency
   const iconOf = (row) => (row.type ? TYPE_ICONS[row.type] || '🗂️' : expenseCategory(row.category).icon)
   const rowKey = (row) => `${row.type ? 'bk' : 'ex'}-${row.id}`
@@ -213,7 +217,9 @@ export default function Settle({
   // Per-item breakdown: every fully split cost-bearing item in the selection —
   // bookings AND expenses — with the viewer's unit-level net for it.
   const splitCostRows = [
-    ...bookings.filter((b) => b.cost_amount && b.cost_currency),
+    // A cancellation that kept nothing has no money left to settle, so it drops
+    // out of the breakdown the same way it drops out of the balances.
+    ...bookings.filter((b) => b.cost_amount && b.cost_currency && effectiveOf(b) > 0),
     ...expenses.filter((e) => e.amount && e.currency),
   ]
     .filter((b) => (b.splits || []).length > 0 && b.paid_by)
@@ -222,7 +228,7 @@ export default function Settle({
       net: itemViewerNet({
         amount: effectiveOf(b),
         paidBy: b.paid_by,
-        splits: b.splits,
+        splits: splitsOf(b),
         unitMemberIds: viewerUnitIds(b.trip_id),
       }),
     }))

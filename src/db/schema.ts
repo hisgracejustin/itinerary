@@ -208,6 +208,30 @@ export const bookings = pgTable(
     // so the editor can show what was entered instead of the bumped figures.
     service_percent: numeric("service_percent", { mode: "number" }),
     shared_charge: numeric("shared_charge", { mode: "number" }),
+    // When this booking was cancelled, or null for a live one. A TIMESTAMP
+    // rather than a status enum: null/not-null is the predicate every query
+    // wants, and "cancelled on 12 Aug" is worth knowing on its own. Stamped
+    // server-side — the client sends a boolean and never a date, so a
+    // cancellation day can't be back-dated from a form (see updateBookingAction).
+    //
+    // Cancelling NEVER rewrites this booking's split rows: they stay at their
+    // original scale and are rescaled at math time (see cost-items.js), which
+    // is the only way reinstating restores the old numbers to the cent.
+    cancelled_at: timestamp("cancelled_at", { withTimezone: true }),
+    // What the provider KEPT when this booking was cancelled — a change fee, a
+    // forfeited deposit, a non-refundable first night — in cost_currency. This
+    // IS the booking's effective cost once cancelled: it REPLACES
+    // `cost_amount × cost_share` outright rather than being subtracted from it,
+    // so a stale cost_amount can never leak into a total. 0 — the default, and
+    // the common case — means the cancellation cost nothing and the booking
+    // contributes nothing anywhere.
+    //
+    // NOT share-scaled, matching the `amount`/`fee` tiers in cancellation.js:
+    // it is the figure the trip actually lost, as typed.
+    //
+    // Meaningless while cancelled_at is null, and cleared on reinstate, so a
+    // stale value can't reappear if the booking is cancelled a second time.
+    retained_amount: numeric("retained_amount", { mode: "number" }).notNull().default(0),
     source: bookingSource("source").default("manual"),
     source_file: text("source_file"),
     raw_text: text("raw_text"),

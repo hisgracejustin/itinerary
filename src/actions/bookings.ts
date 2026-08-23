@@ -117,8 +117,13 @@ export async function createBookingAction(input: unknown) {
 export async function updateBookingAction(id: string, input: unknown) {
   return runAction(async (user) => {
     const parsed = bookingUpdateSchema.parse(input);
-    // `splits` isn't a bookings column — pull it out of the DB update set.
-    const { splits, ...updates } = parsed;
+    // Neither `splits` nor `cancelled` is a bookings column — pull both out of
+    // the DB update set. `cancelled` is intent, mapped to a timestamp below.
+    const { splits, cancelled, retained_amount, ...rest } = parsed;
+    const updates: Partial<typeof tables.bookings.$inferInsert> = { ...rest };
+    // The column is NOT NULL DEFAULT 0, so an explicit null from a form means
+    // "nothing was kept", not "leave it alone" — only `undefined` means that.
+    if (retained_amount !== undefined) updates.retained_amount = retained_amount ?? 0;
     // The whole row, not just the authz fields: it is also the "before" half of
     // the audit diff, and it has to be read before the update overwrites it.
     const [existing] = await db
@@ -157,13 +162,46 @@ export async function updateBookingAction(id: string, input: unknown) {
       ...(splits ?? []).map((s) => s.user_id),
       ...carriedUserIds,
     ]);
+    // Cancellation is intent in, timestamp out — the client never sends a date.
+    // Re-cancelling an already-cancelled booking must NOT restamp the day, so a
+    // later unrelated edit that still carries `cancelled: true` leaves the
+    // original cancellation date alone.
+    if (cancelled !== undefined) {
+      updates.cancelled_at = cancelled ? (existing.cancelled_at ?? new Date()) : null;
+      // Reinstating clears the fee, so a stale figure can't reappear the day
+      // this booking is cancelled again for an unrelated reason.
+      if (!cancelled) updates.retained_amount = 0;
+    }
+    // The zod refinement catches a retained amount sent alongside an explicit
+    // `cancelled: false`; this catches it sent alone at a booking that is not
+    // cancelled and isn't becoming so, which the schema can't see.
+    const willBeCancelled = cancelled ?? !!existing.cancelled_at;
+    const finalRetained = updates.retained_amount ?? existing.retained_amount ?? 0;
+    if (!willBeCancelled && finalRetained > 0) {
+      throw new AppError("Only a cancelled booking can retain an amount");
+    }
+
     const finalSplits = splits ?? existingSplits;
     const finalAmount = updates.cost_amount === undefined ? existing.cost_amount : updates.cost_amount;
     const finalShare = updates.cost_share === undefined ? existing.cost_share : updates.cost_share;
+    // Deliberately the PRE-cancellation splittable. Split rows stay at their
+    // original scale and are rescaled at math time (see lib/booking-cost.js), so
+    // measuring them against a retained amount would reject the cancellation of
+    // any booking that had separate contributions — the exact case this feature
+    // exists for.
     const splittable = finalAmount == null ? 0 : finalAmount * (finalShare ?? 1);
     const contributed = finalSplits.reduce((sum, split) => sum + (split.paid_amount ?? 0), 0);
     if (contributed > splittable + 1e-9) {
       throw new AppError("Paid separately amounts cannot exceed the total cost");
+    }
+    // A retained amount is spent through the booking's own cost + currency (see
+    // lib/booking-cost.js), so on an unpriced booking it would be stored and then
+    // counted by nothing — not on /costs, not in settlement. Refuse it rather
+    // than accept a number and silently drop it.
+    const finalCurrency =
+      updates.cost_currency === undefined ? existing.cost_currency : updates.cost_currency;
+    if (finalRetained > 0 && (finalAmount == null || !finalCurrency)) {
+      throw new AppError("Add a cost and currency before recording a cancellation fee");
     }
     const row = await transaction(async (tx) => {
       let updated;

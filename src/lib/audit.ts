@@ -203,6 +203,8 @@ export type BookingSnapshot = {
   service_percent: number | null;
   shared_charge: number | null;
   paid_by: string | null;
+  cancelled_at: Date | null;
+  retained_amount: number | null;
   details: Record<string, unknown> | null;
   splits: SplitRow[];
 };
@@ -249,6 +251,24 @@ export async function bookingAuditChanges(
   }
   if (differs(before.paid_by, after.paid_by)) {
     changes.push(payerChange(before.paid_by, after.paid_by, people));
+  }
+  // Logged as the STATE, not the timestamp: "no → yes" is what a person reading
+  // the feed wants, and the exact instant is already the row's own changed_at.
+  if (!!before.cancelled_at !== !!after.cancelled_at) {
+    changes.push({
+      field: "cancelled",
+      old_value: before.cancelled_at ? "yes" : "no",
+      new_value: after.cancelled_at ? "yes" : "no",
+    });
+  }
+  // What a cancellation cost. Both zero on a live booking, so this stays quiet
+  // for every edit that isn't about one.
+  if (differs(before.retained_amount || null, after.retained_amount || null)) {
+    changes.push({
+      field: "retained_amount",
+      old_value: money(before.retained_amount, before.cost_currency),
+      new_value: money(after.retained_amount, after.cost_currency),
+    });
   }
   if (before.trip_id !== after.trip_id) {
     const trips = await tripNames(client, [before.trip_id, after.trip_id]);

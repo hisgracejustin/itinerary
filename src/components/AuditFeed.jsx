@@ -27,6 +27,8 @@ const FIELD_LABELS = {
   name: 'Name',
   members: 'Members',
   cancellation_policy: 'Cancellation policy',
+  cancelled: 'Cancelled',
+  retained_amount: 'Amount kept',
 }
 
 // A booking's label already starts with its type ("flight HKG → YVR"), so it

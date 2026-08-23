@@ -124,6 +124,10 @@ export default function Refund({ bookings: allBookings, currentUserId }) {
     // Everything this row decides is read on the provider's clock, so the two
     // sides of every compare below are that clock's wall time.
     const asOfThere = wallClockInZone(asOfMs, zoneOf(it.booking))
+    // Already cancelled — the decision this page exists to inform has been
+    // made, and the money has already gone one way or the other. Leaving it in
+    // would inflate the refundable headline with a refund already received.
+    if (it.cancelled) return
     // Already underway at the as-of moment — there's nothing left to cancel.
     // start_date is 'YYYY-MM-DDTHH:mm:ss'; slicing to 16 aligns it with asOfThere.
     if (String(it.booking.start_date).slice(0, 16) < asOfThere) return

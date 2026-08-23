@@ -10,6 +10,11 @@
 
 import { toHKD } from './currencies'
 import { expenseCategory } from './expense-categories'
+import { isCancelled, bookingOriginal, bookingEffective, scaledSplits } from './booking-cost'
+
+// Re-exported so a screen that already imports from here doesn't need a second
+// import line for the cancellation rule.
+export { isCancelled, bookingOriginal, bookingEffective, scaledSplits }
 
 // Expenses carry a category rather than a booking type, and each one gets its
 // own bar in the By Type card. The prefix keeps those keys clear of the booking
@@ -28,7 +33,11 @@ const chargedOf = (row) =>
     ? { rate: Number(row.charged_rate), currency: row.charged_currency }
     : null
 
-/** A cost-bearing booking as a cost item. Effective cost = amount × share. */
+/**
+ * A cost-bearing booking as a cost item. Effective cost = amount × share, or the
+ * retained amount once cancelled; `original` keeps what it would have cost, so
+ * the Costs page can report cancelled value without it ever reading as spend.
+ */
 export function bookingCostItem(b) {
   return {
     id: `bk-${b.id}`,
@@ -39,8 +48,10 @@ export function bookingCostItem(b) {
     trip_id: b.trip_id,
     currency: b.cost_currency,
     cost_share: b.cost_share,
-    effective: b.cost_amount * (b.cost_share != null ? b.cost_share : 1),
-    splits: Array.isArray(b.splits) ? b.splits : [],
+    cancelled: isCancelled(b),
+    original: bookingOriginal(b),
+    effective: bookingEffective(b),
+    splits: scaledSplits(b, b.splits),
     charged: chargedOf(b),
     booking: b,
   }
@@ -57,6 +68,10 @@ export function expenseCostItem(e) {
     trip_id: e.trip_id,
     currency: e.currency,
     cost_share: 1,
+    // An ad-hoc expense has nothing to cancel — the money is already spent — so
+    // these two are constants rather than a branch at every call site.
+    cancelled: false,
+    original: e.amount || 0,
     effective: e.amount || 0,
     splits: Array.isArray(e.splits) ? e.splits : [],
     charged: chargedOf(e),
@@ -76,6 +91,24 @@ export function hkdOf(item, amount, rates) {
     return item.charged.currency === 'HKD' ? value : toHKD(value, item.charged.currency, rates)
   }
   return toHKD(amount, item.currency, rates)
+}
+
+/**
+ * The viewer's share of what a cancelled booking WOULD have cost — the figure
+ * the Costs page reports as cancelled, as opposed to spent.
+ *
+ * It has to read the booking's OWN split rows rather than the item's: the cost
+ * item carries them already rescaled to the retained amount, which is the right
+ * basis for what was spent and the wrong one for what was called off.
+ *
+ * Identical to itemContribution for anything that isn't a cancelled booking.
+ */
+export function originalContribution(item, users) {
+  if (!item.cancelled) return itemContribution(item, users)
+  return itemContribution(
+    { ...item, effective: item.original, splits: item.booking?.splits ?? [] },
+    users,
+  )
 }
 
 /**

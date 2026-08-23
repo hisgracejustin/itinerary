@@ -207,17 +207,49 @@ const bookingBaseShape = {
   // Both are already folded into the split rows (see the schema comment).
   service_percent: z.number().min(0).max(1000).nullish(),
   shared_charge: z.number().min(0).nullish(),
+  // Cancellation is expressed as INTENT, never as a date: the server owns the
+  // clock (see updateBookingAction), so a cancellation day can't be back-dated
+  // from a form and the audit diff reads as a clean no → yes. `undefined`
+  // leaves the current state untouched on a partial update.
+  cancelled: z.boolean().optional(),
+  // What the provider kept. Only meaningful on a cancelled booking — see the
+  // refinement below.
+  retained_amount: z.number().finite().nonnegative().nullish(),
   source: z.enum(["manual", "parsed"]).nullish(),
   source_file: z.string().nullish(),
   raw_text: z.string().nullish(),
 };
+
+// A retained amount on a booking that isn't being cancelled is nonsense — it
+// would sit in the column contributing nothing and reappear the day someone
+// cancelled the booking for an unrelated reason. Fail loudly instead.
+//
+// Only checked when `cancelled` is explicitly false or absent-on-insert; a
+// partial update that sends a retained amount alone is legitimate (adjusting
+// the fee on an already-cancelled booking), and the action resolves it against
+// the stored state.
+function requireCancelledForRetained(
+  data: { cancelled?: boolean; retained_amount?: number | null },
+  ctx: z.RefinementCtx,
+  { isInsert }: { isInsert: boolean },
+) {
+  if (!data.retained_amount) return;
+  if (data.cancelled === false || (isInsert && !data.cancelled)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["retained_amount"],
+      message: "Only a cancelled booking can retain an amount",
+    });
+  }
+}
 
 const bookingBase = z.object(bookingBaseShape);
 
 export const bookingInsertSchema = bookingBase
   .superRefine(requirePayerWhenSplit)
   .superRefine(requireContributionsWithinAmount)
-  .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "cost_currency"));
+  .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "cost_currency"))
+  .superRefine((d, ctx) => requireCancelledForRetained(d, ctx, { isInsert: true }));
 
 // `id` is omitted (not just optional): the row to update is addressed by the
 // action's own id argument, so an `id` in the payload could only rewrite a
@@ -227,7 +259,8 @@ export const bookingUpdateSchema = bookingBase
   .partial()
   .superRefine(requirePayerWhenSplit)
   .superRefine(requireContributionsWithinAmount)
-  .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "cost_currency"));
+  .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "cost_currency"))
+  .superRefine((d, ctx) => requireCancelledForRetained(d, ctx, { isInsert: false }));
 
 // Ad-hoc shared cost. Splits are required and non-empty (an expense with nobody
 // to split is meaningless), so a payer is always required too.

@@ -3,6 +3,7 @@ import { formatCurrency } from '../lib/currencies'
 import { getMapsHref } from '../lib/calendar'
 import { sanitizeCancellationPolicy, formatCutoff, formatExpiry } from '../lib/cancellation'
 import { itemUnitTransfers } from '../lib/split'
+import { bookingEffective, isCancelled, scaledSplits } from '../lib/booking-cost'
 import { useTripContext } from '../lib/trip-context'
 import { getEntityAudit } from '@/lib/client-actions'
 import { memberLabel } from './AssigneePicker'
@@ -78,7 +79,12 @@ function Row({ label, children }) {
   )
 }
 
-export default function BookingDetails({ booking }) {
+/**
+ * @param action optional element rendered inside the cancelled banner — the
+ *   booking modal puts its Reinstate button here. Surfaces with nothing to
+ *   offer (the offline day sheet) pass nothing and get the fact alone.
+ */
+export default function BookingDetails({ booking, action = null }) {
   const { trips } = useTripContext()
   // Fetched rather than passed down: it's per-booking, only this view wants it,
   // and a reader who isn't an owner/admin gets an empty list back — so the
@@ -95,6 +101,15 @@ export default function BookingDetails({ booking }) {
     return () => { live = false }
   }, [bookingId])
   if (!booking) return null
+  // "12 Aug" — when someone pressed the button, in the READER's zone. Unlike
+  // every cutoff on this booking that is not a provider-clock question.
+  const cancelledOn = (() => {
+    if (!booking.cancelled_at) return null
+    const d = new Date(booking.cancelled_at)
+    return Number.isNaN(d.getTime())
+      ? null
+      : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  })()
   const details = booking.details || {}
   // The same href the cards' pin uses: the saved override, else a search derived
   // from the meeting point. Sharing the helper keeps the modal from disagreeing
@@ -114,15 +129,17 @@ export default function BookingDetails({ booking }) {
   // Net result of this booking's split, aggregated by settlement unit — "who
   // owes the payer's unit for this item". Roster comes from the booking's trip.
   const bookingTrip = (trips || []).find((t) => t.id === booking.trip_id)
-  const effectiveCost =
-    booking.cost_amount != null ? booking.cost_amount * (booking.cost_share ?? 1) : 0
+  // The shared rule, so this preview agrees with /settle: once cancelled, what
+  // people owe each other is the retained fee, split the way the booking was,
+  // with the absolute per-person figures rescaled to match.
+  const effectiveCost = booking.cost_amount != null ? bookingEffective(booking) : 0
   const splitResult = bookingTrip
     ? itemUnitTransfers({
         members: bookingTrip.members || [],
         parties: bookingTrip.parties || [],
         amount: effectiveCost,
         paidBy: booking.paid_by,
-        splits: booking.splits,
+        splits: scaledSplits(booking, booking.splits),
       })
     : null
   const dateOnly = booking.type === 'hotel' && details.informal
@@ -176,6 +193,27 @@ export default function BookingDetails({ booking }) {
 
   return (
     <div className="space-y-4 min-w-0">
+      {/* Leads, because it changes how everything below it should be read:
+          these are the dates of a plan that didn't happen. */}
+      {isCancelled(booking) && (
+        <div className="rounded-xl border border-outline/30 bg-surface-container px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-on-surface">
+                Cancelled{cancelledOn ? ` ${cancelledOn}` : ''}
+              </div>
+              <div className="text-xs text-on-surface-variant mt-0.5">
+                {/* Only claim it's counted when it actually is: a retained amount
+                    on a booking with no cost/currency reaches no total. */}
+                {booking.retained_amount > 0 && booking.cost_amount != null && booking.cost_currency
+                  ? `${formatCurrency(booking.retained_amount, booking.cost_currency)} kept by the provider — counted in the trip's costs.`
+                  : 'Nothing was kept, so it adds nothing to the trip’s costs.'}
+              </div>
+            </div>
+            {action}
+          </div>
+        </div>
+      )}
       <div>
         <span className="inline-block text-xs font-medium bg-surface-container text-on-surface-variant px-2.5 py-1 rounded-full">
           {TYPE_LABELS[booking.type] || booking.type}

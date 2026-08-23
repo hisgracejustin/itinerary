@@ -2,6 +2,8 @@
  * Calendar date utilities.
  */
 
+import { isCancelled } from './booking-cost'
+
 /**
  * Get the days to display in a month grid (includes leading/trailing days from adjacent months).
  * Returns an array of Date objects for a 6-row × 7-col grid.
@@ -240,10 +242,15 @@ export function getMapsHref(booking, details) {
  * Check if a date has overnight accommodation covered by any booking.
  * True when a hotel/cruise/camper spans that night, or a flight/train/bus is
  * still in transit through it (departure day up to, not including, arrival day).
+ *
+ * A CANCELLED booking never counts. This is the one place where getting the
+ * cancelled state wrong tells someone they have a bed on a night they have
+ * nowhere to sleep — a worse failure than any wrong figure on /costs.
  */
 export function hasOvernightCoverage(bookings, date) {
   const viewDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
   return bookings.some((b) => {
+    if (isCancelled(b)) return false
     if (!b.end_date) return false
     const start = new Date(b.start_date)
     const end = new Date(b.end_date)

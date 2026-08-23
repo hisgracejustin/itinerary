@@ -15,6 +15,7 @@ import {
   expenseTypeEntry,
   hkdOf as itemHkd,
   itemContribution,
+  originalContribution,
   scopeUserIds,
 } from '../lib/cost-items'
 import { isTripWritable } from '../lib/trip-permissions'
@@ -99,22 +100,31 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
   const viewerMember = (trips || []).flatMap((t) => t.members || []).find((m) => m.id === currentUserId)
   const meLabel = viewerMember ? memberFirstName(viewerMember) : 'Me'
 
-  const contribution = (item) =>
-    itemContribution(item, scopeUserIds({ scope, trip: tripById.get(item.trip_id), currentUserId }))
+  const scopeUsersFor = (item) =>
+    scopeUserIds({ scope, trip: tripById.get(item.trip_id), currentUserId })
+  const contribution = (item) => itemContribution(item, scopeUsersFor(item))
 
   // Which costs still have a cancellation decision to make: an upcoming booking
   // with nothing recorded, flagged inline so the culprits are findable.
   const missingPolicy = (it) =>
     it.kind === 'booking' &&
+    // Nothing left to decide once it's cancelled.
+    !it.cancelled &&
     !sanitizeCancellationPolicy(it.booking.details?.cancellation_policy) &&
     String(it.booking.start_date).slice(0, 16) >= wallClockInZone(nowMs, zoneOf(it.booking))
 
   // Everything the scope chips let through, BEFORE the category chips narrow
   // it. The chips are built from this set, so picking one never takes the other
   // chips (or its own) away.
+  //
+  // A cancelled booking contributes its RETAINED amount here, not its original
+  // cost (see lib/booking-cost.js): with nothing retained — the common case —
+  // `amount` is 0 and the row drops out of the total, the currency pills, the
+  // By Type bars and the list. A cancellation that cost a fee stays, because
+  // that fee is real spend. What was cancelled is reported separately below.
   const scopedAll = filteredItems
     .map((it) => ({ it, amount: contribution(it) }))
-    .filter((s) => s.amount != null && (scope === 'everyone' || s.amount > 0))
+    .filter((s) => s.amount != null && (scope === 'everyone' ? !(s.it.cancelled && !s.amount) : s.amount > 0))
 
   // Category chips. Only categories actually present are offered — a chip that
   // can only ever show an empty page is noise — and they narrow the WHOLE page:
@@ -144,12 +154,38 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
 
   // Items with a cost but no split rows: excluded from Me/Us, surfaced as a note
   // (with the total still-to-assign, so the low personal figure reads correctly).
+  // A cancelled booking that retained nothing has no money left to assign, so it
+  // must not sit in this warning forever reading "~HK$0 still to assign".
   const unsplitItems =
-    scope === 'everyone' ? [] : filteredItems.filter((it) => it.splits.length === 0 && inCategory(it))
+    scope === 'everyone'
+      ? []
+      : filteredItems.filter(
+          (it) => it.splits.length === 0 && inCategory(it) && !(it.cancelled && !it.effective),
+        )
   const unsplitCount = unsplitItems.length
   const unsplitTotalHKD = unsplitItems.reduce((sum, it) => sum + hkdOf(it, it.effective), 0)
 
   const totalHKD = scoped.reduce((sum, s) => sum + hkdOf(s.it, s.amount), 0)
+
+  // What was called off, reported at what it WOULD have cost. Any fee the
+  // provider kept is already in the total above as real spend, so the two
+  // figures never double-count the same money — they answer different
+  // questions ("what did the trip cost" vs "what did we call off").
+  //
+  // Follows the scope chips like every other card here: under Me/Us this is the
+  // viewer's share of the cancelled value, taken from the booking's own
+  // unscaled split rows (see originalContribution).
+  const cancelledEntries = filteredItems
+    .filter((it) => it.cancelled && inCategory(it))
+    .map((it) => ({ it, amount: originalContribution(it, scopeUsersFor(it)) }))
+    .filter((s) => s.amount != null && (scope === 'everyone' || s.amount > 0))
+  const cancelledCount = cancelledEntries.length
+  const cancelledHKD = cancelledEntries.reduce((sum, s) => sum + hkdOf(s.it, s.amount), 0)
+  // The slice of the trip total that is cancellation fees rather than travel.
+  const keptHKD = scoped.reduce(
+    (sum, s) => (s.it.cancelled ? sum + hkdOf(s.it, s.amount) : sum),
+    0,
+  )
 
   // Breakdown by currency.
   const byCurrency = {}
@@ -280,6 +316,23 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                 </div>
               ))}
             </div>
+            {/* Cancelled — a line inside the Total card rather than a card of
+                its own, so it can't push the headline figure below the fold on
+                a phone. The struck original is deliberately never styled like
+                spend: it is money that was called off, not money that went out. */}
+            {cancelledCount > 0 && (
+              <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-outline/20 pt-3 text-xs text-on-surface-variant">
+                <span className="font-medium shrink-0">{cancelledCount} cancelled</span>
+                <span className="line-through opacity-70 truncate">
+                  ~HK${cancelledHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </span>
+                {keptHKD > 0 && (
+                  <span className="text-amber-700 min-w-0">
+                    · ~HK${keptHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })} kept in fees, counted above
+                  </span>
+                )}
+              </div>
+            )}
             {scope !== 'everyone' && unsplitCount > 0 && (
               <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5">
                 <svg className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -343,7 +396,17 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                     <span className="text-base">{typeIcon(it.type)}</span>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-sm text-on-surface font-medium truncate">{it.title}</span>
+                        <span className={`text-sm text-on-surface font-medium truncate ${it.cancelled ? 'line-through opacity-60' : ''}`}>
+                          {it.title}
+                        </span>
+                        {/* Only a cancellation that kept a fee reaches this list
+                            at all, so the chip is always explaining why a
+                            cancelled row is in the total. */}
+                        {it.cancelled && (
+                          <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5">
+                            Fee
+                          </span>
+                        )}
                         {missingPolicy(it) && (
                           <span
                             className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
@@ -351,7 +414,9 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                           />
                         )}
                       </div>
-                      <div className="text-xs text-on-surface-variant truncate">{it.subtitle}</div>
+                      <div className="text-xs text-on-surface-variant truncate">
+                        {it.cancelled ? 'Cancellation fee' : it.subtitle}
+                      </div>
                     </div>
                   </div>
                   <div className="text-right shrink-0 ml-3">

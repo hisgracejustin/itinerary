@@ -2,6 +2,7 @@ import { Fragment } from 'react'
 import { TYPE_COLORS, TYPE_ICONS, formatTime, getRentalIcon, getMapsHref } from '../lib/calendar'
 import { getFlightDuration } from '../lib/airports'
 import { refundHint } from '../lib/refund-hint'
+import { isCancelled } from '../lib/booking-cost'
 
 function layoverDuration(arrivalISO, departureISO) {
   const arr = new Date(arrivalISO)
@@ -349,8 +350,30 @@ const DETAIL_COMPONENTS = {
   activity: ActivityDetails,
 }
 
+/**
+ * A cancelled booking stays on every calendar surface rather than vanishing —
+ * the trip's real shape, and the gap it left, are both worth seeing — but it
+ * must never read as something that is still happening. Dimmed, struck through,
+ * and chipped.
+ *
+ * The strike is applied as a descendant variant on `.font-semibold`, which in
+ * this file is the booking title in all six detail components and nothing else.
+ * If a detail component ever uses font-semibold for something that isn't the
+ * title, that text will pick up the strike too.
+ */
+const CANCELLED_CARD = 'opacity-60 [&_.font-semibold]:line-through'
+
+function CancelledChip() {
+  return (
+    <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-on-surface-variant bg-surface-container border border-outline/30 rounded-full px-1.5 py-0.5">
+      Cancelled
+    </span>
+  )
+}
+
 export default function BookingCard({ booking, onClick, hideTrip, displayDate, compact }) {
   const colors = TYPE_COLORS[booking.type] || TYPE_COLORS.activity
+  const cancelled = isCancelled(booking)
   const details = parseDetails(booking)
   const DetailComponent = DETAIL_COMPONENTS[booking.type] || ActivityDetails
   const mapsUrl = getMapsHref(booking, details)
@@ -360,8 +383,11 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
   const hasLaundry = booking.type === 'hotel' && details.laundry === true
 
   // Refund status at a glance — shared with the mobile agenda card so the two
-  // surfaces can't drift on which tier they show.
-  const policyHint = refundHint(booking, details)
+  // surfaces can't drift on which tier they show. Silent once cancelled: the
+  // decision it exists to inform has been made, and "↩ 100% until 12 Sep" on a
+  // struck-through card is advertising a refund that has already happened or
+  // already been forgone.
+  const policyHint = cancelled ? null : refundHint(booking, details)
   const attachmentCount = booking.attachment_count || 0
 
   // Determine check-in / check-out context for multi-day bookings
@@ -420,12 +446,15 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
     return (
       <div
         onClick={() => onClick?.(booking)}
-        className={`px-3 py-2 rounded-xl border-l-4 ${colors.border} bg-white shadow-elevation-1 transition-all duration-150 cursor-pointer mat-press flex items-center gap-2`}
+        className={`px-3 py-2 rounded-xl border-l-4 ${colors.border} bg-white shadow-elevation-1 transition-all duration-150 cursor-pointer mat-press flex items-center gap-2 ${cancelled ? 'opacity-60' : ''}`}
       >
         <span className="text-base shrink-0" aria-hidden>
           {booking.type === 'rental' ? getRentalIcon(details) : TYPE_ICONS[booking.type] || '🎯'}
         </span>
-        <span className="flex-1 min-w-0 truncate text-sm font-medium text-on-surface">{booking.title}</span>
+        <span className={`flex-1 min-w-0 truncate text-sm font-medium text-on-surface ${cancelled ? 'line-through' : ''}`}>
+          {booking.title}
+        </span>
+        {cancelled && <CancelledChip />}
         {hasLaundry && (
           <span className="shrink-0 text-xs" aria-label="Laundry available">🧺</span>
         )}
@@ -439,11 +468,17 @@ export default function BookingCard({ booking, onClick, hideTrip, displayDate, c
   return (
     <div
       onClick={() => onClick?.(booking)}
-      className={`p-4 rounded-xl border-l-4 ${colors.border} bg-white shadow-elevation-1 hover:shadow-elevation-2 transition-all duration-150 cursor-pointer relative mat-press`}
+      className={`p-4 rounded-xl border-l-4 ${colors.border} bg-white shadow-elevation-1 hover:shadow-elevation-2 transition-all duration-150 cursor-pointer relative mat-press ${cancelled ? CANCELLED_CARD : ''}`}
     >
       <DetailComponent booking={booking} details={details} />
-      {((!hideTrip && booking.trip) || mapsUrl || stayNote || policyHint || attachmentCount > 0) && (
+      {/* The chip sits in the meta row rather than pinned to the corner: the
+          flight/train number badge already lives at the card's top right, and
+          an absolute chip covered it. */}
+      {(cancelled || (!hideTrip && booking.trip) || mapsUrl || stayNote || policyHint || attachmentCount > 0) && (
         <div className="mt-2.5 pt-2 border-t border-outline/20 flex items-center justify-between gap-2">
+          {/* Outside the truncating span, or the chip gets clipped away on a
+              narrow card exactly when the title is longest. */}
+          {cancelled && <CancelledChip />}
           <span className="text-xs text-on-surface-variant min-w-0 truncate">
             {stayNote && <span className="text-on-surface font-medium">{stayNote}</span>}
             {stayNote && !hideTrip && booking.trip && <span className="mx-1.5 opacity-40">·</span>}

@@ -4,9 +4,13 @@ import BookingDetails from './BookingDetails'
 import AttachmentsSection from './AttachmentsSection'
 import UploadBooking from './UploadBooking'
 import { useToast } from './Toast'
-import { naiveStamp } from '../lib/airports'
+import { naiveStamp, wallClockInZone } from '../lib/airports'
 import { friendlyError } from '../lib/friendlyError'
 import { fieldFromServerMessage, focusFormField } from '../lib/booking-fields'
+import { bookingOriginal, isCancelled } from '../lib/booking-cost'
+import { nowInstant, refundableAsOf, sanitizeCancellationPolicy } from '../lib/cancellation'
+import { resolveZone } from '../lib/booking-zones'
+import { formatCurrency } from '../lib/currencies'
 
 /** Upload files staged in the browser to a saved booking. Best-effort per file. */
 async function uploadStagedFiles(bookingId, files) {
@@ -64,9 +68,153 @@ function mergeAsLayover(legs) {
   }
 }
 
-export default function BookingModal({ booking, onClose, onSave, onDelete, selectedTrip, tripName, availableTrips, allBookings = null }) {
+/**
+ * "How much did the provider keep?" — the one question a cancellation asks that
+ * the app can't answer for itself.
+ *
+ * Shows BOTH directions because the number a person actually has in front of
+ * them is usually the refund ("you'll get $14,561 back"), while the number the
+ * money math needs is what was kept. Typing either fills the other; only the
+ * kept side is stored.
+ *
+ * The confirm fires on MOUSEDOWN behind a ref guard, not on click: the amount
+ * input is focused while you press the button, and Safari blurs it regardless
+ * of what chromium does — a click handler can lose the race with the blur.
+ */
+function CancelPanel({ booking, prefill, kept, setKept, saving, onBack, onConfirm }) {
+  const firing = useRef(false)
+  const currency = booking?.cost_currency || 'USD'
+  const original = booking?.cost_amount == null ? null : bookingOriginal(booking)
+  const keptNum = Number(kept)
+  const validKept = Number.isFinite(keptNum) && keptNum >= 0 ? keptNum : 0
+  const overspent = original != null && validKept > original + 1e-9
+
+  // The refund field's own raw text while it is the one being typed in, or null
+  // when it should mirror the kept field. Without this the value round-trips
+  // through kept on every keystroke, so a half-typed "12." loses its point and
+  // an emptied field reads as a refund of 0 — i.e. the entire fare retained.
+  const [refundRaw, setRefundRaw] = useState(null)
+  const refunded =
+    refundRaw != null
+      ? refundRaw
+      : original == null
+        ? ''
+        : String(Math.round(Math.max(0, original - validKept) * 100) / 100)
+
+  const confirm = async () => {
+    if (firing.current || saving) return
+    firing.current = true
+    try {
+      await onConfirm(validKept)
+    } finally {
+      // Released even on failure: the panel stays mounted when the save is
+      // rejected, and a latched guard would leave the button permanently dead.
+      firing.current = false
+    }
+  }
+
+  return (
+    <div className="py-4">
+      <h3 className="text-lg font-medium text-on-surface mb-1">Mark as cancelled?</h3>
+      <p className="text-sm text-on-surface-variant mb-5">
+        &quot;{booking?.title}&quot; stays on the trip with its confirmation number and
+        attachments, struck through on the calendar. It stops counting toward the
+        trip&apos;s costs and splits — apart from anything the provider kept.
+      </p>
+
+      {original != null ? (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="block min-w-0">
+              <span className="block text-xs font-medium text-on-surface-variant mb-1.5">
+                Kept by provider
+              </span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                autoFocus
+                value={kept}
+                onChange={(e) => { setRefundRaw(null); setKept(e.target.value) }}
+                placeholder="0"
+                className="mat-input w-full"
+              />
+            </label>
+            <label className="block min-w-0">
+              <span className="block text-xs font-medium text-on-surface-variant mb-1.5">
+                Refunded to you
+              </span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                value={refunded}
+                onChange={(e) => {
+                  const raw = e.target.value
+                  setRefundRaw(raw)
+                  // An empty field is someone mid-edit, not a refund of nothing:
+                  // leave the stored figure alone until they type a number.
+                  if (raw === '') return
+                  const back = Number(raw)
+                  if (!Number.isFinite(back)) return
+                  setKept(String(Math.max(0, Math.round((original - back) * 100) / 100)))
+                }}
+                onBlur={() => setRefundRaw(null)}
+                className="mat-input w-full"
+              />
+            </label>
+          </div>
+          <p className="mt-2 text-xs text-on-surface-variant">
+            {formatCurrency(original, currency)} originally.{' '}
+            {prefill != null && (
+              <>Prefilled from the cancellation policy on file.</>
+            )}
+          </p>
+          {overspent && (
+            <p className="mt-2 text-xs text-amber-700">
+              That is more than the booking cost. Allowed, but worth a second look.
+            </p>
+          )}
+        </>
+      ) : (
+        // No fee field for an unpriced booking, deliberately. Every surface that
+        // spends a retained amount — /costs, split.js, getSettleData — requires a
+        // cost and a currency, so a fee recorded here would be stored and then
+        // counted precisely nowhere. Better to say why than to take a number and
+        // silently lose it.
+        <p className="text-xs text-on-surface-variant">
+          This booking has no cost recorded, so there is nothing to take out of the
+          trip&apos;s totals. To track a cancellation fee, add the cost first.
+        </p>
+      )}
+
+      <div className="flex items-center justify-end gap-3 mt-8">
+        <button type="button" onClick={onBack} disabled={saving} className="mat-btn-outlined">
+          Back
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onMouseDown={confirm}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium bg-on-surface text-white shadow-md hover:opacity-90 active:scale-[0.97] transition-all duration-200 disabled:opacity-50"
+        >
+          {saving ? 'Cancelling…' : 'Mark cancelled'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default function BookingModal({
+ booking, onClose, onSave, onDelete, selectedTrip, tripName, availableTrips, allBookings = null }) {
   const [saving, setSaving] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
+  // The cancel panel, and what the provider kept. Held as STRINGS so the two
+  // inputs can be cleared while typing without snapping back to 0.
+  const [showCancel, setShowCancel] = useState(false)
+  const [keptInput, setKeptInput] = useState('')
   const [mode, setMode] = useState('manual') // 'manual' | 'upload' | 'multi-review'
   const [parsedBookings, setParsedBookings] = useState([])
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -200,6 +348,50 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
       toast.error(friendlyError(err))
     }
   }
+
+  /**
+   * Cancel or reinstate. A PARTIAL update — bookingUpdateSchema is `.partial()`,
+   * so sending only these two fields leaves the dates, splits and everything
+   * else exactly as they are. The server stamps the cancellation date itself.
+   */
+  const applyCancellation = async (cancelled, retained = 0) => {
+    const target = current || booking
+    if (!target?.id) return
+    setSaving(true)
+    try {
+      const saved = await onSave({ cancelled, retained_amount: cancelled ? retained : 0 }, target.id)
+      if (saved?.id) setCurrent(saved)
+      setShowCancel(false)
+      setKeptInput('')
+      toast.success(cancelled ? 'Booking cancelled' : 'Booking reinstated')
+    } catch (err) {
+      toast.error(friendlyError(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /**
+   * What the provider would keep if you cancelled right now, per the recorded
+   * cancellation policy — the prefill for the panel below.
+   *
+   * This is the payoff for all the tier machinery in lib/cancellation.js: at the
+   * one moment it was built to inform, it fills the number in for you. Null when
+   * no policy is on file, in which case the field simply starts empty rather
+   * than guessing (an unrecorded policy is not evidence of anything).
+   */
+  const cancelPrefill = (() => {
+    const b = current || booking
+    if (!b?.id || b.cost_amount == null) return null
+    const details = typeof b.details === 'string' ? (() => { try { return JSON.parse(b.details) } catch { return {} } })() : (b.details || {})
+    const policy = sanitizeCancellationPolicy(details.cancellation_policy)
+    if (!policy) return null
+    // Read on the PROVIDER's clock, like every other cutoff decision.
+    const asOf = wallClockInZone(nowInstant(), resolveZone(b)).slice(0, 10)
+    const r = refundableAsOf(policy, bookingOriginal(b), asOf)
+    if (!r) return null
+    return Math.max(0, bookingOriginal(b) - r.refundable)
+  })()
 
   const handleParsed = (bookings, sourceFile) => {
     setParsedBookings(bookings)
@@ -361,9 +553,35 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
                 </button>
               </div>
             </div>
+          ) : showCancel ? (
+            <CancelPanel
+              booking={current || booking}
+              prefill={cancelPrefill}
+              kept={keptInput}
+              setKept={setKeptInput}
+              saving={saving}
+              onBack={() => setShowCancel(false)}
+              onConfirm={(retained) => applyCancellation(true, retained)}
+            />
           ) : viewMode ? (
             <div className="space-y-6">
-              <BookingDetails booking={current} />
+              {/* The cancelled banner lives in BookingDetails so the offline day
+                  sheet shows the same thing; only the undo is ours. */}
+              <BookingDetails
+                booking={current}
+                action={
+                  isCancelled(current) ? (
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onMouseDown={() => applyCancellation(false)}
+                      className="shrink-0 text-sm text-primary hover:text-accent-ink font-medium px-3 py-1.5 rounded-full hover:bg-primary-light transition-all duration-150 disabled:opacity-50"
+                    >
+                      Reinstate
+                    </button>
+                  ) : null
+                }
+              />
               <AttachmentsSection bookingId={current.id} mode="view" />
             </div>
           ) : mode === 'upload' && !current ? (
@@ -421,7 +639,7 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
         )}
 
         {/* Fixed footer */}
-        {!viewMode && !showDelete && !(mode === 'upload' && !current) && (
+        {!viewMode && !showDelete && !showCancel && !(mode === 'upload' && !current) && (
           <div className="border-t border-outline/20 px-6 py-4 shrink-0 rounded-b-2xl">
             {/* Why it's here and not only under the offending field: the form is
                 taller than the modal, so an inline error can be scrolled out of
@@ -454,13 +672,30 @@ export default function BookingModal({ booking, onClose, onSave, onDelete, selec
             <div className="flex items-center justify-between">
               <div>
                 {current && (
-                  <button
-                    type="button"
-                    onClick={() => setShowDelete(true)}
-                    className="text-sm text-red-600 hover:text-red-700 font-medium hover:bg-red-50 px-3 py-1.5 rounded-full transition-all duration-150"
-                  >
-                    Delete Booking
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowDelete(true)}
+                      className="text-sm text-red-600 hover:text-red-700 font-medium hover:bg-red-50 px-3 py-1.5 rounded-full transition-all duration-150"
+                    >
+                      Delete
+                    </button>
+                    {/* Deliberately below Delete's severity: cancelling keeps
+                        the row, the confirmation number and the attachments,
+                        and is one button away from being undone. */}
+                    {!isCancelled(current) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setKeptInput(cancelPrefill ? String(Math.round(cancelPrefill * 100) / 100) : '')
+                          setShowCancel(true)
+                        }}
+                        className="text-sm text-on-surface-variant hover:text-on-surface font-medium hover:bg-surface-container px-3 py-1.5 rounded-full transition-all duration-150"
+                      >
+                        Mark cancelled
+                      </button>
+                    )}
+                  </div>
                 )}
                 {mode === 'multi-review' && !treatAsLayover && savedCount > 0 && (
                   <span className="text-xs text-on-surface-variant">

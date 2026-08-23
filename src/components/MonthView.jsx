@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { getMonthGrid, getBookingsForDate, isSameDay, hasOvernightCoverage, TYPE_ICONS, getRentalIcon } from '../lib/calendar'
+import { isCancelled } from '../lib/booking-cost'
 import BookingChip from './BookingChip'
 import JourneyView from './JourneyView'
 import { formatReminderTime } from './DayReminders'
@@ -260,22 +261,25 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
           width: `calc(${widthPct}% - ${insetL + insetR}px)`,
           top: HEADER_PX + seg.lane * BAR_STRIDE,
         }}
-        title={b.title}
+        title={isCancelled(b) ? `${b.title} (cancelled)` : b.title}
         aria-label={
-          isStay(b)
+          (isStay(b)
             ? `${b.title}${seg.isStart ? ' (check-in)' : ''}${seg.isEnd ? ' (check-out)' : ''}`
-            : `${b.title}${seg.isStart ? ' (departs)' : ''}${seg.isEnd ? ' (arrives)' : ''}`
+            : `${b.title}${seg.isStart ? ' (departs)' : ''}${seg.isEnd ? ' (arrives)' : ''}`) +
+          // Opacity and a strike say nothing to a screen reader.
+          (isCancelled(b) ? ' (cancelled)' : '')
         }
         className={`absolute z-10 h-4 flex items-center gap-1 px-1.5 text-[10px] font-medium leading-none transition-colors ${colors} ${
           seg.isStart ? 'rounded-l-full' : ''
-        } ${seg.isEnd ? 'rounded-r-full' : ''}`}
+        } ${seg.isEnd ? 'rounded-r-full' : ''} ${isCancelled(b) ? 'opacity-50' : ''}`}
       >
         <span className="shrink-0 text-[9px]" aria-hidden>
           {/* Stays open with a key (the check-in moment); everything else just
               wears its type icon the whole way across. */}
           {isStay(b) && seg.isStart && b.type !== 'cruise' ? '🔑' : spanIcon(b)}
         </span>
-        <span className="truncate min-w-0">{b.title}</span>
+        {/* No room for a chip on a 16px bar, so the strike carries it alone. */}
+        <span className={`truncate min-w-0 ${isCancelled(b) ? 'line-through' : ''}`}>{b.title}</span>
       </button>
     )
   }

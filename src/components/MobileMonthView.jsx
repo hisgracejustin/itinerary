@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react
 import { getMonthGrid, getBookingsForDate, isSameDay, TYPE_COLORS, TYPE_ICONS, formatTime, hasOvernightCoverage, getRentalIcon, getMeetingPoint, getMapsHref } from '../lib/calendar'
 import { refundHint } from '../lib/refund-hint'
 import { parseDetails } from '../lib/bookingStats'
+import { isCancelled } from '../lib/booking-cost'
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
 import { useToast } from './Toast'
@@ -660,7 +661,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                         className="inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-medium hover:bg-amber-200 transition-colors"
                       >
                         <span className="shrink-0">🏡</span>
-                        <span className="truncate">{b.title}</span>
+                        <span className={`truncate ${isCancelled(b) ? 'line-through opacity-70' : ''}`}>{b.title}</span>
                         {parseDetails(b).laundry === true && (
                           <span className="shrink-0" aria-label="Laundry available">🧺</span>
                         )}
@@ -722,7 +723,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                         className="inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-medium hover:bg-indigo-200 transition-colors"
                       >
                         <span className="shrink-0">{getRentalIcon(details)}</span>
-                        <span className="truncate">{b.title}</span>
+                        <span className={`truncate ${isCancelled(b) ? 'line-through opacity-70' : ''}`}>{b.title}</span>
                         <span className="text-indigo-600 font-normal shrink-0">{dayNumber}/{totalDays}</span>
                       </button>
                     )
@@ -760,7 +761,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                         className={`inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors ${chipColors}`}
                       >
                         <span className="shrink-0">{typeIcon}</span>
-                        <span className="truncate">{b.title}</span>
+                        <span className={`truncate ${isCancelled(b) ? 'line-through opacity-70' : ''}`}>{b.title}</span>
                         <span className="font-normal opacity-70 shrink-0">{dayNumber}/{totalDays}</span>
                       </button>
                     )
@@ -1019,12 +1020,14 @@ function AgendaItem({ booking, displayDate, onClick }) {
     return (
       <button
         onClick={() => onClick?.(booking)}
-        className={`w-full text-left px-3 py-2 rounded-lg border-l-4 ${colors.border} ${edgeBg} transition-all duration-150`}
+        className={`w-full text-left px-3 py-2 rounded-lg border-l-4 ${colors.border} ${edgeBg} transition-all duration-150 ${isCancelled(booking) ? 'opacity-60' : ''}`}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-xs font-medium text-on-surface truncate">{stayNote}</span>
-            <span className="text-xs text-on-surface-variant truncate">{booking.title}</span>
+            <span className={`text-xs text-on-surface-variant truncate ${isCancelled(booking) ? 'line-through' : ''}`}>
+              {booking.title}
+            </span>
           </div>
           <span className="text-xs text-on-surface-variant shrink-0 ml-2">{relevantTime}</span>
         </div>
@@ -1035,13 +1038,22 @@ function AgendaItem({ booking, displayDate, onClick }) {
   return (
     <button
       onClick={() => onClick?.(booking)}
-      className={`w-full text-left p-3.5 rounded-xl border-l-4 ${colors.border} bg-white shadow-elevation-1 hover:shadow-elevation-2 transition-all duration-150 mat-press`}
+      className={`w-full text-left p-3.5 rounded-xl border-l-4 ${colors.border} bg-white shadow-elevation-1 hover:shadow-elevation-2 transition-all duration-150 mat-press ${isCancelled(booking) ? 'opacity-60' : ''}`}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="text-base shrink-0">{icon}</span>
           <div className="min-w-0">
-            <div className="font-medium text-sm text-on-surface truncate">{booking.title}</div>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <div className={`font-medium text-sm text-on-surface truncate ${isCancelled(booking) ? 'line-through' : ''}`}>
+                {booking.title}
+              </div>
+              {isCancelled(booking) && (
+                <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-on-surface-variant bg-surface-container border border-outline/30 rounded-full px-1.5 py-0.5">
+                  Cancelled
+                </span>
+              )}
+            </div>
             <div className="text-xs text-on-surface-variant flex items-center gap-1.5">
               {stayNote && <span className="text-on-surface font-medium">{stayNote}</span>}
               {stayNote && booking.provider && <span className="opacity-40">·</span>}

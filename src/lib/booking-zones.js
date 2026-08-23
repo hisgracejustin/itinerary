@@ -1,5 +1,6 @@
 import { getAirportTimezone } from './airports'
 import { parseDetails } from './bookingStats'
+import { isCancelled } from './booking-cost'
 
 /**
  * Which clock a booking's dates belong to — the PROVIDER's, not the reader's.
@@ -108,6 +109,11 @@ function placingFlight(booking, bookings) {
     // the dateline lands at a wall-clock time BEFORE it departs, so a flight
     // would otherwise qualify as its own preceding landing.
     if (!b || b.id === booking.id || b.type !== 'flight' || !b.start_date || !b.end_date) continue
+    // A cancelled flight is a journey that didn't happen, so it can't say where
+    // anyone ended up. Leaving it in would read every later booking's cutoffs on
+    // the clock of a city nobody flew to. The replacement flight, if there is
+    // one, is a live row and places things correctly on its own.
+    if (isCancelled(b)) continue
     // Naive wall-clock strings, so a lexicographic compare orders them.
     const qualifies = wholeDay
       ? String(b.end_date).slice(0, 10) <= startDay

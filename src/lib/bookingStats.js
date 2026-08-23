@@ -1,5 +1,6 @@
 import { getFlightDurationMinutes } from './airports'
 import { toHKD, formatCurrency } from './currencies'
+import { bookingEffective, isCancelled } from './booking-cost'
 
 /**
  * Per-type aggregates for the booking-type pages. Pure and display-ready: each
@@ -287,7 +288,10 @@ function activityStats(bookings) {
 function spendStat(bookings, rates) {
   const priced = bookings.filter((b) => b.cost_amount && b.cost_currency)
   if (priced.length === 0) return null
-  const effective = (b) => b.cost_amount * (b.cost_share != null ? b.cost_share : 1)
+  // The shared rule rather than a local copy — a cancelled booking spends only
+  // what was retained. getBookingStats already filters those out, so this is
+  // belt-and-braces against the two definitions drifting apart.
+  const effective = bookingEffective
   const currencies = [...new Set(priced.map((b) => b.cost_currency))]
   const hint =
     priced.length < bookings.length
@@ -322,8 +326,13 @@ export function getBookingStats(type, bookings, rates) {
   if (!Array.isArray(bookings) || bookings.length === 0) return []
   const build = BY_TYPE[type]
   if (!build) return []
-  const stats = build(bookings)
-  const spend = spendStat(bookings, rates)
+  // Cancelled bookings are excluded outright: a cancelled flight is not 12 hours
+  // in the air and a cancelled hotel is not 3 nights. Every count, duration and
+  // spend figure here describes the trip that actually happened.
+  const live = bookings.filter((b) => !isCancelled(b))
+  if (live.length === 0) return []
+  const stats = build(live)
+  const spend = spendStat(live, rates)
   if (spend) stats.push(spend)
   return stats
 }

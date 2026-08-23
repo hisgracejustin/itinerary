@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, getTableColumns, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, getTableColumns, gt, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { db, tables } from "@/db";
 import { isAdmin } from "./authz";
 import { personLabel } from "./audit";
@@ -575,7 +575,18 @@ export async function getSettleData(userId: string) {
         eq(tables.tripMembers.user_id, userId),
       ),
     )
-    .where(and(isNotNull(tables.bookings.cost_amount), isNotNull(tables.bookings.cost_currency)))
+    // Cost-bearing and still settleable. A cancelled booking that retained
+    // nothing is dropped here rather than filtered in the screen: split.js would
+    // otherwise file it under "unallocated"/"needs a payer", leaving a permanent
+    // needs-attention row about money that no longer exists. One that DID retain
+    // a fee stays — that fee is real and still has to be settled.
+    .where(
+      and(
+        isNotNull(tables.bookings.cost_amount),
+        isNotNull(tables.bookings.cost_currency),
+        or(isNull(tables.bookings.cancelled_at), gt(tables.bookings.retained_amount, 0)),
+      ),
+    )
     .orderBy(asc(tables.bookings.start_date));
   const bookingSplits = await bookingSplitsByBooking(bookingRows.map((b) => b.id));
   const bookings = bookingRows.map((b) => ({ ...b, splits: bookingSplits.get(b.id) ?? [] }));

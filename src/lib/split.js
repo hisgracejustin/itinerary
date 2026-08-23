@@ -55,7 +55,17 @@
  *    FX; the no-toHKD rule still holds. itemShares stays native; scaling the
  *    paid amount and shares by the same factor afterwards preserves proportions
  *    and extras exactly.
+ *  - CANCELLED BOOKINGS settle at their RETAINED amount, never their original
+ *    cost (see ./booking-cost). The payer fronted the whole fare and got the
+ *    refund back on their own card, so what is still outstanding between people
+ *    is the fee the provider kept — divided exactly the way the booking was.
+ *    A cancellation with nothing retained drops out of settlement entirely.
  */
+
+// The only import in this file, and deliberately a dependency-free one: the
+// no-toHKD rule above is about what this module may COMPUTE with, and
+// booking-cost.js brings no FX table with it.
+import { isCancelled, bookingEffective, scaledSplits } from './booking-cost'
 
 // Same zero-decimal set formatCurrency special-cases. ε is the settle threshold:
 // 1 whole unit for zero-decimal currencies, 1 cent otherwise.
@@ -270,17 +280,32 @@ function settleDenomination(nativeCurrency, chargedCurrency, chargedRate) {
   return { settleCurrency: nativeCurrency, settleRate: 1 }
 }
 
-/** Normalize a cost-bearing booking into a settle item, or null if not priced. */
+/**
+ * Normalize a cost-bearing booking into a settle item, or null if it has nothing
+ * left to settle — unpriced, or cancelled with nothing retained.
+ *
+ * A cancelled booking settles at its RETAINED amount (see cost-items.js): the
+ * payer fronted the whole fare and got the refund back on their own card, so
+ * what's still outstanding between people is the fee the provider kept, divided
+ * exactly the way the booking was. `scaledSplits` rescales the absolute
+ * per-person figures to match, which keeps Σ shares = retained = Σ funding.
+ *
+ * Returning null when nothing was retained matters beyond arithmetic: it keeps
+ * a cancelled booking out of the `unallocated`/`missingPayer` buckets, so a
+ * cancellation can't leave a permanent "needs attention" row about money that
+ * no longer exists.
+ */
 function bookingItem(b) {
   if (b.cost_amount == null || !b.cost_currency) return null
-  const share = b.cost_share != null ? b.cost_share : 1
+  const amount = bookingEffective(b)
+  if (isCancelled(b) && !(amount > 0)) return null
   return {
     kind: 'booking',
     ref: b,
-    amount: b.cost_amount * share,
+    amount,
     currency: b.cost_currency,
     paid_by: b.paid_by ?? null,
-    splits: Array.isArray(b.splits) ? b.splits : [],
+    splits: scaledSplits(b, b.splits),
     ...settleDenomination(b.cost_currency, b.charged_currency, b.charged_rate),
   }
 }
