@@ -40,7 +40,7 @@ import {
   updateExpenseAction,
   deleteExpenseAction,
 } from "@/actions/expenses";
-import { recordSettlementAction, deleteSettlementAction } from "@/actions/settle";
+import { recordSettlementAction, recordSettlementGroupAction, deleteSettlementAction } from "@/actions/settle";
 import { createTodoAction } from "@/actions/todos";
 import { getEntityAuditAction, getTripAuditAction } from "@/actions/audit";
 import { unwrap } from "@/lib/friendlyError";
@@ -81,6 +81,7 @@ export const updateExpense = async (id, updates) => unwrap(await updateExpenseAc
 export const deleteExpense = async (id) => unwrap(await deleteExpenseAction(id));
 
 export const recordSettlement = async (input) => unwrap(await recordSettlementAction(input));
+export const recordSettlementGroup = async (input) => unwrap(await recordSettlementGroupAction(input));
 export const deleteSettlement = async (id) => unwrap(await deleteSettlementAction(id));
 
 export const createTodo = async (input) => unwrap(await createTodoAction(input));

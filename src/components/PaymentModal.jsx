@@ -103,12 +103,17 @@ export default function PaymentModal({
         <TripSelect
           trips={tripOptions}
           value={form.trip_id}
-          onChange={(trip_id) => setForm((current) => ({
-            ...current,
-            trip_id,
-            from_user: null,
-            to_user: null,
-          }))}
+          onChange={(trip_id) => setForm((current) => {
+            // Keep the pre-filled people when they're on the newly picked trip
+            // (a Settle that couldn't pick the trip itself).
+            const ids = new Set((trips.find((trip) => trip.id === trip_id)?.members || []).map((m) => m.id));
+            return {
+              ...current,
+              trip_id,
+              from_user: ids.has(current.from_user) ? current.from_user : null,
+              to_user: ids.has(current.to_user) ? current.to_user : null,
+            };
+          })}
         />
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs font-medium text-on-surface-variant">From (paid)</span>

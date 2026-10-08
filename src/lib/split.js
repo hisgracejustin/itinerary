@@ -343,6 +343,7 @@ function add(map, currency, amount) {
  *                  paid: object, owed: object, net: object }>,
  *   unallocated: Array,   // cost-bearing items with no splits
  *   missingPayer: Array,  // items with splits but no payer
+ *   pairTransfers: Array<{ fromUnit: any, toUnit: any, amount: number, currency: string }>,
  * }}
  */
 export function computeBalances({
@@ -619,4 +620,105 @@ export function suggestTransfers(units = []) {
     }
   }
   return transfers
+}
+
+/**
+ * Split ONE payment between two settlement units into per-trip payments, so a
+ * transfer shown across several selected trips can be recorded without
+ * knocking any single trip's balance out of line.
+ *
+ * Each trip is settled against its own DIRECT (pairwise) debt between the two
+ * units in `currency`:
+ *  - a trip where `toKey` owes `fromKey` (the debt runs the other way) is
+ *    cleared exactly with a reverse-direction part — the netting the combined
+ *    figure already did, made explicit per trip;
+ *  - the remaining money (`amount` plus those offsets) is shared across the
+ *    trips where `fromKey` owes `toKey`, in proportion to each trip's debt. Paying
+ *    the full combined debt therefore zeroes every trip; a partial or over-
+ *    payment lands proportionally.
+ * Parts are rounded to the currency's minor unit, with any rounding remainder on
+ * the largest part, so the forward parts minus the reverse parts equal `amount`
+ * exactly.
+ *
+ * Returns null when the two units have no direct debt in that direction across
+ * these trips (e.g. a "simplify settlements" transfer routed between people who
+ * don't owe each other) — there's no honest per-trip split for that.
+ *
+ * @param {object} data same rows computeBalances takes, spanning any trips
+ * @param {string} data.fromKey  paying unit's key (unit.key from computeBalances)
+ * @param {string} data.toKey    receiving unit's key
+ * @param {string} data.currency
+ * @param {number} data.amount   total being paid, > 0
+ * @returns {null | Array<{ trip_id: string, from_user: string, to_user: string,
+ *                          amount: number, reverse: boolean }>}
+ */
+export function allocateTransferByTrip({
+  members = [],
+  parties = [],
+  bookings = [],
+  expenses = [],
+  settlements = [],
+  fromKey,
+  toKey,
+  currency,
+  amount,
+} = {}) {
+  if (!fromKey || !toKey || fromKey === toKey || !currency || !(amount > 0)) return null
+
+  const tripIds = new Set()
+  for (const rows of [members, bookings, expenses, settlements]) {
+    for (const r of rows) if (r.trip_id) tripIds.add(r.trip_id)
+  }
+  const inTrip = (tripId) => (r) => r.trip_id === tripId
+
+  // Signed per-trip direct debt: > 0 means fromKey owes toKey in that trip.
+  const debts = []
+  for (const tripId of tripIds) {
+    const only = inTrip(tripId)
+    const { pairTransfers } = computeBalances({
+      members: members.filter(only),
+      parties: parties.filter(only),
+      bookings: bookings.filter(only),
+      expenses: expenses.filter(only),
+      settlements: settlements.filter(only),
+    })
+    for (const t of pairTransfers) {
+      if (t.currency !== currency || !t.fromUnit || !t.toUnit) continue
+      if (t.fromUnit.key === fromKey && t.toUnit.key === toKey) {
+        debts.push({ tripId, net: t.amount, payer: t.fromUnit.memberIds[0], payee: t.toUnit.memberIds[0] })
+      } else if (t.fromUnit.key === toKey && t.toUnit.key === fromKey) {
+        debts.push({ tripId, net: -t.amount, payer: t.toUnit.memberIds[0], payee: t.fromUnit.memberIds[0] })
+      }
+    }
+  }
+
+  // Work in integer minor units so the parts add up to the cent.
+  const scale = ZERO_DECIMAL.includes(currency) ? 1 : 100
+  const toMinor = (v) => Math.round(v * scale)
+  const forward = debts.filter((d) => d.net > 0)
+  const reverse = debts.filter((d) => d.net < 0)
+  const forwardTotal = forward.reduce((s, d) => s + d.net, 0)
+  const reverseTotal = reverse.reduce((s, d) => s - d.net, 0)
+  if (forward.length === 0 || forwardTotal - reverseTotal < epsilonFor(currency)) return null
+
+  const reverseParts = reverse
+    .map((d) => ({ trip_id: d.tripId, from_user: d.payee, to_user: d.payer, minor: toMinor(-d.net), reverse: true }))
+    .filter((p) => p.minor > 0)
+  const reverseMinor = reverseParts.reduce((s, p) => s + p.minor, 0)
+  const forwardMinor = toMinor(amount) + reverseMinor
+  const forwardParts = forward.map((d) => ({
+    trip_id: d.tripId,
+    from_user: d.payer,
+    to_user: d.payee,
+    minor: Math.round((forwardMinor * d.net) / forwardTotal),
+    reverse: false,
+  }))
+  // Put the rounding remainder on the largest part.
+  const drift = forwardMinor - forwardParts.reduce((s, p) => s + p.minor, 0)
+  if (drift) forwardParts.reduce((big, p) => (p.minor > big.minor ? p : big)).minor += drift
+
+  return [...forwardParts, ...reverseParts]
+    .filter((p) => p.minor > 0)
+    .sort((a, b) => Number(a.reverse) - Number(b.reverse) || b.minor - a.minor)
+    .map(({ minor, ...p }) => ({ ...p, amount: minor / scale }))
 }

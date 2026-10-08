@@ -328,6 +328,43 @@ export const settlementInsertSchema = z
     message: "A settlement needs two different people",
   });
 
+// One payment covering several trips, recorded as one row per trip (see
+// allocateTransferByTrip). The client mints the group id and every part id once
+// per submission, so a retry lands on rows already written. A part may run in
+// the opposite direction (clearing a trip where the debt ran the other way), so
+// each part names its own payer and payee.
+export const settlementGroupInsertSchema = z
+  .object({
+    group_id: z.string().uuid(),
+    currency: currencySchema,
+    note: z.string().nullish(),
+    parts: z
+      .array(
+        z
+          .object({
+            id: z.string().uuid(),
+            trip_id: z.string().uuid(),
+            from_user: z.string().min(1),
+            to_user: z.string().min(1),
+            amount: z.number().positive(),
+          })
+          .refine((d) => d.from_user !== d.to_user, {
+            path: ["to_user"],
+            message: "A settlement needs two different people",
+          }),
+      )
+      .min(2, "A multi-trip payment needs at least two trips")
+      .max(100),
+  })
+  .refine((d) => new Set(d.parts.map((p) => p.trip_id)).size === d.parts.length, {
+    path: ["parts"],
+    message: "Each trip can appear only once in a payment",
+  })
+  .refine((d) => new Set(d.parts.map((p) => p.id)).size === d.parts.length, {
+    path: ["parts"],
+    message: "Each part needs its own id",
+  });
+
 // Settlement unit (couple/group) for a trip. member_ids assigns the party to
 // those members in one shot; a member belongs to at most one party.
 export const partySchema = z.object({

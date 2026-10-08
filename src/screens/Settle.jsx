@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
-import { computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
+import { allocateTransferByTrip, computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
 import { bookingEffective, scaledSplits } from '../lib/booking-cost'
 // toHKD is for the Split-costs SORT ORDER only — every displayed amount on this
 // page stays exact per-currency (no ~ conversions).
@@ -13,6 +13,7 @@ import { Avatar, memberLabel, memberFirstName } from '../components/AssigneePick
 import BookingModal from '../components/BookingModal'
 import ExpenseModal from '../components/ExpenseModal'
 import PaymentModal from '../components/PaymentModal'
+import SplitPaymentModal from '../components/SplitPaymentModal'
 import { useToast } from '../components/Toast'
 import { useConfirmDanger } from '../components/ConfirmDanger'
 import { friendlyError } from '../lib/friendlyError'
@@ -52,6 +53,8 @@ export default function Settle({
   const [editingExpense, setEditingExpense] = useState(null)
   const [paymentInitialValues, setPaymentInitialValues] = useState(null)
   const [paymentModalKey, setPaymentModalKey] = useState(0)
+  // A transfer spanning several trips, being settled as one payment.
+  const [splitPayment, setSplitPayment] = useState(null)
   const openBooking = (booking) => {
     setEditingBooking(booking)
     setBookingModalOpen(true)
@@ -293,13 +296,33 @@ export default function Settle({
     })
 
   const markPaid = (t) => {
-    openPayment({
-      trip_id: selectedWritableTrip,
+    const amount = ZERO_DECIMAL.includes(t.currency) ? Math.round(t.amount) : Math.round(t.amount * 100) / 100
+    const base = {
       from_user: t.fromUnit.memberIds[0] ?? null,
       to_user: t.toUnit.memberIds[0] ?? null,
-      amount: String(ZERO_DECIMAL.includes(t.currency) ? Math.round(t.amount) : Math.round(t.amount * 100) / 100),
+      amount: String(amount),
       currency: t.currency,
+    }
+    if (selectedWritableTrip) return openPayment({ trip_id: selectedWritableTrip, ...base })
+    // Several trips selected: a payment is recorded per trip, so split this one
+    // by where the debt actually sits.
+    const parts = allocateTransferByTrip({
+      members, parties, bookings, expenses, settlements,
+      fromKey: t.fromUnit.key,
+      toKey: t.toUnit.key,
+      currency: t.currency,
+      amount,
     })
+    if (parts?.every((p) => writableTripIds.has(p.trip_id))) {
+      if (parts.length === 1) {
+        const [part] = parts
+        return openPayment({ ...base, trip_id: part.trip_id, from_user: part.from_user, to_user: part.to_user })
+      }
+      return setSplitPayment({ transfer: t, amount: String(amount) })
+    }
+    // No per-trip split (a simplified transfer between people who don't owe
+    // each other directly, or a trip you can't edit): pick the trip by hand.
+    openPayment({ trip_id: '', ...base })
   }
 
   const run = async (fn, success) => {
@@ -347,6 +370,33 @@ export default function Settle({
     return run(async () => {
       for (const it of targets) await saveEvenSplit(it)
     }, `Split ${targets.length} item${targets.length === 1 ? '' : 's'} evenly`)
+  }
+
+  // Payments list: a multi-trip payment's per-trip rows show as ONE entry, at
+  // the position of its first row. `allRows` is the whole group (across every
+  // accessible trip), so a selection that shows only some of its trips can
+  // still say what the payment was.
+  const tripName = (id) => trips.find((trip) => trip.id === id)?.name ?? 'Trip'
+  const paymentEntries = []
+  {
+    const byGroup = new Map()
+    for (const s of settlements) {
+      if (!s.group_id) {
+        paymentEntries.push({ key: s.id, rows: [s], allRows: [s] })
+        continue
+      }
+      let entry = byGroup.get(s.group_id)
+      if (!entry) {
+        entry = {
+          key: s.group_id,
+          rows: [],
+          allRows: (allSettlements || []).filter((r) => r.group_id === s.group_id),
+        }
+        byGroup.set(s.group_id, entry)
+        paymentEntries.push(entry)
+      }
+      entry.rows.push(s)
+    }
   }
 
   return (
@@ -503,7 +553,7 @@ export default function Settle({
                       t={t}
                       memberByUserId={memberByUserId}
                       currentUserId={currentUserId}
-                      onSettle={selectedWritableTrip ? () => markPaid(t) : undefined}
+                      onSettle={writableSelectedTrips.length > 0 ? () => markPaid(t) : undefined}
                     />
                   ))}
                 </div>
@@ -709,41 +759,27 @@ export default function Settle({
             <EmptyLine>No payments recorded yet.</EmptyLine>
           ) : (
             <div className="space-y-1">
-              {settlements.map((s) => (
-                <div key={s.id} className="flex items-center gap-2 py-2 border-b border-outline/20 last:border-0">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm text-on-surface truncate">
-                      <span className="font-medium">{personLabel(s.from_user)}</span>
-                      <span className="text-on-surface-variant"> → </span>
-                      <span className="font-medium">{personLabel(s.to_user)}</span>
-                    </div>
-                    {s.note && <div className="text-xs text-on-surface-variant truncate">{s.note}</div>}
-                  </div>
-                  <span className="text-sm font-medium text-on-surface shrink-0">
-                    {formatCurrency(Number(s.amount) || 0, s.currency)}
-                  </span>
-                  {writableTripIds.has(s.trip_id) && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const ok = await ask({
-                          title: 'Delete this payment?',
-                          message: `${personLabel(s.from_user)} → ${personLabel(s.to_user)} (${formatCurrency(Number(s.amount) || 0, s.currency)}) will be permanently removed. This cannot be undone.`,
-                          confirmLabel: 'Delete',
-                        })
-                        if (!ok) return
-                        run(() => deleteSettlement(s.id), 'Payment deleted')
-                      }}
-                      disabled={busy}
-                      aria-label="Delete payment"
-                      className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 shrink-0"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
+              {paymentEntries.map((entry) => (
+                <PaymentEntry
+                  key={entry.key}
+                  entry={entry}
+                  personLabel={personLabel}
+                  tripName={tripName}
+                  canDelete={entry.allRows.every((r) => writableTripIds.has(r.trip_id))}
+                  busy={busy}
+                  onDelete={async (headline) => {
+                    const multi = entry.allRows.length > 1
+                    const ok = await ask({
+                      title: 'Delete this payment?',
+                      message: multi
+                        ? `${headline} covers ${entry.allRows.length} trips (${entry.allRows.map((r) => tripName(r.trip_id)).join(', ')}). It will be removed from all of them. This cannot be undone.`
+                        : `${headline} will be permanently removed. This cannot be undone.`,
+                      confirmLabel: 'Delete',
+                    })
+                    if (!ok) return
+                    run(() => deleteSettlement(entry.rows[0].id), 'Payment deleted')
+                  }}
+                />
               ))}
             </div>
           )}
@@ -774,6 +810,14 @@ export default function Settle({
           selectedTrip={selectedTrip}
           availableTrips={writableTrips}
           onClose={() => setEditingExpense(null)}
+        />
+      )}
+      {splitPayment && (
+        <SplitPaymentModal
+          transfer={splitPayment.transfer}
+          initialAmount={splitPayment.amount}
+          data={{ members, parties, bookings, expenses, settlements }}
+          onClose={() => setSplitPayment(null)}
         />
       )}
       {paymentInitialValues && (
@@ -954,6 +998,66 @@ function TransferCard({ t, memberByUserId, currentUserId, onSettle }) {
           {formatCurrency(t.amount, t.currency)}
         </span>
       </div>
+    </div>
+  )
+}
+
+/**
+ * One line of the Payments list: a plain payment, or a multi-trip payment's
+ * per-trip rows read as one. The headline is the group's net — its parts can
+ * run both ways (a part clearing a trip where the debt ran the other way).
+ */
+function PaymentEntry({ entry, personLabel, tripName, canDelete, busy, onDelete }) {
+  const { rows, allRows } = entry
+  const first = rows[0]
+  const currency = first.currency
+  const multi = allRows.length > 1
+  // With some of its trips outside the selection, describe only what lands in
+  // the selected trips; the line underneath says it's part of something bigger.
+  const hidden = allRows.length - rows.length
+  const basis = hidden > 0 ? rows : allRows
+  // Orient on whichever direction carries more money.
+  const sumDir = (from, to) =>
+    basis.reduce((sum, r) => sum + (r.from_user === from && r.to_user === to ? Number(r.amount) || 0 : 0), 0)
+  const forward = sumDir(first.from_user, first.to_user)
+  const backward = sumDir(first.to_user, first.from_user)
+  const [fromUser, toUser] = forward >= backward ? [first.from_user, first.to_user] : [first.to_user, first.from_user]
+  const net = Math.abs(forward - backward)
+  const headline = `${personLabel(fromUser)} → ${personLabel(toUser)} (${formatCurrency(net, currency)})`
+  const signed = (r) => (r.from_user === fromUser ? '' : '−') + formatCurrency(Number(r.amount) || 0, currency)
+
+  return (
+    <div className="flex items-center gap-2 py-2 border-b border-outline/20 last:border-0" data-testid="payment-entry">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm text-on-surface truncate">
+          <span className="font-medium">{personLabel(fromUser)}</span>
+          <span className="text-on-surface-variant"> → </span>
+          <span className="font-medium">{personLabel(toUser)}</span>
+        </div>
+        {multi && (
+          <div className="text-xs text-on-surface-variant">
+            {rows.map((r) => `${tripName(r.trip_id)} ${signed(r)}`).join(' · ')}
+            {hidden > 0 && ` · part of a payment across ${allRows.length} trips`}
+          </div>
+        )}
+        {first.note && <div className="text-xs text-on-surface-variant truncate">{first.note}</div>}
+      </div>
+      <span className="text-sm font-medium text-on-surface shrink-0">
+        {formatCurrency(net, currency)}
+      </span>
+      {canDelete && (
+        <button
+          type="button"
+          onClick={() => onDelete(headline)}
+          disabled={busy}
+          aria-label="Delete payment"
+          className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
     </div>
   )
 }
