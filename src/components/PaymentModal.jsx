@@ -44,7 +44,11 @@ export default function PaymentModal({
   });
   const [saving, setSaving] = useState(false);
 
-  const roster = trips.find((trip) => trip.id === form.trip_id)?.members || [];
+  // Before a trip is picked, offer everyone on the offered trips, so pre-filled
+  // people show by name; picking a trip narrows it to that trip's members.
+  const roster = form.trip_id
+    ? trips.find((trip) => trip.id === form.trip_id)?.members || []
+    : [...new Map(tripOptions.flatMap((trip) => trip.members || []).map((m) => [m.id, m])).values()];
   const from = roster.find((member) => member.id === form.from_user);
   const recipients = roster.filter((member) => {
     if (member.id === form.from_user) return false;

@@ -567,7 +567,7 @@ export const settlements = pgTable(
     currency: text("currency").notNull(),
     note: text("note"),
     // Shared by the per-trip rows of ONE payment that covered several trips
-    // (see allocateTransferByTrip). Each row still settles its own trip, so
+    // (see allocateTransfer). Each row still settles its own trip, so
     // every trip's balance stands on its own; the group only lets the UI show
     // them as one payment and delete them together. Null for a plain payment.
     group_id: uuid("group_id"),

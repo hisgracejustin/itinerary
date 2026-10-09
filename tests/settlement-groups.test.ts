@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { allocateTransferByTrip, computeBalances, suggestTransfers } from "../src/lib/split.js";
+import { allocateTransfer, allocateTransferByTrip, computeBalances, suggestTransfers } from "../src/lib/split.js";
 import { settlementGroupInsertSchema } from "../src/lib/schemas";
 
 // A multi-trip payment is recorded as one settlement per trip. These tests pin
@@ -268,4 +268,91 @@ test("group schema: needs two distinct trips and distinct part ids", () => {
     settlementGroupInsertSchema.safeParse({ ...ok, parts: [part(id1, T1), { ...part(id2, T2), to_user: "a" }] }).success,
     false,
   );
+});
+
+// Reported: a leftover CAD transfer settled fine with only Alaska selected, but
+// with Alaska + Vancouver + North America selected Settle fell back to "pick a
+// trip". The CAD debt lives on Alaska only, and with "simplify settlements" on
+// the transfer is rerouted between people who don't owe each other directly.
+const ALASKA = T1;
+const VANCOUVER = T2;
+const NORTH_AMERICA = T3;
+const reported = (): Data => ({
+  members: [ALASKA, VANCOUVER, NORTH_AMERICA].flatMap((t) => [member("a", t), member("b", t), member("c", t)]),
+  parties: [],
+  bookings: [],
+  expenses: [
+    // Alaska, CAD: A owes B 30; B owes C 30 → simplified, A pays C 30.
+    expense(ALASKA, "b", 60, ["a", "b"], "CAD"),
+    expense(ALASKA, "c", 60, ["b", "c"], "CAD"),
+    // Other trips only in other currencies.
+    expense(VANCOUVER, "a", 90, ["a", "b", "c"], "HKD"),
+    expense(NORTH_AMERICA, "c", 90, ["a", "b", "c"], "USD"),
+  ],
+  settlements: [],
+});
+
+test("reported: a simplified CAD transfer settles on the one trip that holds the balances", () => {
+  const data = reported();
+  const cad = suggestTransfers(computeBalances(data).units).filter((t) => t.currency === "CAD");
+  assert.deepEqual(cad.map((t) => [(t.fromUnit as { key: string }).key, (t.toUnit as { key: string }).key, t.amount]), [["a", "c", 30]]);
+
+  // No direct debt between A and C, so the direct-debt split can't place it…
+  assert.equal(allocateTransferByTrip({ ...data, fromKey: "a", toKey: "c", currency: "CAD", amount: 30 }), null);
+  // …but by balances it belongs on Alaska, exactly as when Alaska alone is selected.
+  const parts = allocateTransfer({ ...data, fromKey: "a", toKey: "c", currency: "CAD", amount: 30 });
+  assert.deepEqual(parts, [{ trip_id: ALASKA, from_user: "a", to_user: "c", amount: 30, reverse: false }]);
+
+  // Alaska's CAD balances are all square afterwards, and nothing else moved.
+  const after = record(data, parts!, "CAD");
+  for (const u of computeBalances(onlyTrip(after, ALASKA)).units) {
+    assert.ok(Math.abs((u.net as Record<string, number>).CAD ?? 0) < 0.005, `${u.key} still nets CAD`);
+  }
+  assert.deepEqual(suggestTransfers(computeBalances(after).units).filter((t) => t.currency === "CAD"), []);
+});
+
+test("simplified transfer spread over two trips by balances, capped so nobody overshoots in a trip", () => {
+  const data: Data = {
+    members: [T1, T2].flatMap((t) => [member("a", t), member("b", t), member("c", t)]),
+    parties: [],
+    bookings: [],
+    expenses: [
+      // Trip 1: A owes B 20, B owes C 20. Trip 2: A owes B 10, B owes C 10.
+      expense(T1, "b", 40, ["a", "b"]), expense(T1, "c", 40, ["b", "c"]),
+      expense(T2, "b", 20, ["a", "b"]), expense(T2, "c", 20, ["b", "c"]),
+    ],
+    settlements: [],
+  };
+  const parts = allocateTransfer({ ...data, fromKey: "a", toKey: "c", currency: "HKD", amount: 30 });
+  assert.deepEqual(parts!.map((p) => [p.trip_id, p.amount]), [[T1, 20], [T2, 10]]);
+  const after = record(data, parts!, "HKD");
+  for (const t of [T1, T2]) {
+    for (const u of computeBalances(onlyTrip(after, t)).units) {
+      assert.ok(Math.abs((u.net as Record<string, number>).HKD ?? 0) < 0.005, `${t}: ${u.key} still nets HKD`);
+    }
+  }
+});
+
+test("a simplified transfer that no set of trips can absorb still has no split", () => {
+  const data: Data = {
+    members: [member("a", T1), member("b", T1), member("b", T2), member("c", T2)],
+    parties: [],
+    bookings: [],
+    // A owes B on trip 1 only; C is owed on trip 2 only — A and C never share a trip.
+    expenses: [expense(T1, "b", 100, ["a", "b"]), expense(T2, "c", 100, ["b", "c"])],
+    settlements: [],
+  };
+  assert.equal(allocateTransfer({ ...data, fromKey: "a", toKey: "c", currency: "HKD", amount: 50 }), null);
+});
+
+test("direct debts are split first, so opposite-direction trips are cleared exactly too", () => {
+  const data: Data = {
+    members: [member("a", T1), member("b", T1), member("a", T2), member("b", T2)],
+    parties: [],
+    bookings: [],
+    expenses: [expense(T1, "b", 200, ["a", "b"]), expense(T2, "a", 60, ["a", "b"])],
+    settlements: [],
+  };
+  const parts = allocateTransfer({ ...data, fromKey: "a", toKey: "b", currency: "HKD", amount: 70 });
+  assert.deepEqual(parts!.map((p) => [p.trip_id, p.amount, p.reverse]), [[T1, 100, false], [T2, 30, true]]);
 });

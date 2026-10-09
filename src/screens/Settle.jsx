@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useTripContext } from '../lib/trip-context'
-import { allocateTransferByTrip, computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
+import { allocateTransfer, computeBalances, suggestTransfers, itemViewerNet } from '../lib/split'
 import { bookingEffective, scaledSplits } from '../lib/booking-cost'
 // toHKD is for the Split-costs SORT ORDER only — every displayed amount on this
 // page stays exact per-currency (no ~ conversions).
@@ -306,7 +306,7 @@ export default function Settle({
     if (selectedWritableTrip) return openPayment({ trip_id: selectedWritableTrip, ...base })
     // Several trips selected: a payment is recorded per trip, so split this one
     // by where the debt actually sits.
-    const parts = allocateTransferByTrip({
+    const parts = allocateTransfer({
       members, parties, bookings, expenses, settlements,
       fromKey: t.fromUnit.key,
       toKey: t.toUnit.key,
@@ -320,9 +320,14 @@ export default function Settle({
       }
       return setSplitPayment({ transfer: t, amount: String(amount) })
     }
-    // No per-trip split (a simplified transfer between people who don't owe
-    // each other directly, or a trip you can't edit): pick the trip by hand.
-    openPayment({ trip_id: '', ...base })
+    // No per-trip split (the payer owes in one trip and the payee is owed in
+    // another, or a trip you can't edit): pick the trip by hand — pre-picked
+    // when only one selected trip has both people on it.
+    const shared = writableSelectedTrips.filter((trip) => {
+      const ids = new Set((trip.members || []).map((m) => m.id))
+      return ids.has(base.from_user) && ids.has(base.to_user)
+    })
+    openPayment({ trip_id: shared.length === 1 ? shared[0].id : '', ...base })
   }
 
   const run = async (fn, success) => {

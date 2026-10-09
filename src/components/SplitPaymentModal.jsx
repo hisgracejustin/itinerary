@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import FormModal from "./FormModal";
-import { allocateTransferByTrip } from "../lib/split";
+import { allocateTransfer } from "../lib/split";
 import { formatCurrency } from "../lib/currencies";
 import { recordSettlement, recordSettlementGroup } from "../lib/client-actions";
 import { friendlyError } from "../lib/friendlyError";
@@ -13,7 +13,7 @@ const cleanAmount = (raw) => String(raw).replace(/[^0-9.]/g, "");
 
 /**
  * Settle a transfer that spans several trips in one go. The payment is split
- * per trip (allocateTransferByTrip) and recorded as one row per trip under a
+ * per trip (allocateTransfer) and recorded as one row per trip under a
  * shared group id, so each trip's balance stays right on its own while the
  * Payments list shows a single payment.
  *
@@ -37,7 +37,7 @@ export default function SplitPaymentModal({ transfer, initialAmount, data, onClo
   const parts = useMemo(
     () =>
       total > 0
-        ? allocateTransferByTrip({
+        ? allocateTransfer({
             ...data,
             fromKey: fromUnit.key,
             toKey: toUnit.key,

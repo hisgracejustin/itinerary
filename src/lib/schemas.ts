@@ -329,7 +329,7 @@ export const settlementInsertSchema = z
   });
 
 // One payment covering several trips, recorded as one row per trip (see
-// allocateTransferByTrip). The client mints the group id and every part id once
+// allocateTransfer). The client mints the group id and every part id once
 // per submission, so a retry lands on rows already written. A part may run in
 // the opposite direction (clearing a trip where the debt ran the other way), so
 // each part names its own payer and payee.
