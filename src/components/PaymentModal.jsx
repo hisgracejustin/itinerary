@@ -3,8 +3,10 @@
 import { useRef, useState } from "react";
 import FormModal from "./FormModal";
 import TripSelect from "./TripSelect";
-import AssigneePicker from "./AssigneePicker";
+import AssigneePicker, { memberFirstName } from "./AssigneePicker";
+import PaidCurrencyEditor from "./PaidCurrencyEditor";
 import { CURRENCIES } from "../lib/currencies";
+import { resolvePaid, startPaid } from "../lib/settle-fx";
 import { recordSettlement } from "../lib/client-actions";
 import { friendlyError } from "../lib/friendlyError";
 import { useToast } from "./Toast";
@@ -21,7 +23,7 @@ export default function PaymentModal({
   initialValues = null,
   onClose,
 }) {
-  const { trips } = useTripContext();
+  const { trips, fx } = useTripContext();
   const tripOptions = availableTrips ?? trips;
   const defaultTrip =
     initialValues?.trip_id ||
@@ -43,6 +45,8 @@ export default function PaymentModal({
     note: initialValues?.note ?? "",
   });
   const [saving, setSaving] = useState(false);
+  // "Paid in another currency": null when collapsed (see PaidCurrencyEditor).
+  const [paid, setPaid] = useState(null);
 
   // Before a trip is picked, offer everyone on the offered trips, so pre-filled
   // people show by name; picking a trip narrows it to that trip's members.
@@ -54,6 +58,12 @@ export default function PaymentModal({
     if (member.id === form.from_user) return false;
     return !(from?.party_id && member.party_id === from.party_id);
   });
+  const recipient = roster.find((member) => member.id === form.to_user);
+
+  const settling = Number.parseFloat(form.amount);
+  const resolvedPaid = paid
+    ? resolvePaid(paid, settling > 0 ? [{ amount: settling, currency: form.currency }] : null)
+    : null;
 
   const submit = async (event) => {
     event.preventDefault();
@@ -62,6 +72,9 @@ export default function PaymentModal({
     if (!form.trip_id) return toast.error("Pick a trip for this payment");
     if (!form.from_user || !form.to_user) return toast.error("Pick who paid and who received");
     if (!(amount > 0)) return toast.error("Enter an amount");
+    if (paid && (!resolvedPaid || "error" in resolvedPaid)) {
+      return toast.error(resolvedPaid?.error ?? "Enter the rate it was paid at");
+    }
     if (!idRef.current) idRef.current = crypto.randomUUID();
     savingRef.current = true;
     setSaving(true);
@@ -74,6 +87,9 @@ export default function PaymentModal({
         amount,
         currency: form.currency,
         note: form.note.trim() || null,
+        ...(resolvedPaid && !("error" in resolvedPaid)
+          ? { paid_currency: resolvedPaid.paidCurrency, paid_amount: resolvedPaid.total }
+          : {}),
       });
       toast.success("Payment recorded");
       onClose();
@@ -152,7 +168,12 @@ export default function PaymentModal({
           />
           <select
             value={form.currency}
-            onChange={(event) => setForm((current) => ({ ...current, currency: event.target.value }))}
+            onChange={(event) => {
+              const currency = event.target.value;
+              setForm((current) => ({ ...current, currency }));
+              // A new pair needs its own daily rate.
+              if (paid) setPaid(startPaid(currency, fx, paid.currency));
+            }}
             aria-label="Currency"
             className="mat-select shrink-0"
           >
@@ -161,6 +182,14 @@ export default function PaymentModal({
             ))}
           </select>
         </div>
+        <PaidCurrencyEditor
+          settleCurrency={form.currency}
+          value={paid}
+          resolved={resolvedPaid}
+          receivedLabel={recipient ? `${memberFirstName(recipient)} gets` : "Received"}
+          fx={fx}
+          onChange={setPaid}
+        />
         <input
           type="text"
           value={form.note}

@@ -2,7 +2,9 @@
 
 import { useMemo, useRef, useState } from "react";
 import FormModal from "./FormModal";
+import PaidCurrencyEditor from "./PaidCurrencyEditor";
 import { allocateTransfer } from "../lib/split";
+import { resolvePaid } from "../lib/settle-fx";
 import { formatCurrency } from "../lib/currencies";
 import { recordSettlement, recordSettlementGroup } from "../lib/client-actions";
 import { friendlyError } from "../lib/friendlyError";
@@ -20,7 +22,7 @@ const cleanAmount = (raw) => String(raw).replace(/[^0-9.]/g, "");
  * @param {{ transfer: any, initialAmount: string, data: any, onClose: () => void }} props
  */
 export default function SplitPaymentModal({ transfer, initialAmount, data, onClose }) {
-  const { trips } = useTripContext();
+  const { trips, fx } = useTripContext();
   const { toast } = useToast();
   const formRef = useRef(null);
   // Ids are minted once per distinct split, so a retry of the same submission
@@ -31,6 +33,8 @@ export default function SplitPaymentModal({ transfer, initialAmount, data, onClo
   const [amount, setAmount] = useState(initialAmount);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  // "Paid in another currency": null when collapsed (see PaidCurrencyEditor).
+  const [paid, setPaid] = useState(null);
 
   const { fromUnit, toUnit, currency } = transfer;
   const total = Number.parseFloat(amount);
@@ -48,12 +52,18 @@ export default function SplitPaymentModal({ transfer, initialAmount, data, onClo
     [data, fromUnit.key, toUnit.key, currency, total],
   );
   const tripName = (id) => trips.find((trip) => trip.id === id)?.name ?? "Trip";
+  // One leg per trip part: what was sent is shared across them the same way.
+  const resolvedPaid = paid
+    ? resolvePaid(paid, parts?.length ? parts.map((part) => ({ ...part, currency })) : null)
+    : null;
+  const paidOk = resolvedPaid && !("error" in resolvedPaid) ? resolvedPaid : null;
 
   const submit = async (event) => {
     event.preventDefault();
     if (savingRef.current) return;
     if (!(total > 0)) return toast.error("Enter an amount");
     if (!parts?.length) return toast.error("Couldn't split this payment across trips");
+    if (paid && !paidOk) return toast.error(resolvedPaid?.error ?? "Enter the rate it was paid at");
     const signature = JSON.stringify(parts);
     if (idsRef.current.signature !== signature) {
       idsRef.current = {
@@ -78,18 +88,21 @@ export default function SplitPaymentModal({ transfer, initialAmount, data, onClo
           amount: part.amount,
           currency,
           note: trimmed,
+          ...(paidOk ? { paid_currency: paidOk.paidCurrency, paid_amount: paidOk.total } : {}),
         });
       } else {
         await recordSettlementGroup({
           group_id,
           currency,
           note: trimmed,
+          ...(paidOk ? { paid_currency: paidOk.paidCurrency } : {}),
           parts: parts.map((part, i) => ({
             id: ids[i],
             trip_id: part.trip_id,
             from_user: part.from_user,
             to_user: part.to_user,
             amount: part.amount,
+            ...(paidOk ? { paid_amount: paidOk.legs[i].paid_amount } : {}),
           })),
         });
       }
@@ -139,6 +152,14 @@ export default function SplitPaymentModal({ transfer, initialAmount, data, onClo
           />
           <span className="text-sm font-medium text-on-surface-variant shrink-0">{currency}</span>
         </div>
+        <PaidCurrencyEditor
+          settleCurrency={currency}
+          value={paid}
+          resolved={resolvedPaid}
+          receivedLabel={`${toUnit.name} ${toUnit.memberIds.length > 1 ? "get" : "gets"}`}
+          fx={fx}
+          onChange={setPaid}
+        />
         <div>
           <div className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide mb-1">
             Recorded per trip

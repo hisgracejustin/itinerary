@@ -7,6 +7,7 @@ import { bookingEffective, scaledSplits } from '../lib/booking-cost'
 // toHKD is for the Split-costs SORT ORDER only — every displayed amount on this
 // page stays exact per-currency (no ~ conversions).
 import { formatCurrency, FX_RATES_TO_HKD, toHKD } from '../lib/currencies'
+import { summarizePayment } from '../lib/settle-fx'
 import { TYPE_ICONS } from '../lib/calendar'
 import { expenseCategory } from '../lib/expense-categories'
 import { Avatar, memberLabel, memberFirstName } from '../components/AssigneePicker'
@@ -1009,27 +1010,22 @@ function TransferCard({ t, memberByUserId, currentUserId, onSettle }) {
 
 /**
  * One line of the Payments list: a plain payment, or a multi-trip payment's
- * per-trip rows read as one. The headline is the group's net — its parts can
- * run both ways (a part clearing a trip where the debt ran the other way).
+ * per-trip rows read as one (summarizePayment). The headline is the net — a
+ * multi-trip payment's parts can run both ways — and a payment made in another
+ * currency also says what was sent and at what rate.
  */
 function PaymentEntry({ entry, personLabel, tripName, canDelete, busy, onDelete }) {
   const { rows, allRows } = entry
   const first = rows[0]
-  const currency = first.currency
   const multi = allRows.length > 1
   // With some of its trips outside the selection, describe only what lands in
   // the selected trips; the line underneath says it's part of something bigger.
   const hidden = allRows.length - rows.length
-  const basis = hidden > 0 ? rows : allRows
-  // Orient on whichever direction carries more money.
-  const sumDir = (from, to) =>
-    basis.reduce((sum, r) => sum + (r.from_user === from && r.to_user === to ? Number(r.amount) || 0 : 0), 0)
-  const forward = sumDir(first.from_user, first.to_user)
-  const backward = sumDir(first.to_user, first.from_user)
-  const [fromUser, toUser] = forward >= backward ? [first.from_user, first.to_user] : [first.to_user, first.from_user]
-  const net = Math.abs(forward - backward)
-  const headline = `${personLabel(fromUser)} → ${personLabel(toUser)} (${formatCurrency(net, currency)})`
-  const signed = (r) => (r.from_user === fromUser ? '' : '−') + formatCurrency(Number(r.amount) || 0, currency)
+  const { fromUser, toUser, sign, settled, paid } = summarizePayment(hidden > 0 ? rows : allRows)
+  const settledText = settled.map((s) => formatCurrency(s.amount, s.currency)).join(' + ')
+  const paidText = paid ? formatCurrency(paid.amount, paid.currency) : null
+  const headline = `${personLabel(fromUser)} → ${personLabel(toUser)} (${settledText}${paidText ? `, paid as ${paidText}` : ''})`
+  const signed = (r) => (sign(r) > 0 ? '' : '−') + formatCurrency(Number(r.amount) || 0, r.currency)
 
   return (
     <div className="flex items-center gap-2 py-2 border-b border-outline/20 last:border-0" data-testid="payment-entry">
@@ -1045,11 +1041,15 @@ function PaymentEntry({ entry, personLabel, tripName, canDelete, busy, onDelete 
             {hidden > 0 && ` · part of a payment across ${allRows.length} trips`}
           </div>
         )}
+        {paid && (
+          <div className="text-xs text-on-surface-variant">
+            Paid {paidText}
+            {paid.rate != null && settled.length === 1 && ` · 1 ${settled[0].currency} = ${paid.rate} ${paid.currency}`}
+          </div>
+        )}
         {first.note && <div className="text-xs text-on-surface-variant truncate">{first.note}</div>}
       </div>
-      <span className="text-sm font-medium text-on-surface shrink-0">
-        {formatCurrency(net, currency)}
-      </span>
+      <span className="text-sm font-medium text-on-surface shrink-0">{settledText}</span>
       {canDelete && (
         <button
           type="button"

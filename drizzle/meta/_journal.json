@@ -211,6 +211,13 @@
       "when": 1791466637487,
       "tag": "0029_settlement_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793090017481,
+      "tag": "0030_settlement_paid_currency",
+      "breakpoints": true
     }
   ]
 }

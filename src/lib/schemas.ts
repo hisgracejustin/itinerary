@@ -307,6 +307,32 @@ export const expenseUpdateSchema = z
   .superRefine(requireContributionsWithinAmount)
   .superRefine((d, ctx) => requireChargedRatePair(d, ctx, "currency"));
 
+// A payment made in another currency carries what was actually sent
+// (paid_currency + paid_amount) beside what it settles (currency + amount); see
+// src/lib/settle-fx.js. Both or neither, and never the currency it settles.
+function requirePaidPair(
+  data: { currency: string; paid_currency?: string | null; paid_amount?: number | null },
+  ctx: z.RefinementCtx,
+) {
+  const hasCcy = data.paid_currency != null;
+  const hasAmount = data.paid_amount != null;
+  if (hasCcy !== hasAmount) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [hasCcy ? "paid_amount" : "paid_currency"],
+      message: "Set both the currency paid in and the amount paid, or neither",
+    });
+    return;
+  }
+  if (hasCcy && data.paid_currency === data.currency) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["paid_currency"],
+      message: "The currency paid in must differ from the currency settled",
+    });
+  }
+}
+
 // A recorded pay-back, person-to-person. Same-person is nonsensical.
 export const settlementInsertSchema = z
   .object({
@@ -322,22 +348,28 @@ export const settlementInsertSchema = z
     amount: z.number().positive(),
     currency: currencySchema,
     note: z.string().nullish(),
+    paid_currency: currencySchema.nullish(),
+    paid_amount: z.number().positive().nullish(),
   })
   .refine((d) => d.from_user !== d.to_user, {
     path: ["to_user"],
     message: "A settlement needs two different people",
-  });
+  })
+  .superRefine(requirePaidPair);
 
 // One payment covering several trips, recorded as one row per trip (see
 // allocateTransfer). The client mints the group id and every part id once
 // per submission, so a retry lands on rows already written. A part may run in
 // the opposite direction (clearing a trip where the debt ran the other way), so
-// each part names its own payer and payee.
+// each part names its own payer and payee. Paid in another currency, the whole
+// payment shares one paid_currency and each part carries its share of what was
+// sent — which can round to nothing on a tiny part.
 export const settlementGroupInsertSchema = z
   .object({
     group_id: z.string().uuid(),
     currency: currencySchema,
     note: z.string().nullish(),
+    paid_currency: currencySchema.nullish(),
     parts: z
       .array(
         z
@@ -347,6 +379,7 @@ export const settlementGroupInsertSchema = z
             from_user: z.string().min(1),
             to_user: z.string().min(1),
             amount: z.number().positive(),
+            paid_amount: z.number().nonnegative().nullish(),
           })
           .refine((d) => d.from_user !== d.to_user, {
             path: ["to_user"],
@@ -363,6 +396,33 @@ export const settlementGroupInsertSchema = z
   .refine((d) => new Set(d.parts.map((p) => p.id)).size === d.parts.length, {
     path: ["parts"],
     message: "Each part needs its own id",
+  })
+  .superRefine((d, ctx) => {
+    const paid = d.parts.filter((p) => p.paid_amount != null).length;
+    if (d.paid_currency == null) {
+      if (paid > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["paid_currency"],
+          message: "Set the currency paid in, or no amounts paid",
+        });
+      }
+      return;
+    }
+    if (paid !== d.parts.length || !d.parts.some((p) => (p.paid_amount ?? 0) > 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["parts"],
+        message: "Every part needs the amount paid for it",
+      });
+    }
+    if (d.paid_currency === d.currency) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["paid_currency"],
+        message: "The currency paid in must differ from the currency settled",
+      });
+    }
   });
 
 // Settlement unit (couple/group) for a trip. member_ids assigns the party to

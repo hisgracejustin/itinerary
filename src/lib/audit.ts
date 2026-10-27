@@ -137,10 +137,14 @@ const policyKey = (details: Record<string, unknown> | null | undefined) =>
 export const bookingLabel = (b: { type: string; title: string }) => `${b.type} ${b.title}`;
 
 export const settlementLabel = (
-  s: { amount: number; currency: string },
+  s: { amount: number; currency: string; paid_amount?: number | null; paid_currency?: string | null },
   fromName: string,
   toName: string,
-) => `${formatCurrency(s.amount, s.currency)} ${fromName} → ${toName}`;
+) =>
+  `${formatCurrency(s.amount, s.currency)} ${fromName} → ${toName}` +
+  (s.paid_currency && s.paid_amount != null
+    ? ` (paid ${formatCurrency(s.paid_amount, s.paid_currency)})`
+    : "");
 
 /* -------------------------------- writing --------------------------------- */
 

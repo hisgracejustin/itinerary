@@ -86,6 +86,8 @@ export async function recordSettlementAction(input: unknown) {
           amount: data.amount,
           currency: data.currency,
           note: data.note ?? null,
+          paid_currency: data.paid_currency ?? null,
+          paid_amount: data.paid_amount ?? null,
         })
         .onConflictDoNothing({ target: tables.settlements.id })
         .returning();
@@ -145,6 +147,8 @@ export async function recordSettlementGroupAction(input: unknown) {
             currency: data.currency,
             note: data.note ?? null,
             group_id: data.group_id,
+            paid_currency: data.paid_currency ?? null,
+            paid_amount: p.paid_amount ?? null,
           })),
         )
         .returning();

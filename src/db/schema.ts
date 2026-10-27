@@ -571,6 +571,13 @@ export const settlements = pgTable(
     // every trip's balance stands on its own; the group only lets the UI show
     // them as one payment and delete them together. Null for a plain payment.
     group_id: uuid("group_id"),
+    // When the money changed hands in another currency: what was actually sent,
+    // at the rate the two people agreed. A record only — `amount` + `currency`
+    // are still what this row settles and all the balance math reads (see
+    // src/lib/settle-fx.js). Both set or both null; paid_currency differs from
+    // currency.
+    paid_currency: text("paid_currency"),
+    paid_amount: numeric("paid_amount", { mode: "number" }),
     created_at: createdAt(),
   },
   (t) => [
