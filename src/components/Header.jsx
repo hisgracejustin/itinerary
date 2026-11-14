@@ -103,10 +103,13 @@ export default function Header({ onToggleSidebar, onQuickAdd }) {
     tripMetas.length === 0 ? "All trips" : tripMetas[0]?.name;
   return (
     <header className="relative px-4 sm:px-6 h-14 flex items-center justify-between shrink-0">
+      {/* Centred over the whole bar; at a larger text size it sits between the
+          two button groups instead, where it can't run into the trip chip. */}
       {sectionTitle && (
         <h1
           className="absolute inset-x-0 text-center text-base font-semibold text-on-surface
-                     pointer-events-none truncate px-24 m-0"
+                     pointer-events-none truncate px-24 m-0
+                     large-text:static large-text:order-1 large-text:flex-1 large-text:min-w-0 large-text:px-2"
         >
           {sectionTitle}
         </h1>
@@ -120,7 +123,7 @@ export default function Header({ onToggleSidebar, onQuickAdd }) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </button>
-      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center gap-2 min-w-0 large-text:order-2">
         {tripMetas.length >= 2 ? (
           <TripChip tripMetas={tripMetas} />
         ) : (

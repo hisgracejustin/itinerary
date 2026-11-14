@@ -281,7 +281,8 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
     <div className="flex-1 min-h-0 sm:-mt-2 flex flex-col">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 shrink-0 gap-2">
         <h2 className="text-xl font-semibold tracking-tight text-on-surface">{formatHeader()}</h2>
-        <div className="flex items-center gap-1">
+        {/* Wraps at a larger text size, or the view switcher pushes the page sideways. */}
+        <div className="flex items-center gap-1 large-text:flex-wrap large-text:gap-y-2">
           {/* Journey view spans the whole selection, so month paging doesn't apply. */}
           {view !== 'journey' && (
             <>

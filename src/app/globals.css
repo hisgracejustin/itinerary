@@ -47,6 +47,12 @@
   --ease-material-accel: cubic-bezier(0.4, 0, 1, 1);
 }
 
+/* `large-text:…` applies only while the base text is above 16px (a larger
+ * Settings → Text size, or the browser's own preference; see
+ * src/lib/text-size.js), so it can give cramped layouts room without ever
+ * changing the default look. */
+@custom-variant large-text (&:where([data-large-text] *));
+
 @layer base {
   * {
     -webkit-tap-highlight-color: transparent;

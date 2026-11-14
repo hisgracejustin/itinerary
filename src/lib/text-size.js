@@ -27,12 +27,35 @@ export function readTextSize() {
   }
 }
 
+/**
+ * Marks the page while its base text is above the usual 16px — from this
+ * setting or from the browser's own text-size preference — so the `large-text:`
+ * Tailwind variant (src/app/globals.css) can give cramped layouts room. Never
+ * set at the default size, so those fixes can't change the default look.
+ */
+const LARGE_TEXT_ATTR = 'data-large-text'
+
+function setRootSize(size) {
+  const root = document.documentElement
+  if (size !== DEFAULT_TEXT_SIZE && TEXT_SIZES.includes(size)) root.style.fontSize = `${size}%`
+  else root.style.removeProperty('font-size')
+  root.toggleAttribute(LARGE_TEXT_ATTR, remScale() > 1)
+}
+
+/**
+ * Put the saved size back on the page. A page whose server HTML doesn't
+ * hydrate is re-rendered from scratch, and React resets <html>'s attributes
+ * when it does — dropping what the head script set — so the root layout calls
+ * this once mounted (TextSizeSync).
+ */
+export function syncTextSize() {
+  setRootSize(readTextSize())
+}
+
 /** Apply `size` to the page right away and remember it on this device. */
 export function applyTextSize(size) {
-  const root = document.documentElement
+  setRootSize(size)
   const custom = size !== DEFAULT_TEXT_SIZE && TEXT_SIZES.includes(size)
-  if (custom) root.style.fontSize = `${size}%`
-  else root.style.removeProperty('font-size')
   try {
     if (custom) window.localStorage.setItem(KEY, String(size))
     else window.localStorage.removeItem(KEY)
@@ -46,8 +69,9 @@ export function applyTextSize(size) {
  * first paint — no flash of small text. Only the non-default sizes do anything.
  */
 export const TEXT_SIZE_SCRIPT =
-  `try{var s=Number(localStorage.getItem(${JSON.stringify(KEY)}));` +
-  `if(${JSON.stringify(TEXT_SIZES.slice(1))}.indexOf(s)>=0)document.documentElement.style.fontSize=s+"%"}catch(e){}`
+  `try{var d=document.documentElement,s=Number(localStorage.getItem(${JSON.stringify(KEY)}));` +
+  `if(${JSON.stringify(TEXT_SIZES.slice(1))}.indexOf(s)>=0)d.style.fontSize=s+"%";` +
+  `if(parseFloat(getComputedStyle(d).fontSize)>16)d.setAttribute(${JSON.stringify(LARGE_TEXT_ATTR)},"")}catch(e){}`
 
 /**
  * The root font size relative to the usual 16px, for layout math done in px so

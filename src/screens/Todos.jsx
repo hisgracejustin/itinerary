@@ -291,7 +291,7 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
             placeholder="What needs to be done?"
             className="mat-input sm:flex-1"
           />
-          <div className="flex gap-2">
+          <div className="flex gap-2 large-text:flex-wrap">
             <input
               type="date"
               value={newTodoDate}
@@ -642,18 +642,20 @@ function TodoItem({
             onChange={(m) => onAssign?.(todo.id, m)}
           />
           {todo.due_date && (
-            <span className="text-[0.6875rem] text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">
+            <span className="text-[0.6875rem] text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full large-text:whitespace-nowrap">
               📅 {new Date(todo.due_date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
             </span>
           )}
           {tripName && (
-            <span className="text-[0.6875rem] text-primary bg-primary-light px-2 py-0.5 rounded-full font-medium">
+            <span className="text-[0.6875rem] text-primary bg-primary-light px-2 py-0.5 rounded-full font-medium large-text:whitespace-nowrap">
               {tripName}
             </span>
           )}
         </div>
       </div>
-      <div className="flex items-center gap-1 shrink-0">
+      {/* Stacked at a larger text size: side by side they leave the title too
+          narrow to read. */}
+      <div className="flex items-center gap-1 shrink-0 large-text:flex-col">
         {/* Step the card to the adjacent column without a drag — the only way
             to cross columns on mobile (one column visible at a time), a quick
             alternative to dragging on desktop. Always visible on touch,

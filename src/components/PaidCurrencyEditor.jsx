@@ -47,7 +47,7 @@ export default function PaidCurrencyEditor({ settleCurrency, value, resolved, re
           className="mt-2 space-y-2 rounded-xl border border-outline/30 bg-surface-container/40 p-3"
           data-testid="paid-currency"
         >
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 large-text:flex-wrap large-text:gap-y-1">
             <span className="text-xs font-medium text-on-surface-variant">Paid in</span>
             <select
               value={value.currency}
@@ -61,7 +61,7 @@ export default function PaidCurrencyEditor({ settleCurrency, value, resolved, re
               ))}
             </select>
           </div>
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 large-text:flex-wrap large-text:gap-y-1">
             <span className="text-xs font-medium text-on-surface-variant whitespace-nowrap">1 {settleCurrency} =</span>
             <span className="flex items-center gap-2 shrink-0">
               <input
@@ -76,7 +76,7 @@ export default function PaidCurrencyEditor({ settleCurrency, value, resolved, re
               <span className="text-xs text-on-surface-variant w-9">{value.currency}</span>
             </span>
           </div>
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 large-text:flex-wrap large-text:gap-y-1">
             <span className="text-xs font-medium text-on-surface-variant truncate min-w-0">{receivedLabel}</span>
             <span className="flex items-center gap-2 shrink-0">
               <input

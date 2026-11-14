@@ -4,6 +4,7 @@ import "./globals.css";
 import { ToastProvider } from "@/components/Toast";
 import { RegisterSW } from "@/components/register-sw";
 import { TEXT_SIZE_SCRIPT } from "@/lib/text-size";
+import { TextSizeSync } from "@/components/TextSizeSync";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ToastProvider>{children}</ToastProvider>
         <RegisterSW />
+        <TextSizeSync />
       </body>
     </html>
   );

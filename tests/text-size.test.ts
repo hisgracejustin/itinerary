@@ -10,21 +10,29 @@ import {
   applyTextSize,
   readTextSize,
   remScale,
+  syncTextSize,
 } from "../src/lib/text-size.js";
 
 // The text-size setting scales the root font size; the default must set
 // nothing at all, so the app looks exactly as it does without the setting.
 
-/** A stand-in for the bits of the browser the setting touches. */
-function fakeBrowser(saved: string | null, { storageThrows = false, rootPx = "16px" } = {}) {
+/**
+ * A stand-in for the bits of the browser the setting touches. `basePx` is the
+ * browser's own default font size (16px unless someone changed it).
+ */
+function fakeBrowser(saved: string | null, { storageThrows = false, basePx = 16 } = {}) {
   const store = new Map<string, string>();
   if (saved !== null) store.set("display.textSize", saved);
+  const attrs = new Set<string>();
   const style = {
     fontSize: "",
     removeProperty(name: string) {
       if (name === "font-size") style.fontSize = "";
     },
   };
+  const getComputedStyle = () => ({
+    fontSize: `${basePx * (style.fontSize ? Number.parseFloat(style.fontSize) / 100 : 1)}px`,
+  });
   const localStorage = {
     getItem: (k: string) => {
       if (storageThrows) throw new Error("blocked");
@@ -39,9 +47,18 @@ function fakeBrowser(saved: string | null, { storageThrows = false, rootPx = "16
       store.delete(k);
     },
   };
-  const document = { documentElement: { style } };
-  const window = { localStorage, getComputedStyle: () => ({ fontSize: rootPx }) };
-  return { store, style, localStorage, document, window };
+  const documentElement = {
+    style,
+    setAttribute: (name: string) => void attrs.add(name),
+    toggleAttribute: (name: string, on: boolean) => {
+      if (on) attrs.add(name);
+      else attrs.delete(name);
+      return on;
+    },
+  };
+  const document = { documentElement };
+  const window = { localStorage, getComputedStyle };
+  return { store, style, attrs, localStorage, document, window, getComputedStyle };
 }
 
 /** Run `fn` with the fake browser installed as globals. */
@@ -61,18 +78,24 @@ function withBrowser<T>(b: ReturnType<typeof fakeBrowser>, fn: () => T): T {
 test("the head script applies a saved larger size, and nothing otherwise", () => {
   const run = (saved: string | null, opts = {}) => {
     const b = fakeBrowser(saved, opts);
-    vm.runInNewContext(TEXT_SIZE_SCRIPT, { localStorage: b.localStorage, document: b.document });
-    return b.style.fontSize;
+    vm.runInNewContext(TEXT_SIZE_SCRIPT, {
+      localStorage: b.localStorage,
+      document: b.document,
+      getComputedStyle: b.getComputedStyle,
+    });
+    return { fontSize: b.style.fontSize, large: b.attrs.has("data-large-text") };
   };
-  assert.equal(run("115"), "115%");
-  assert.equal(run("130"), "130%");
-  assert.equal(run("150"), "150%");
+  assert.deepEqual(run("115"), { fontSize: "115%", large: true });
+  assert.deepEqual(run("130"), { fontSize: "130%", large: true });
+  assert.deepEqual(run("150"), { fontSize: "150%", large: true });
   // Default and anything unexpected leave the page untouched.
   for (const saved of [null, "100", "", "abc", "999", "130.5", "-130"]) {
-    assert.equal(run(saved), "", `saved ${JSON.stringify(saved)} should change nothing`);
+    assert.deepEqual(run(saved), { fontSize: "", large: false }, `saved ${JSON.stringify(saved)} should change nothing`);
   }
+  // A browser already set to bigger text gets the roomier layouts too.
+  assert.deepEqual(run(null, { basePx: 20 }), { fontSize: "", large: true });
   // Blocked storage (private mode) mustn't throw before the page renders.
-  assert.equal(run("130", { storageThrows: true }), "");
+  assert.deepEqual(run("130", { storageThrows: true }), { fontSize: "", large: false });
 });
 
 test("applyTextSize resizes the page at once and remembers it; the default clears both", () => {
@@ -80,11 +103,13 @@ test("applyTextSize resizes the page at once and remembers it; the default clear
   withBrowser(b, () => {
     applyTextSize(130);
     assert.equal(b.style.fontSize, "130%");
+    assert.equal(b.attrs.has("data-large-text"), true);
     assert.equal(b.store.get("display.textSize"), "130");
     assert.equal(readTextSize(), 130);
 
     applyTextSize(DEFAULT_TEXT_SIZE);
     assert.equal(b.style.fontSize, "");
+    assert.equal(b.attrs.has("data-large-text"), false);
     assert.equal(b.store.has("display.textSize"), false);
     assert.equal(readTextSize(), DEFAULT_TEXT_SIZE);
 
@@ -102,11 +127,34 @@ test("readTextSize falls back to the default for missing, unknown or unreadable 
   for (const size of TEXT_SIZES) assert.equal(withBrowser(fakeBrowser(String(size)), readTextSize), size);
 });
 
+test("syncTextSize puts a saved size back after React resets <html>, and does nothing by default", () => {
+  const b = fakeBrowser("130");
+  // As if React had re-rendered the document and cleared <html>'s attributes.
+  withBrowser(b, syncTextSize);
+  assert.equal(b.style.fontSize, "130%");
+  assert.equal(b.attrs.has("data-large-text"), true);
+
+  const plain = fakeBrowser(null);
+  withBrowser(plain, syncTextSize);
+  assert.equal(plain.style.fontSize, "");
+  assert.equal(plain.attrs.has("data-large-text"), false);
+  assert.equal(plain.store.size, 0);
+});
+
+test("the default size keeps a browser's own bigger text in large-text mode", () => {
+  const b = fakeBrowser(null, { basePx: 20 });
+  withBrowser(b, () => applyTextSize(DEFAULT_TEXT_SIZE));
+  assert.equal(b.style.fontSize, "");
+  assert.equal(b.attrs.has("data-large-text"), true);
+});
+
 test("remScale is the root font size over 16px, and 1 on the server", () => {
   assert.equal(remScale(), 1);
-  assert.equal(withBrowser(fakeBrowser(null, { rootPx: "16px" }), remScale), 1);
-  assert.equal(withBrowser(fakeBrowser(null, { rootPx: "20.8px" }), remScale), 1.3);
-  assert.equal(withBrowser(fakeBrowser(null, { rootPx: "" }), remScale), 1);
+  assert.equal(withBrowser(fakeBrowser(null), remScale), 1);
+  const b = fakeBrowser(null);
+  b.style.fontSize = "130%";
+  assert.equal(withBrowser(b, remScale), 1.3);
+  assert.equal(withBrowser(fakeBrowser(null, { basePx: 20 }), remScale), 1.25);
 });
 
 test("no fixed-pixel text sizes in the app: they wouldn't grow with the setting", () => {

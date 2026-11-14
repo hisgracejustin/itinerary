@@ -1419,7 +1419,7 @@ export default function Considering({ initialSets }) {
     return (
       <div className="w-full max-w-5xl lg:max-w-6xl mx-auto">
         {confirmDialog}
-        <div className="flex items-start justify-between gap-3 mb-2">
+        <div className="flex items-start justify-between gap-3 mb-2 large-text:flex-wrap">
           <div>
             <h1 className="text-[1.375rem] font-semibold tracking-tight text-on-surface m-0">Considering</h1>
             <p className="text-[0.8125rem] text-on-surface-variant mt-1 mb-0">

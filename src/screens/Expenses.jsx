@@ -238,15 +238,20 @@ export default function Expenses({ expenses: allExpenses, currentUserId }) {
                         className="w-full flex items-center gap-3 py-3 text-left hover:bg-surface-container/50 cursor-pointer transition-colors"
                       >
                         <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-2 min-w-0">
+                          {/* At a larger text size the pills wrap onto their own line
+                              (the break below), or they leave the title no room. */}
+                          <span className="flex items-center gap-2 min-w-0 large-text:flex-wrap large-text:gap-y-1">
                             {/* Icon only — the trip and attention pills already
                                 compete for the width the title needs. */}
                             <span className="shrink-0" title={expenseCategory(expense.category).label}>
                               {expenseCategory(expense.category).icon}
                             </span>
-                            <span className="text-sm font-medium text-on-surface truncate min-w-0">
+                            <span className="text-sm font-medium text-on-surface truncate min-w-0 large-text:flex-1">
                               {expense.title}
                             </span>
+                            {(trip || attention) && (
+                              <span aria-hidden className="hidden large-text:block basis-full h-0" />
+                            )}
                             {trip && (
                               <span className="text-[0.625rem] text-on-surface-variant bg-surface-container rounded-full px-2 py-0.5 truncate max-w-36 shrink-0">
                                 {trip.name}
