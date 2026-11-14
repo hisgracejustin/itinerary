@@ -41,7 +41,7 @@ export default function TextSizeSetting() {
             onClick={() => step(-1)}
             disabled={index <= 0}
             aria-label="Smaller text"
-            className="mat-btn-outlined min-w-[2.75rem] justify-center disabled:opacity-40"
+            className="mat-btn-outlined h-11 min-w-[3.25rem] px-3 justify-center disabled:opacity-40"
           >
             <span className="text-sm" aria-hidden>A−</span>
           </button>
@@ -53,7 +53,7 @@ export default function TextSizeSetting() {
             onClick={() => step(1)}
             disabled={index >= TEXT_SIZES.length - 1}
             aria-label="Larger text"
-            className="mat-btn-outlined min-w-[2.75rem] justify-center disabled:opacity-40"
+            className="mat-btn-outlined h-11 min-w-[3.25rem] px-3 justify-center disabled:opacity-40"
           >
             <span className="text-lg" aria-hidden>A+</span>
           </button>
