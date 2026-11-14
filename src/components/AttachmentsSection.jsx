@@ -161,7 +161,7 @@ export default function AttachmentsSection({
               <span className="text-lg shrink-0">{iconForMime(a.mime_type)}</span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-on-surface truncate">{a.filename}</p>
-                <p className="text-[10px] text-on-surface-variant">{formatBytes(a.size_bytes)}</p>
+                <p className="text-[0.625rem] text-on-surface-variant">{formatBytes(a.size_bytes)}</p>
               </div>
               <a
                 href={`/api/attachments/${a.id}`}
@@ -203,7 +203,7 @@ export default function AttachmentsSection({
               <span className="text-lg shrink-0">{iconForMime(f.type)}</span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-on-surface truncate">{f.name}</p>
-                <p className="text-[10px] text-on-surface-variant">{formatBytes(f.size)} · pending</p>
+                <p className="text-[0.625rem] text-on-surface-variant">{formatBytes(f.size)} · pending</p>
               </div>
               {editable && (
                 <button
@@ -246,7 +246,7 @@ export default function AttachmentsSection({
             </svg>
             {uploading ? 'Uploading…' : 'Add attachment'}
           </button>
-          <p className="text-[10px] text-on-surface-variant/60">
+          <p className="text-[0.625rem] text-on-surface-variant/60">
             PDF, images, Word, Excel, CSV, etc. · Max {ATTACHMENT_MAX_LABEL} each
           </p>
         </>

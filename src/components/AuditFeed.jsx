@@ -73,13 +73,13 @@ function describe(entry, scope) {
 
 export default function AuditFeed({ entries, scope = 'trip', truncated = false, empty = 'Nothing recorded yet.' }) {
   if (!entries || entries.length === 0) {
-    return <p className="text-[11px] text-on-surface-variant/70 py-1">{empty}</p>
+    return <p className="text-[0.6875rem] text-on-surface-variant/70 py-1">{empty}</p>
   }
   return (
     <div>
       <ul className="space-y-1.5">
         {entries.map((e) => (
-          <li key={e.id} className="text-[11px] leading-relaxed text-on-surface-variant min-w-0">
+          <li key={e.id} className="text-[0.6875rem] leading-relaxed text-on-surface-variant min-w-0">
             <span className="text-on-surface font-medium">{e.by.label}</span>{' '}
             <span className="break-words">{describe(e, scope)}</span>
             <span className="block text-on-surface-variant/70 truncate">
@@ -90,7 +90,7 @@ export default function AuditFeed({ entries, scope = 'trip', truncated = false, 
         ))}
       </ul>
       {truncated && (
-        <p className="text-[10px] text-on-surface-variant/70 mt-2">
+        <p className="text-[0.625rem] text-on-surface-variant/70 mt-2">
           Showing the {entries.length} most recent changes — older ones aren&apos;t listed here.
         </p>
       )}

@@ -318,7 +318,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
                   type="button"
                   onClick={() => setForm((current) => ({ ...current, category: option.value }))}
                   aria-pressed={active}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap transition-colors shrink-0 ${
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[0.6875rem] font-medium border whitespace-nowrap transition-colors shrink-0 ${
                     active
                       ? "bg-primary text-white border-primary"
                       : "bg-white text-on-surface-variant border-outline/30 hover:bg-surface-container"
@@ -354,7 +354,7 @@ export default function ExpenseModal({ expense = null, selectedTrip = null, avai
             </select>
           </div>
           <label className="block">
-            <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">
+            <span className="text-[0.6875rem] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">
               Date
             </span>
             <input

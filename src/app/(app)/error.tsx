@@ -23,7 +23,7 @@ export default function AppError({
           This page couldn&apos;t load. Try again — your trips are safe.
         </p>
         {error.digest && (
-          <p className="text-[10px] mt-2 text-on-surface-variant/50">ref {error.digest}</p>
+          <p className="text-[0.625rem] mt-2 text-on-surface-variant/50">ref {error.digest}</p>
         )}
         <button type="button" onClick={reset} className="mat-btn-filled mt-5">
           Try again

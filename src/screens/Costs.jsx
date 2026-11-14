@@ -301,7 +301,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
         <div className="grid gap-4 lg:grid-cols-2 auto-rows-min content-start pb-10">
           {/* Total */}
           <div className="mat-surface p-6 lg:col-span-2 min-w-0">
-            <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1">
+            <div className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider mb-1">
               {headerLabel}
               {categoryNote && <span className="normal-case"> · {categoryNote}</span>} (approx. HKD)
             </div>
@@ -348,7 +348,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
 
           {/* By type summary */}
           <div className="mat-surface p-6 min-w-0">
-            <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-4">By Type</div>
+            <div className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider mb-4">By Type</div>
             <div className="space-y-3">
               {typeBreakdown.map(([type, hkdAmount]) => {
                 const pct = totalHKD > 0 ? (hkdAmount / totalHKD) * 100 : 0
@@ -380,7 +380,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
 
           {/* Individual items */}
           <div className="mat-surface p-6 min-w-0">
-            <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-4">All Costs (by amount)</div>
+            <div className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider mb-4">All Costs (by amount)</div>
             <div className="space-y-1">
               {sorted.map(({ it, amount }) => {
                 const clickable = it.kind === 'booking' ? !!it.booking : !!it.expense
@@ -403,7 +403,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                             at all, so the chip is always explaining why a
                             cancelled row is in the total. */}
                         {it.cancelled && (
-                          <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5">
+                          <span className="shrink-0 text-[0.625rem] font-medium uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5">
                             Fee
                           </span>
                         )}
@@ -423,16 +423,16 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                     <div className="text-sm font-medium text-on-surface">
                       {formatCurrency(amount, it.currency)}
                       {scope === 'everyone' && it.cost_share != null && it.cost_share !== 1 && (
-                        <span className="text-[10px] text-on-surface-variant ml-1">(×{parseFloat(it.cost_share.toFixed(2))})</span>
+                        <span className="text-[0.625rem] text-on-surface-variant ml-1">(×{parseFloat(it.cost_share.toFixed(2))})</span>
                       )}
                     </div>
                     {it.charged ? (
-                      <div className="text-[11px] text-on-surface-variant">
+                      <div className="text-[0.6875rem] text-on-surface-variant">
                         @{parseFloat(it.charged.rate.toFixed(4))} → {formatCurrency(amount * it.charged.rate, it.charged.currency)}
                       </div>
                     ) : (
                       it.currency !== 'HKD' && (
-                        <div className="text-[11px] text-on-surface-variant">
+                        <div className="text-[0.6875rem] text-on-surface-variant">
                           ~HK${toHKD(amount, it.currency, rates).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </div>
                       )

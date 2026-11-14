@@ -190,7 +190,7 @@ export default function UploadBooking({ trip, onParsed }) {
                 </svg>
               </div>
               <span className="text-xs font-medium text-gray-600">PDF Document</span>
-              <span className="text-[10px] text-gray-400">Text will be extracted locally</span>
+              <span className="text-[0.625rem] text-gray-400">Text will be extracted locally</span>
             </div>
           ) : (
             <img

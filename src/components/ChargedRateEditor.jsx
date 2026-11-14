@@ -49,7 +49,7 @@ export default function ChargedRateEditor({
 
   return (
     <div className="mt-2">
-      <button type="button" onClick={toggle} className="text-[11px] text-primary">
+      <button type="button" onClick={toggle} className="text-[0.6875rem] text-primary">
         {open ? 'Remove charged rate' : 'Charged in another currency?'}
       </button>
       {open && (
@@ -76,7 +76,7 @@ export default function ChargedRateEditor({
             />
           </div>
           {hasPreview && (
-            <p className="text-[11px] text-on-surface-variant truncate">
+            <p className="text-[0.6875rem] text-on-surface-variant truncate">
               1 {nativeCurrency} = {rateNum} {chargedCurrency}; {formatCurrency(effective, nativeCurrency)} → {formatCurrency(effective * rateNum, chargedCurrency)}
             </p>
           )}

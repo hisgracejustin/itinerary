@@ -52,7 +52,7 @@ export function OptionListRow({ option, type, isCheapest, delta, currency, onOpe
       </div>
       {/* min-w-0 is required here or `truncate` below does nothing inside a flex row */}
       <div className="flex-1 min-w-0">
-        <div className="truncate text-[14.5px] font-semibold leading-tight">{option.title}</div>
+        <div className="truncate text-[0.90625rem] font-semibold leading-tight">{option.title}</div>
         {subtitle ? (
           <div className="truncate text-xs text-on-surface-variant">{subtitle}</div>
         ) : null}
@@ -65,7 +65,7 @@ export function OptionListRow({ option, type, isCheapest, delta, currency, onOpe
         ) : (
           <div className="text-xs text-on-surface-variant">No cost</div>
         )}
-        <div className="text-[10px] tabular-nums">
+        <div className="text-[0.625rem] tabular-nums">
           {isCheapest ? (
             <span className="text-emerald-700 font-semibold">cheapest</span>
           ) : currency && delta > 0 ? (
@@ -105,7 +105,7 @@ export function MobileOptionCard({
       }`}
     >
       {option.is_pick && (
-        <div className="absolute top-3 left-0 z-10 bg-primary text-white text-[10px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-r-full shadow-elevation-1">
+        <div className="absolute top-3 left-0 z-10 bg-primary text-white text-[0.625rem] font-bold tracking-wider uppercase px-2.5 py-1 rounded-r-full shadow-elevation-1">
           Picked
         </div>
       )}
@@ -117,7 +117,7 @@ export function MobileOptionCard({
             className="relative w-24 h-24 rounded-xl overflow-hidden bg-surface-container"
           >
             <ThumbFill image={option.images[0]} type={tripType} />
-            <span className="absolute bottom-1 right-1 bg-black/55 text-white text-[10px] rounded-full px-1.5">
+            <span className="absolute bottom-1 right-1 bg-black/55 text-white text-[0.625rem] rounded-full px-1.5">
               {option.images.length}
             </span>
           </button>
@@ -127,7 +127,7 @@ export function MobileOptionCard({
           </div>
         )}
         <div className="min-w-0">
-          <h3 className="text-[15px] font-semibold text-on-surface leading-snug m-0">{option.title}</h3>
+          <h3 className="text-[0.9375rem] font-semibold text-on-surface leading-snug m-0">{option.title}</h3>
           {option.url ? (
             <a
               href={option.url}
@@ -147,7 +147,7 @@ export function MobileOptionCard({
               <div className="text-sm text-on-surface-variant">No cost set</div>
             )}
             {isCheapest ? (
-              <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5">
+              <span className="text-[0.625rem] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5">
                 Cheapest
               </span>
             ) : null}
@@ -193,7 +193,7 @@ export function MobileOptionCard({
           <button
             type="button"
             disabled={pending || !!option.converted_booking_id}
-            className="mat-btn-filled flex-1 min-h-[44px] justify-center disabled:opacity-50 disabled:cursor-default"
+            className="mat-btn-filled flex-1 min-h-[2.75rem] justify-center disabled:opacity-50 disabled:cursor-default"
             onClick={onBook}
           >
             {option.converted_booking_id ? "Booked" : "Book this"}
@@ -203,8 +203,8 @@ export function MobileOptionCard({
             disabled={pending}
             className={
               option.is_pick
-                ? "mat-btn-filled flex-1 min-h-[44px] justify-center disabled:opacity-50"
-                : "mat-btn-outlined flex-1 min-h-[44px] justify-center disabled:opacity-50"
+                ? "mat-btn-filled flex-1 min-h-[2.75rem] justify-center disabled:opacity-50"
+                : "mat-btn-outlined flex-1 min-h-[2.75rem] justify-center disabled:opacity-50"
             }
             onClick={onPick}
           >
@@ -255,7 +255,7 @@ export function OverflowMenu({ items, disabled }) {
         disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="mat-btn-outlined w-11 !px-0 min-h-[44px] justify-center disabled:opacity-50"
+        className="mat-btn-outlined w-11 !px-0 min-h-[2.75rem] justify-center disabled:opacity-50"
         onClick={() => setOpen((o) => !o)}
       >
         ⋯
@@ -263,7 +263,7 @@ export function OverflowMenu({ items, disabled }) {
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 bottom-full mb-1 z-20 min-w-[160px] mat-surface py-1 shadow-elevation-2"
+          className="absolute right-0 bottom-full mb-1 z-20 min-w-[10rem] mat-surface py-1 shadow-elevation-2"
         >
           {items.map((item) => (
             <button

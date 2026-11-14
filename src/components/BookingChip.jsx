@@ -14,7 +14,7 @@ export default function BookingChip({ booking, compact = false, onClick, stayEdg
     return (
       <button
         onClick={(e) => { e.stopPropagation(); onClick?.(booking) }}
-        className={`w-full text-left inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border-l-2 ${colors.border} hover:shadow-elevation-1 transition-all duration-150 ${
+        className={`w-full text-left inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.6875rem] border-l-2 ${colors.border} hover:shadow-elevation-1 transition-all duration-150 ${
           isCheckout
             ? 'border-dashed bg-transparent text-on-surface-variant'
             : `${colors.bg} ${colors.text}`
@@ -27,10 +27,10 @@ export default function BookingChip({ booking, compact = false, onClick, stayEdg
               : booking.title
         }
       >
-        <span className={`text-[10px] shrink-0 ${isCheckout ? 'opacity-50' : ''}`}>{icon}</span>
+        <span className={`text-[0.625rem] shrink-0 ${isCheckout ? 'opacity-50' : ''}`}>{icon}</span>
         <span className={`truncate ${cancelled ? 'line-through' : ''}`}>{booking.title}</span>
         {isCheckout && (
-          <span className="ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-wide opacity-70">
+          <span className="ml-auto shrink-0 text-[0.5625rem] font-semibold uppercase tracking-wide opacity-70">
             out
           </span>
         )}
@@ -49,7 +49,7 @@ export default function BookingChip({ booking, compact = false, onClick, stayEdg
           {booking.title}
         </span>
         {cancelled && (
-          <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-on-surface-variant bg-surface-container border border-outline/30 rounded-full px-1.5 py-0.5">
+          <span className="shrink-0 text-[0.625rem] font-medium uppercase tracking-wide text-on-surface-variant bg-surface-container border border-outline/30 rounded-full px-1.5 py-0.5">
             Cancelled
           </span>
         )}
@@ -64,7 +64,7 @@ export default function BookingChip({ booking, compact = false, onClick, stayEdg
         )}
       </div>
       {booking.provider && (
-        <div className="text-[11px] text-on-surface-variant/70 mt-1">{booking.provider}</div>
+        <div className="text-[0.6875rem] text-on-surface-variant/70 mt-1">{booking.provider}</div>
       )}
     </button>
   )

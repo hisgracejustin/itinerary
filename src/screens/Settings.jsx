@@ -13,6 +13,7 @@ import { Avatar, memberLabel, memberFirstName } from '../components/AssigneePick
 import AuditFeed from '../components/AuditFeed'
 import FilterChip from '../components/FilterChip'
 import { useConfirmDanger } from '../components/ConfirmDanger'
+import TextSizeSetting from '../components/TextSizeSetting'
 
 const ROLES = [
   { value: 'owner', label: 'Owner', hint: 'Full control, including people and deleting the trip' },
@@ -108,6 +109,8 @@ export default function Settings({ trips: tripsProp, currentUserId, isAdmin = fa
         Manage your trips and who has access to them.
       </p>
 
+      <TextSizeSetting />
+
       {/* People — person-level stuff (name, email, PIN, avatar), shared across trips */}
       {allPeople.length > 0 && (
         <PeopleSection
@@ -164,7 +167,7 @@ export default function Settings({ trips: tripsProp, currentUserId, isAdmin = fa
             />
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
-                <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">Start</span>
+                <span className="text-[0.6875rem] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">Start</span>
                 <input
                   type="date"
                   value={newTrip.start_date}
@@ -173,7 +176,7 @@ export default function Settings({ trips: tripsProp, currentUserId, isAdmin = fa
                 />
               </label>
               <label className="block">
-                <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">End</span>
+                <span className="text-[0.6875rem] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">End</span>
                 <input
                   type="date"
                   value={newTrip.end_date}
@@ -183,7 +186,7 @@ export default function Settings({ trips: tripsProp, currentUserId, isAdmin = fa
               </label>
             </div>
             <label className="block">
-              <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">
+              <span className="text-[0.6875rem] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">
                 Currency
               </span>
               <select
@@ -246,9 +249,9 @@ function PeopleSection({ people, trips, currentUserId, isAdmin, showsEveryone, t
     <section className="mb-8">
       <div className="flex items-center gap-2 mb-3">
         <h3 className="text-sm font-semibold text-on-surface">People</h3>
-        <span className="text-[11px] text-on-surface-variant">({people.length})</span>
+        <span className="text-[0.6875rem] text-on-surface-variant">({people.length})</span>
         {showsEveryone && (
-          <span className="text-[10px] uppercase tracking-wide text-primary bg-primary-light px-2 py-0.5 rounded-full">
+          <span className="text-[0.625rem] uppercase tracking-wide text-primary bg-primary-light px-2 py-0.5 rounded-full">
             All accounts
           </span>
         )}
@@ -268,7 +271,7 @@ function PeopleSection({ people, trips, currentUserId, isAdmin, showsEveryone, t
             />
           ))}
         </ul>
-        <p className="text-[11px] text-on-surface-variant leading-relaxed mt-2">
+        <p className="text-[0.6875rem] text-on-surface-variant leading-relaxed mt-2">
           {showsEveryone ? (
             <>
               Every account on this instance, not just your trips
@@ -430,7 +433,7 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
       <li className="py-1.5">
         {confirmDialog}
         <form onSubmit={savePin} className="space-y-2">
-          <p className="text-[11px] text-on-surface-variant leading-relaxed">
+          <p className="text-[0.6875rem] text-on-surface-variant leading-relaxed">
             {p.has_pin
               ? `${memberFirstName(p)} has a PIN — saving replaces it.`
               : `Lets ${memberFirstName(p)} sign in with their email and this PIN (no Google needed).`}
@@ -494,7 +497,7 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
     }
     return (
       <li className="py-1.5">
-        <p className="text-[11px] text-on-surface-variant leading-relaxed mb-2">
+        <p className="text-[0.6875rem] text-on-surface-variant leading-relaxed mb-2">
           {isSelf
             ? 'Pick your avatar — it shows next to your name on every trip.'
             : `Pick ${memberFirstName(p)}'s avatar — it shows next to their name on every trip.`}
@@ -548,13 +551,13 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
           {memberLabel(p)}
           {isSelf && <span className="text-on-surface-variant"> (you)</span>}
         </span>
-        <span className="block text-[11px] text-on-surface-variant truncate">{p.email}</span>
+        <span className="block text-[0.6875rem] text-on-surface-variant truncate">{p.email}</span>
         {/* Admin view only: which trips they're on, or a flag when the answer is
             "none" — the whole point of listing every account. Truncates rather
             than wrapping, so a long trip list can't blow up the row on mobile. */}
         {showTrips && (
           <span
-            className={`block text-[10px] truncate ${p.trips.length === 0 ? 'text-amber-600' : 'text-on-surface-variant/70'}`}
+            className={`block text-[0.625rem] truncate ${p.trips.length === 0 ? 'text-amber-600' : 'text-on-surface-variant/70'}`}
             title={p.trips.length > 0 ? p.trips.join(' · ') : undefined}
           >
             {p.trips.length > 0 ? p.trips.join(' · ') : 'Not on any trip'}
@@ -562,7 +565,7 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
         )}
       </span>
       {badges.length > 0 && (
-        <span className="text-[10px] uppercase tracking-wide text-on-surface-variant shrink-0">
+        <span className="text-[0.625rem] uppercase tracking-wide text-on-surface-variant shrink-0">
           {badges.join(' · ')}
         </span>
       )}
@@ -683,7 +686,7 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
           />
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
-              <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">Start</span>
+              <span className="text-[0.6875rem] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">Start</span>
               <input
                 type="date"
                 value={draft.start_date}
@@ -692,7 +695,7 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
               />
             </label>
             <label className="block">
-              <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">End</span>
+              <span className="text-[0.6875rem] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">End</span>
               <input
                 type="date"
                 value={draft.end_date}
@@ -702,7 +705,7 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
             </label>
           </div>
           <label className="block">
-            <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">
+            <span className="text-[0.6875rem] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">
               Currency
             </span>
             <select
@@ -715,7 +718,7 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
                 <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
               ))}
             </select>
-            <span className="block mt-1 text-[11px] text-on-surface-variant">
+            <span className="block mt-1 text-[0.6875rem] text-on-surface-variant">
               What new bookings and expenses on this trip start in. You can still
               change it on any single one.
             </span>
@@ -805,7 +808,7 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
 
       {/* People */}
       <div className={`border-t border-outline/20 pt-3 ${collapsed ? 'hidden' : ''}`}>
-        <h5 className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
+        <h5 className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
           People ({trip.members.length})
         </h5>
         <ul className="space-y-1 mb-3">
@@ -851,7 +854,7 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
                     </option>
                   ))}
                 </select>
-                <p className="text-[11px] text-on-surface-variant text-center" aria-hidden>
+                <p className="text-[0.6875rem] text-on-surface-variant text-center" aria-hidden>
                   — or add by email —
                 </p>
               </>
@@ -882,13 +885,13 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
                 Add to trip
               </button>
             </div>
-            <p className="text-[11px] text-on-surface-variant leading-relaxed">
+            <p className="text-[0.6875rem] text-on-surface-variant leading-relaxed">
               They can be assigned to-dos and splits right away. When they sign in with
               this email, they get this account automatically.
             </p>
           </form>
         ) : (
-          <p className="text-[11px] text-on-surface-variant">
+          <p className="text-[0.6875rem] text-on-surface-variant">
             Only owners can add or remove people.
           </p>
         )}
@@ -951,7 +954,7 @@ function TripHistory({ tripId }) {
         type="button"
         onClick={toggle}
         aria-expanded={open}
-        className="flex items-center gap-1.5 text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider hover:text-primary transition-colors"
+        className="flex items-center gap-1.5 text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider hover:text-primary transition-colors"
       >
         <svg
           className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-90' : ''}`}
@@ -967,7 +970,7 @@ function TripHistory({ tripId }) {
       {open && (
         <div className="mt-2">
           {loading ? (
-            <p className="text-[11px] text-on-surface-variant/70">Loading…</p>
+            <p className="text-[0.6875rem] text-on-surface-variant/70">Loading…</p>
           ) : (
             <>
               {feed.entries.length > 0 && (
@@ -1017,15 +1020,15 @@ function MemberRow({ m, trip, currentUserId, isOwner, lastOwner, partyById, busy
           {memberLabel(m)}
           {m.id === currentUserId && <span className="text-on-surface-variant"> (you)</span>}
         </span>
-        <span className="block text-[11px] text-on-surface-variant truncate">{m.email}</span>
+        <span className="block text-[0.6875rem] text-on-surface-variant truncate">{m.email}</span>
         {m.party_id && partyById.has(m.party_id) && (
-          <span className="inline-flex items-center gap-1 mt-0.5 max-w-full text-[10px] font-medium text-primary bg-primary-light px-1.5 py-0.5 rounded-full">
+          <span className="inline-flex items-center gap-1 mt-0.5 max-w-full text-[0.625rem] font-medium text-primary bg-primary-light px-1.5 py-0.5 rounded-full">
             <span aria-hidden>👥</span>
             <span className="truncate min-w-0">{partyById.get(m.party_id).name}</span>
           </span>
         )}
         {m.shares_costs === false && (
-          <span className="inline-flex items-center gap-1 mt-0.5 max-w-full text-[10px] font-medium text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded-full">
+          <span className="inline-flex items-center gap-1 mt-0.5 max-w-full text-[0.625rem] font-medium text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded-full">
             <span aria-hidden>🚫</span>
             <span className="truncate min-w-0">No cost share</span>
           </span>
@@ -1049,7 +1052,7 @@ function MemberRow({ m, trip, currentUserId, isOwner, lastOwner, partyById, busy
           ))}
         </select>
       ) : (
-        <span className="text-[10px] uppercase tracking-wide text-on-surface-variant shrink-0">
+        <span className="text-[0.625rem] uppercase tracking-wide text-on-surface-variant shrink-0">
           {m.role}
         </span>
       )}
@@ -1072,7 +1075,7 @@ function MemberRow({ m, trip, currentUserId, isOwner, lastOwner, partyById, busy
             }
             className="w-3.5 h-3.5 rounded border-outline/50 text-primary focus:ring-primary/30"
           />
-          <span className="text-[10px] uppercase tracking-wide text-on-surface-variant">Splits</span>
+          <span className="text-[0.625rem] uppercase tracking-wide text-on-surface-variant">Splits</span>
         </label>
       )}
       {isOwner && (
@@ -1153,10 +1156,10 @@ function PartyManager({ trip, busy, run }) {
   return (
     <div className="border-t border-outline/20 pt-3 mb-3">
       {confirmDialog}
-      <h5 className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
+      <h5 className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
         Couples &amp; groups
       </h5>
-      <p className="text-[11px] text-on-surface-variant mb-2 leading-relaxed">
+      <p className="text-[0.6875rem] text-on-surface-variant mb-2 leading-relaxed">
         Group people who settle together (a couple) so they show as one unit on Settle up.
       </p>
 
@@ -1188,7 +1191,7 @@ function PartyManager({ trip, busy, run }) {
                     <button
                       onClick={() => { setRenaming(p.id); setRenameValue(p.name) }}
                       disabled={busy}
-                      className="text-[11px] text-primary font-medium hover:underline disabled:opacity-40 shrink-0"
+                      className="text-[0.6875rem] text-primary font-medium hover:underline disabled:opacity-40 shrink-0"
                     >
                       Rename
                     </button>
@@ -1203,7 +1206,7 @@ function PartyManager({ trip, busy, run }) {
                         run(() => deleteParty({ trip_id: trip.id, party_id: p.id }), 'Group removed')
                       }}
                       disabled={busy}
-                      className="text-[11px] text-on-surface-variant hover:text-red-500 font-medium disabled:opacity-40 shrink-0"
+                      className="text-[0.6875rem] text-on-surface-variant hover:text-red-500 font-medium disabled:opacity-40 shrink-0"
                     >
                       Ungroup
                     </button>
@@ -1226,7 +1229,7 @@ function PartyManager({ trip, busy, run }) {
                   key={m.id}
                   type="button"
                   onClick={() => toggleSel(m.id)}
-                  className={`inline-flex items-center gap-1.5 min-w-0 max-w-[10rem] pl-1 pr-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                  className={`inline-flex items-center gap-1.5 min-w-0 max-w-[10rem] pl-1 pr-2.5 py-1 rounded-full text-[0.6875rem] font-medium border transition-colors ${
                     active
                       ? 'border-primary bg-primary-light text-primary'
                       : 'border-outline/30 bg-white text-on-surface-variant hover:bg-surface-container'
@@ -1256,7 +1259,7 @@ function PartyManager({ trip, busy, run }) {
         </div>
       ) : (
         parties.length === 0 && (
-          <p className="text-[11px] text-on-surface-variant/70">
+          <p className="text-[0.6875rem] text-on-surface-variant/70">
             Add at least two people to this trip to group them.
           </p>
         )

@@ -126,7 +126,7 @@ export default function ExpenseDetails({ expense }) {
         )}
       </div>
 
-      <p className="text-[11px] text-on-surface-variant">{addedBy}</p>
+      <p className="text-[0.6875rem] text-on-surface-variant">{addedBy}</p>
 
       {history.length > 0 && (
         <div>

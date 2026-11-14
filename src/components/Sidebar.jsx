@@ -159,7 +159,7 @@ export default function Sidebar({ user, trips, onNavigate }) {
       {/* Trips */}
       <div className="p-3">
         <div className="flex items-center justify-between px-3 py-2">
-          <h2 className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Trips</h2>
+          <h2 className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider">Trips</h2>
           {/* Creating/editing trips lives in Settings — the sidebar just selects. */}
           <Link
             href="/settings"
@@ -173,7 +173,7 @@ export default function Sidebar({ user, trips, onNavigate }) {
             list from jumping when the selection empties. */}
         <div
           aria-hidden={selectedTrips.length === 0}
-          className={`flex items-center justify-between px-3 pb-1.5 text-[11px] text-on-surface-variant transition-opacity duration-150 ${
+          className={`flex items-center justify-between px-3 pb-1.5 text-[0.6875rem] text-on-surface-variant transition-opacity duration-150 ${
             selectedTrips.length > 0 ? "opacity-100" : "opacity-0 pointer-events-none"
           }`}
         >
@@ -232,7 +232,7 @@ export default function Sidebar({ user, trips, onNavigate }) {
 
       {/* Booking Types */}
       <div className="p-3">
-        <h2 className="px-3 py-2 text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Booking Types</h2>
+        <h2 className="px-3 py-2 text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider">Booking Types</h2>
         <ul className="space-y-0.5">
           {BOOKING_TYPES.map(({ id, label, icon }) => {
             const isActive = pathname === `/bookings/${id}`;
@@ -260,7 +260,7 @@ export default function Sidebar({ user, trips, onNavigate }) {
       <div className="mt-auto p-3 px-4 space-y-2">
         {user && (
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-on-surface-variant truncate max-w-[160px]">{user.email}</span>
+            <span className="text-[0.625rem] text-on-surface-variant truncate max-w-[10rem]">{user.email}</span>
             <button
               onClick={async () => {
                 // The cached day sheet is this user's itinerary — it has to be
@@ -276,14 +276,14 @@ export default function Sidebar({ user, trips, onNavigate }) {
                 }
                 signOutAction();
               }}
-              className="text-[10px] text-on-surface-variant/60 hover:text-red-500 transition-colors"
+              className="text-[0.625rem] text-on-surface-variant/60 hover:text-red-500 transition-colors"
             >
               Sign out
             </button>
           </div>
         )}
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-on-surface-variant/50">{APP_VERSION}</span>
+          <span className="text-[0.625rem] text-on-surface-variant/50">{APP_VERSION}</span>
           <button
             onClick={async () => {
               const regs = await navigator.serviceWorker?.getRegistrations();

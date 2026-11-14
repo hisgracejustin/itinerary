@@ -21,7 +21,7 @@ export default function WeekView({ currentDate, bookings, onSelectDate, onBookin
               className="py-2.5 text-center border-l border-outline/20 cursor-pointer hover:bg-primary-light/30 transition-colors duration-150"
               onClick={() => onSelectDate(day)}
             >
-              <div className="text-[11px] text-on-surface-variant uppercase font-medium tracking-wide">{DAY_NAMES[day.getDay()]}</div>
+              <div className="text-[0.6875rem] text-on-surface-variant uppercase font-medium tracking-wide">{DAY_NAMES[day.getDay()]}</div>
               <div
                 className={`text-sm mt-0.5 w-7 h-7 mx-auto flex items-center justify-center rounded-full transition-colors ${
                   isToday ? 'bg-primary text-white font-medium' : 'text-on-surface'
@@ -40,7 +40,7 @@ export default function WeekView({ currentDate, bookings, onSelectDate, onBookin
           {HOURS.map((hour) => (
             <div key={hour} className="contents">
               {/* Time label */}
-              <div className="h-14 flex items-start justify-end pr-2 text-[11px] text-on-surface-variant font-medium pt-0.5">
+              <div className="h-14 flex items-start justify-end pr-2 text-[0.6875rem] text-on-surface-variant font-medium pt-0.5">
                 {hour === 0 ? '' : `${hour % 12 || 12} ${hour < 12 ? 'AM' : 'PM'}`}
               </div>
               {/* Day columns */}

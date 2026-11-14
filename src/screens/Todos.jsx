@@ -317,7 +317,7 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
           </div>
         </div>
         <div className="flex items-center gap-2 mt-2">
-          <span className="text-[11px] text-on-surface-variant">Assign to</span>
+          <span className="text-[0.6875rem] text-on-surface-variant">Assign to</span>
           <AssigneePicker
             value={newTodoAssignee?.id ?? null}
             members={members}
@@ -497,10 +497,10 @@ function BoardColumn({ column, count, highlighted, children }) {
     // viewport instead of letting the card stack scroll.
     <div className="flex flex-col min-w-0 min-h-0">
       <div className="flex items-center justify-between px-1 pb-2 shrink-0">
-        <span className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">
+        <span className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider">
           {column.title}
         </span>
-        <span className="text-[11px] font-medium text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">
+        <span className="text-[0.6875rem] font-medium text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">
           {count}
         </span>
       </div>
@@ -530,7 +530,7 @@ function ColumnEmpty({ status, filterActive, onReset }) {
       {filterActive && (
         <button
           onClick={onReset}
-          className="text-[11px] text-primary font-medium mt-1.5 hover:underline"
+          className="text-[0.6875rem] text-primary font-medium mt-1.5 hover:underline"
         >
           Clear filters
         </button>
@@ -614,7 +614,7 @@ function TodoItem({
         type="checkbox"
         checked={done}
         onChange={() => onSetStatus?.(todo.id, done ? 'todo' : 'done')}
-        className="mt-0.5 w-[18px] h-[18px] rounded-md border-gray-300 text-primary focus:ring-primary/30 cursor-pointer"
+        className="mt-0.5 w-[1.125rem] h-[1.125rem] rounded-md border-gray-300 text-primary focus:ring-primary/30 cursor-pointer"
       />
       <div className="flex-1 min-w-0">
         <span className={`text-sm block ${done ? 'line-through text-on-surface-variant' : 'text-on-surface'}`}>
@@ -642,12 +642,12 @@ function TodoItem({
             onChange={(m) => onAssign?.(todo.id, m)}
           />
           {todo.due_date && (
-            <span className="text-[11px] text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">
+            <span className="text-[0.6875rem] text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">
               📅 {new Date(todo.due_date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
             </span>
           )}
           {tripName && (
-            <span className="text-[11px] text-primary bg-primary-light px-2 py-0.5 rounded-full font-medium">
+            <span className="text-[0.6875rem] text-primary bg-primary-light px-2 py-0.5 rounded-full font-medium">
               {tripName}
             </span>
           )}
@@ -762,7 +762,7 @@ function TodoEditForm({ todo, trips, members = [], currentUserId = null, onSave,
         </select>
       </div>
       <div className="flex items-center gap-2 mt-2">
-        <span className="text-[11px] text-on-surface-variant">Assign to</span>
+        <span className="text-[0.6875rem] text-on-surface-variant">Assign to</span>
         <AssigneePicker
           value={assignee?.id ?? null}
           members={members}

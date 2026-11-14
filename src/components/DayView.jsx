@@ -104,11 +104,11 @@ export default function DayView({ currentDate, bookings, todos = [], dayReminder
       {/* Todos for this day */}
       {dayTodos.length > 0 && (
         <div className="border-b border-outline/30 p-3 sm:p-4 shrink-0">
-          <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">To-dos</div>
+          <div className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">To-dos</div>
           <ul className="space-y-2">
             {dayTodos.map((todo) => (
               <li key={todo.id} className="flex items-center gap-2.5">
-                <span className={`w-4 h-4 rounded-md border flex items-center justify-center text-[10px] ${
+                <span className={`w-4 h-4 rounded-md border flex items-center justify-center text-[0.625rem] ${
                   todo.status === 'done' ? 'bg-primary/10 border-primary/30 text-primary' : 'border-gray-300'
                 }`}>
                   {todo.status === 'done' && '✓'}
@@ -125,7 +125,7 @@ export default function DayView({ currentDate, bookings, todos = [], dayReminder
       {/* All-day events */}
       {allDay.length > 0 && (
         <div className="border-b border-outline/30 p-3 sm:p-4 shrink-0">
-          <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">All Day / Multi-day</div>
+          <div className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">All Day / Multi-day</div>
           <div className="flex flex-wrap gap-2">
             {allDay.map((booking) => {
               const colors = TYPE_COLORS[booking.type] || TYPE_COLORS.activity
@@ -148,7 +148,7 @@ export default function DayView({ currentDate, bookings, todos = [], dayReminder
                     <span className={isCancelled(booking) ? 'line-through' : ''}>🏡 {booking.title}</span>
                     <span className="text-amber-600 font-normal text-xs">{nightNumber}/{totalNights}</span>
                     {isCancelled(booking) && (
-                      <span className="font-normal text-[10px] uppercase tracking-wide">Cancelled</span>
+                      <span className="font-normal text-[0.625rem] uppercase tracking-wide">Cancelled</span>
                     )}
                   </button>
                 )
@@ -162,7 +162,7 @@ export default function DayView({ currentDate, bookings, todos = [], dayReminder
                   <span className="mr-1.5">{icon}</span>
                   <span className={`font-medium ${isCancelled(booking) ? 'line-through' : ''}`}>{booking.title}</span>
                   {isCancelled(booking) && (
-                    <span className="ml-2 text-[10px] uppercase tracking-wide">Cancelled</span>
+                    <span className="ml-2 text-[0.625rem] uppercase tracking-wide">Cancelled</span>
                   )}
                   {booking.provider && <span className="opacity-60 ml-2 hidden sm:inline">· {booking.provider}</span>}
                 </div>
@@ -178,9 +178,9 @@ export default function DayView({ currentDate, bookings, todos = [], dayReminder
           {HOURS.map((hour) => {
             const hourBookings = bookingsByHour[hour] || []
             return (
-              <div key={hour} className="flex border-b border-outline/15 min-h-[56px]">
+              <div key={hour} className="flex border-b border-outline/15 min-h-[3.5rem]">
                 {/* Time label */}
-                <div className="w-14 sm:w-16 shrink-0 text-right pr-3 pt-1 text-[11px] text-on-surface-variant font-medium">
+                <div className="w-14 sm:w-16 shrink-0 text-right pr-3 pt-1 text-[0.6875rem] text-on-surface-variant font-medium">
                   {hour === 0 ? '12 AM' : `${hour % 12 || 12} ${hour < 12 ? 'AM' : 'PM'}`}
                 </div>
                 {/* Content */}

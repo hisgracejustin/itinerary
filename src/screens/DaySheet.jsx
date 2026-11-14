@@ -263,7 +263,7 @@ export default function DaySheet({
         {/* Sync strip. `synced` is null on the server render and on the very
             first client frame, so a cached copy never claims a stale age. */}
         <div
-          className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-[11px] ${
+          className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-[0.6875rem] ${
             offline ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
           }`}
         >
@@ -320,7 +320,7 @@ export default function DaySheet({
                     </svg>
                   </button>
                 </div>
-                <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-surface-container text-[10px] text-on-surface-variant">
+                <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-surface-container text-[0.625rem] text-on-surface-variant">
                   <span aria-hidden>🔒</span>
                   <span className="truncate">offline · read-only</span>
                 </span>
@@ -340,7 +340,7 @@ export default function DaySheet({
                           <span className="text-lg shrink-0">{iconForMime(a.mime_type)}</span>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm text-on-surface truncate">{a.filename}</p>
-                            <p className="text-[10px] text-on-surface-variant">{formatBytes(a.size_bytes)}</p>
+                            <p className="text-[0.625rem] text-on-surface-variant">{formatBytes(a.size_bytes)}</p>
                           </div>
                           {/* Cached alongside the sheet (upcoming bookings
                               only). Never a plain navigation: reads the bytes

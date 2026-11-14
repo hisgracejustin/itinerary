@@ -1062,9 +1062,9 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                 )}
 
                 {preview ? (
-                  <p className="col-span-2 text-[11px] text-emerald-700 bg-emerald-50 rounded-lg px-2.5 py-1.5">{preview}</p>
+                  <p className="col-span-2 text-[0.6875rem] text-emerald-700 bg-emerald-50 rounded-lg px-2.5 py-1.5">{preview}</p>
                 ) : (
-                  <p className="col-span-2 text-[11px] text-on-surface-variant/60">
+                  <p className="col-span-2 text-[0.6875rem] text-on-surface-variant/60">
                     Set the date and value to see what this tier means.
                   </p>
                 )}

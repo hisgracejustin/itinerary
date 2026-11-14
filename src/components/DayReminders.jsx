@@ -130,7 +130,7 @@ export default function DayReminders({ reminders = [], date, tripId, onAdd, onEd
     <div className={compact ? 'space-y-0.5' : 'space-y-1'} onClick={(e) => e.stopPropagation()}>
       {confirmDialog}
       {!compact && (ordered.length > 0 || adding) && (
-        <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Notes</div>
+        <div className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider">Notes</div>
       )}
 
       {sortable ? (
@@ -154,7 +154,7 @@ export default function DayReminders({ reminders = [], date, tripId, onAdd, onEd
         <button
           onClick={() => setAdding(true)}
           className={`inline-flex items-center gap-1 text-on-surface-variant/70 hover:text-primary transition-colors ${
-            compact ? 'text-[10px] opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100' : 'text-xs mt-0.5'
+            compact ? 'text-[0.625rem] opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100' : 'text-xs mt-0.5'
           }`}
         >
           <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -189,8 +189,8 @@ function ReminderItem({ reminder, compact, readOnly = false, onEdit, onRemove, d
   if (readOnly) {
     return (
       <div className={`flex items-start gap-1.5 ${compact ? 'px-1 py-0.5' : 'px-1.5 py-1'}`}>
-        <span className={compact ? 'text-[10px] leading-4' : 'text-xs leading-5'} aria-hidden>📌</span>
-        <p className={`flex-1 min-w-0 ${compact ? 'text-[10px] leading-4 break-words' : 'text-sm leading-5'}`}>
+        <span className={compact ? 'text-[0.625rem] leading-4' : 'text-xs leading-5'} aria-hidden>📌</span>
+        <p className={`flex-1 min-w-0 ${compact ? 'text-[0.625rem] leading-4 break-words' : 'text-sm leading-5'}`}>
           {time && <span className={`font-medium text-primary ${compact ? 'mr-1' : 'mr-1.5'}`}>{time}</span>}
           <span className="text-on-surface">{reminder.text}</span>
         </p>
@@ -214,17 +214,17 @@ function ReminderItem({ reminder, compact, readOnly = false, onEdit, onRemove, d
           aria-label="Drag to reorder"
           title="Drag to reorder"
           className={`shrink-0 cursor-grab active:cursor-grabbing touch-none ${
-            compact ? 'text-[10px] leading-4' : 'text-xs leading-5'
+            compact ? 'text-[0.625rem] leading-4' : 'text-xs leading-5'
           }`}
         >
           📌
         </button>
       ) : (
-        <span className={compact ? 'text-[10px] leading-4' : 'text-xs leading-5'} aria-hidden>📌</span>
+        <span className={compact ? 'text-[0.625rem] leading-4' : 'text-xs leading-5'} aria-hidden>📌</span>
       )}
       <button
         onClick={onEdit}
-        className={`flex-1 min-w-0 text-left ${compact ? 'text-[10px] leading-4' : 'text-sm leading-5'}`}
+        className={`flex-1 min-w-0 text-left ${compact ? 'text-[0.625rem] leading-4' : 'text-sm leading-5'}`}
         title="Edit note"
       >
         {time && (
@@ -270,7 +270,7 @@ function ReminderForm({ initial, onSubmit, onCancel, compact }) {
         onKeyDown={(e) => { if (e.key === 'Escape') onCancel() }}
         placeholder="e.g. Be in Oakhurst by 5pm"
         className={`w-full bg-white border border-outline/40 rounded focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary ${
-          compact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-sm'
+          compact ? 'px-1.5 py-0.5 text-[0.625rem]' : 'px-2 py-1 text-sm'
         }`}
       />
       <div className="flex items-center gap-1.5">
@@ -280,13 +280,13 @@ function ReminderForm({ initial, onSubmit, onCancel, compact }) {
           onChange={(e) => setTime(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Escape') onCancel() }}
           className={`bg-white border border-outline/40 rounded focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary ${
-            compact ? 'px-1 py-0.5 text-[10px]' : 'px-2 py-1 text-xs'
+            compact ? 'px-1 py-0.5 text-[0.625rem]' : 'px-2 py-1 text-xs'
           }`}
         />
         <button
           type="submit"
           className={`rounded-full bg-primary text-white font-medium hover:bg-primary-dark transition-colors ${
-            compact ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-xs'
+            compact ? 'px-2 py-0.5 text-[0.625rem]' : 'px-3 py-1 text-xs'
           }`}
         >
           Save
@@ -295,7 +295,7 @@ function ReminderForm({ initial, onSubmit, onCancel, compact }) {
           type="button"
           onClick={onCancel}
           className={`rounded-full text-on-surface-variant hover:bg-surface-container transition-colors ${
-            compact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs'
+            compact ? 'px-1.5 py-0.5 text-[0.625rem]' : 'px-2.5 py-1 text-xs'
           }`}
         >
           Cancel

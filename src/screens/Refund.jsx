@@ -303,7 +303,7 @@ export default function Refund({ bookings: allBookings, currentUserId }) {
         <div className="pb-10">
           <div className="mat-surface p-6 min-w-0">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">
+              <div className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider">
                 Refundable if cancelled
               </div>
               <input
@@ -323,7 +323,7 @@ export default function Refund({ bookings: allBookings, currentUserId }) {
                 money gone, just under different assumptions. */}
             <div className={`grid gap-3 mt-4 ${creditHKD > 0 ? 'sm:grid-cols-2' : ''}`}>
               <div className="rounded-xl border border-outline/20 px-4 py-3 min-w-0">
-                <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
+                <div className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
                   If you take cash
                 </div>
                 <div className="flex items-baseline justify-between gap-3">
@@ -343,7 +343,7 @@ export default function Refund({ bookings: allBookings, currentUserId }) {
                   one on the left, so it only appears when vouchers exist. */}
               {creditHKD > 0 && (
                 <div className="rounded-xl border border-outline/20 px-4 py-3 min-w-0">
-                  <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
+                  <div className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
                     If you use credits
                   </div>
                   <div className="flex items-baseline justify-between gap-3">
@@ -435,7 +435,7 @@ export default function Refund({ bookings: allBookings, currentUserId }) {
                                   colour the rest of the row doesn't. */}
                               {warning && (
                                 <div
-                                  className={`flex items-center gap-1 min-w-0 text-[11px] ${
+                                  className={`flex items-center gap-1 min-w-0 text-[0.6875rem] ${
                                     warning.urgent ? 'text-red-600' : 'text-amber-600'
                                   }`}
                                 >
@@ -457,7 +457,7 @@ export default function Refund({ bookings: allBookings, currentUserId }) {
                             {/* Capped and truncating: with a credit and an
                                 expiry this line runs long, and unbounded it
                                 would squeeze the title off a phone screen. */}
-                            <div className="text-[11px] text-on-surface-variant truncate max-w-[10rem] sm:max-w-[20rem] ml-auto">
+                            <div className="text-[0.6875rem] text-on-surface-variant truncate max-w-[10rem] sm:max-w-[20rem] ml-auto">
                               {tier
                                 ? `${tierLabel(tier, it.currency)} until ${formatCutoff(tier.cutoff)}`
                                 : Array.isArray(policy)

@@ -90,7 +90,7 @@ export default function TodoModal({ selectedTrip = null, availableTrips = null, 
           onChange={(trip_id) => setForm((current) => ({ ...current, trip_id, assignee_id: null }))}
         />
         <label className="block">
-          <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">
+          <span className="text-[0.6875rem] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">
             Due date (optional)
           </span>
           <input

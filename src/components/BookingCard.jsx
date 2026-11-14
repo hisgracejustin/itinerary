@@ -86,7 +86,7 @@ function FlightDetails({ booking, details }) {
               stops.map((lo, i) => (
                 <Fragment key={i}>
                   <span
-                    className="w-[5px] h-[5px] rounded-full bg-orange-500 shrink-0 mx-1 ring-2 ring-white"
+                    className="w-[0.3125rem] h-[0.3125rem] rounded-full bg-orange-500 shrink-0 mx-1 ring-2 ring-white"
                     aria-hidden
                   />
                   <div className="h-px flex-1 bg-current opacity-30" />
@@ -95,12 +95,12 @@ function FlightDetails({ booking, details }) {
             )}
           </div>
           {stopSummary && (
-            <span className="text-[10px] leading-tight text-orange-600 font-medium mt-0.5 max-w-full truncate">
+            <span className="text-[0.625rem] leading-tight text-orange-600 font-medium mt-0.5 max-w-full truncate">
               {stopSummary}
             </span>
           )}
           {flyingTime && (
-            <span className="text-[10px] leading-tight opacity-50">{flyingTime}</span>
+            <span className="text-[0.625rem] leading-tight opacity-50">{flyingTime}</span>
           )}
         </div>
         <div className="text-center">
@@ -365,7 +365,7 @@ const CANCELLED_CARD = 'opacity-60 [&_.font-semibold]:line-through'
 
 function CancelledChip() {
   return (
-    <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-on-surface-variant bg-surface-container border border-outline/30 rounded-full px-1.5 py-0.5">
+    <span className="shrink-0 text-[0.625rem] font-medium uppercase tracking-wide text-on-surface-variant bg-surface-container border border-outline/30 rounded-full px-1.5 py-0.5">
       Cancelled
     </span>
   )

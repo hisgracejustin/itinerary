@@ -74,7 +74,7 @@ function TripChip({ tripMetas }) {
           className="absolute right-0 z-50 mt-1 min-w-[10rem] max-w-[70vw] max-h-64 overflow-y-auto
                      rounded-xl bg-white border border-outline/30 shadow-elevation-2 py-1"
         >
-          <p className="px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-on-surface-variant">
+          <p className="px-3 py-1 text-[0.625rem] font-medium uppercase tracking-wide text-on-surface-variant">
             Selected trips
           </p>
           {tripMetas.map((t) => (

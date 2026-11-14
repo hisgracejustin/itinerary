@@ -161,7 +161,7 @@ export default function SplitPaymentModal({ transfer, initialAmount, data, onClo
           onChange={setPaid}
         />
         <div>
-          <div className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide mb-1">
+          <div className="text-[0.6875rem] font-medium text-on-surface-variant uppercase tracking-wide mb-1">
             Recorded per trip
           </div>
           {parts?.length ? (

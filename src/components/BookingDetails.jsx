@@ -248,7 +248,7 @@ export default function BookingDetails({ booking, action = null }) {
         )}
       </div>
 
-      <p className="text-[11px] text-on-surface-variant">{addedBy}</p>
+      <p className="text-[0.6875rem] text-on-surface-variant">{addedBy}</p>
 
       {detailEntries.length > 0 && (
         <div>
@@ -296,7 +296,7 @@ export default function BookingDetails({ booking, action = null }) {
                   </div>
                 </div>
                 {leg.stopAfter && (
-                  <div className="pb-2 text-[11px] text-amber-600">
+                  <div className="pb-2 text-[0.6875rem] text-amber-600">
                     {stopDuration(leg.stopAfter) && `${stopDuration(leg.stopAfter)} layover`}
                     {leg.stopAfter.airport && ` in ${leg.stopAfter.airport}`}
                   </div>

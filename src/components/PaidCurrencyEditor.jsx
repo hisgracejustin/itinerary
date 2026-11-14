@@ -39,7 +39,7 @@ export default function PaidCurrencyEditor({ settleCurrency, value, resolved, re
 
   return (
     <div>
-      <button type="button" onClick={toggle} className="text-[11px] text-primary">
+      <button type="button" onClick={toggle} className="text-[0.6875rem] text-primary">
         {value ? 'Remove other currency' : 'Paid in another currency?'}
       </button>
       {value && (
@@ -92,7 +92,7 @@ export default function PaidCurrencyEditor({ settleCurrency, value, resolved, re
             </span>
           </div>
           {daily && (
-            <p className="text-[11px] text-on-surface-variant">
+            <p className="text-[0.6875rem] text-on-surface-variant">
               {daily.live
                 ? `Daily rate${daily.rateDate ? ` on ${shortDate(daily.rateDate)}` : ''}: ${rateInput(daily.rate)}.`
                 : `Approximate built-in rate: ${rateInput(daily.rate)}.`}{' '}
@@ -100,12 +100,12 @@ export default function PaidCurrencyEditor({ settleCurrency, value, resolved, re
             </p>
           )}
           {Math.abs(off) > 0.1 && (
-            <p className="text-[11px] text-amber-700">
+            <p className="text-[0.6875rem] text-amber-700">
               {`That's ${Math.round(Math.abs(off) * 100)}% ${off > 0 ? 'above' : 'below'} the daily rate. Check the numbers before recording.`}
             </p>
           )}
           {resolved && 'error' in resolved && (
-            <p className="text-[11px] text-red-600">{resolved.error}</p>
+            <p className="text-[0.6875rem] text-red-600">{resolved.error}</p>
           )}
         </div>
       )}

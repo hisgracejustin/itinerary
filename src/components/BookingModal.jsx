@@ -510,7 +510,7 @@ export default function BookingModal({
                   {treatAsLayover ? '✓ Layover mode' : 'Treat as layover'}
                 </button>
                 {treatAsLayover && (
-                  <span className="text-[10px] text-on-surface-variant">Saves as 1 flight with stops</span>
+                  <span className="text-[0.625rem] text-on-surface-variant">Saves as 1 flight with stops</span>
                 )}
               </div>
             )}
@@ -767,18 +767,18 @@ function LayoverPreview({ legs }) {
             <div key={i}>
               {/* Flight leg */}
               <div className="flex items-center gap-3">
-                <div className="text-center min-w-[48px]">
+                <div className="text-center min-w-[3rem]">
                   <div className="text-sm font-semibold text-on-surface">{dep}</div>
-                  <div className="text-[10px] text-on-surface-variant">{depTime}</div>
+                  <div className="text-[0.625rem] text-on-surface-variant">{depTime}</div>
                 </div>
                 <div className="flex-1 flex items-center">
                   <div className="h-px flex-1 bg-primary/40" />
-                  <div className="px-2 text-[10px] text-primary font-medium">✈ {flightNum}</div>
+                  <div className="px-2 text-[0.625rem] text-primary font-medium">✈ {flightNum}</div>
                   <div className="h-px flex-1 bg-primary/40" />
                 </div>
-                <div className="text-center min-w-[48px]">
+                <div className="text-center min-w-[3rem]">
                   <div className="text-sm font-semibold text-on-surface">{arr}</div>
-                  <div className="text-[10px] text-on-surface-variant">{arrTime}</div>
+                  <div className="text-[0.625rem] text-on-surface-variant">{arrTime}</div>
                 </div>
               </div>
 

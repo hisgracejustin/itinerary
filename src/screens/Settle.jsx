@@ -444,7 +444,7 @@ export default function Settle({
             </>
           )}
           {statItems.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-white/15 space-y-0.5 text-[12.5px]">
+            <div className="mt-4 pt-3 border-t border-white/15 space-y-0.5 text-[0.78125rem]">
               <p className="flex items-baseline justify-between text-white/65">
                 <span>Total trip spend</span>
                 <span className="font-semibold text-white/90">~{wholeHKD(totalSpendHKD)}</span>
@@ -520,7 +520,7 @@ export default function Settle({
                 </svg>
                 <span className="text-sm font-semibold text-on-surface">Simplify settlements</span>
               </div>
-              <p className="text-[11px] text-on-surface-variant ml-[22px] truncate">
+              <p className="text-[0.6875rem] text-on-surface-variant ml-[1.375rem] truncate">
                 {simplify ? 'Fewest transfers across the group' : 'Everyone settles their own debts'}
               </p>
             </div>
@@ -536,7 +536,7 @@ export default function Settle({
             >
               <span
                 className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
-                  simplify ? 'left-[22px]' : 'left-0.5'
+                  simplify ? 'left-[1.375rem]' : 'left-0.5'
                 }`}
               />
             </button>
@@ -549,7 +549,7 @@ export default function Settle({
           <div className="space-y-3">
             {transferGroups.map(({ currency, list }) => (
               <div key={currency}>
-                <div className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1.5 px-1">
+                <div className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider mb-1.5 px-1">
                   {currency}
                 </div>
                 <div className="space-y-2">
@@ -618,7 +618,7 @@ export default function Settle({
               {splitGroups.map(({ currency, rows, sum }) => (
                 <div key={currency} className="mb-3 last:mb-0">
                   <div className="flex items-baseline justify-between mb-1">
-                    <span className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">
+                    <span className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider">
                       {currency}
                     </span>
                     <span className={`text-xs font-semibold ${sum >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
@@ -648,7 +648,7 @@ export default function Settle({
                             <span className="text-on-surface-variant/70"> · ÷{unitCountOf(b)}</span>
                           </span>
                           {disp.currency !== 'HKD' && netHKD != null && Math.abs(disp.net) >= eps && (
-                            <span className="text-[11px] shrink-0">
+                            <span className="text-[0.6875rem] shrink-0">
                               ≈ HK${Math.abs(netHKD).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                             </span>
                           )}
@@ -662,9 +662,9 @@ export default function Settle({
 
             {/* DESKTOP — the existing table, just filtered. */}
             <div className="hidden lg:block overflow-x-auto -mx-2 px-2">
-              <table className="w-full min-w-[540px] text-sm">
+              <table className="w-full min-w-[33.75rem] text-sm">
                 <thead>
-                  <tr className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">
+                  <tr className="text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider">
                     <th className="text-left font-semibold pb-2">Cost</th>
                     <th className="text-center font-semibold pb-2 px-2">Paid by</th>
                     <th className="text-left font-semibold pb-2 px-2">Split by</th>
@@ -689,7 +689,7 @@ export default function Settle({
                           className="border-t border-outline/20 cursor-pointer hover:bg-surface-container/50 transition-colors"
                         >
                           <td className="py-2 pr-2">
-                            <div className="flex items-center gap-2 min-w-0 max-w-[220px]">
+                            <div className="flex items-center gap-2 min-w-0 max-w-[13.75rem]">
                               <span className="text-base shrink-0">{iconOf(b)}</span>
                               <div className="min-w-0">
                                 <div className="text-sm text-on-surface font-medium truncate">{b.title}</div>
@@ -714,7 +714,7 @@ export default function Settle({
                                 <Avatar key={m.id} member={m} size="xs" />
                               ))}
                               {splitters.length > 4 && (
-                                <span className="w-5 h-5 rounded-full bg-surface-container text-[9px] flex items-center justify-center text-on-surface-variant border border-white shrink-0">
+                                <span className="w-5 h-5 rounded-full bg-surface-container text-[0.5625rem] flex items-center justify-center text-on-surface-variant border border-white shrink-0">
                                   +{splitters.length - 4}
                                 </span>
                               )}
@@ -841,7 +841,7 @@ export default function Settle({
 
 function SectionTitle({ children, className = '' }) {
   return (
-    <h3 className={`text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider mb-3 ${className}`}>
+    <h3 className={`text-[0.6875rem] font-semibold text-on-surface-variant uppercase tracking-wider mb-3 ${className}`}>
       {children}
     </h3>
   )
@@ -878,7 +878,7 @@ function RatesDisclosure({ currencies, fx }) {
   return (
     <div className="mt-2">
       <div className="flex items-center gap-2 flex-wrap">
-        <p className="text-[11px] text-on-surface-variant/70 min-w-0 truncate">
+        <p className="text-[0.6875rem] text-on-surface-variant/70 min-w-0 truncate">
           {updatedLabel
             ? `Non-HKD amounts converted at rates updated ${updatedLabel}`
             : 'Non-HKD amounts converted at approximate built-in rates'}
@@ -886,16 +886,16 @@ function RatesDisclosure({ currencies, fx }) {
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="text-[11px] text-primary shrink-0"
+          className="text-[0.6875rem] text-primary shrink-0"
         >
           {open ? 'Hide' : 'Rates'}
         </button>
       </div>
       {open && (
         <div className="mt-1.5 overflow-x-auto">
-          <table className="text-[11px] text-on-surface-variant">
+          <table className="text-[0.6875rem] text-on-surface-variant">
             <thead>
-              <tr className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant/70">
+              <tr className="text-[0.625rem] font-semibold uppercase tracking-wider text-on-surface-variant/70">
                 <th className="text-left font-semibold pr-4 pb-1">From</th>
                 <th className="text-left font-semibold pr-4 pb-1">To</th>
                 <th className="text-right font-semibold pr-4 pb-1">Rate</th>
@@ -1121,10 +1121,10 @@ function BalanceRow({ unit, memberByUserId }) {
       {open && (
         <div className="mt-2 pl-8 space-y-1">
           {currencies.length === 0 && (
-            <p className="text-[11px] text-on-surface-variant">No costs recorded.</p>
+            <p className="text-[0.6875rem] text-on-surface-variant">No costs recorded.</p>
           )}
           {currencies.map((cur) => (
-            <div key={cur} className="flex items-center justify-between text-[11px] text-on-surface-variant">
+            <div key={cur} className="flex items-center justify-between text-[0.6875rem] text-on-surface-variant">
               <span>Paid {formatCurrency(unit.paid[cur] || 0, cur)}</span>
               <span>Share {formatCurrency(unit.owed[cur] || 0, cur)}</span>
             </div>
@@ -1144,7 +1144,7 @@ function NeedsAttentionRow({ item, reason, onOpen, onSplitEven, busy }) {
     <>
       <span className="text-base shrink-0">{icon}</span>
       <span className="text-sm text-on-surface truncate min-w-0 flex-1">{title}</span>
-      {!onSplitEven && <span className="text-[11px] text-amber-600 shrink-0">{reason}</span>}
+      {!onSplitEven && <span className="text-[0.6875rem] text-amber-600 shrink-0">{reason}</span>}
     </>
   )
   return (
@@ -1165,7 +1165,7 @@ function NeedsAttentionRow({ item, reason, onOpen, onSplitEven, busy }) {
           type="button"
           onClick={onSplitEven}
           disabled={busy}
-          className="text-[11px] font-medium text-amber-800 border border-amber-400 rounded-full px-2 py-0.5 hover:bg-amber-100 disabled:opacity-40 shrink-0 transition-colors"
+          className="text-[0.6875rem] font-medium text-amber-800 border border-amber-400 rounded-full px-2 py-0.5 hover:bg-amber-100 disabled:opacity-40 shrink-0 transition-colors"
         >
           Split evenly
         </button>

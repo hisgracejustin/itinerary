@@ -44,7 +44,7 @@ function colorFor(id) {
 
 /** Small round avatar — image when available, otherwise coloured initials. */
 export function Avatar({ member, size = 'sm' }) {
-  const dim = size === 'xs' ? 'w-5 h-5 text-[9px]' : 'w-6 h-6 text-[10px]'
+  const dim = size === 'xs' ? 'w-5 h-5 text-[0.5625rem]' : 'w-6 h-6 text-[0.625rem]'
   if (member?.image) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
@@ -117,7 +117,7 @@ export default function AssigneePicker({
         aria-expanded={open}
         title={isUnassigned ? 'Unassigned — click to assign' : `Assigned to ${memberLabel(selected)}`}
         className={`inline-flex items-center gap-1.5 rounded-full border transition-colors disabled:opacity-50 ${
-          size === 'xs' ? 'pl-0.5 pr-2 py-0.5 text-[10px]' : 'pl-1 pr-2.5 py-1 text-[11px]'
+          size === 'xs' ? 'pl-0.5 pr-2 py-0.5 text-[0.625rem]' : 'pl-1 pr-2.5 py-1 text-[0.6875rem]'
         } ${
           isUnassigned
             ? 'border-dashed border-outline/60 text-on-surface-variant hover:border-primary hover:text-primary'
@@ -154,7 +154,7 @@ export default function AssigneePicker({
           }`}
         >
           {members.length === 0 && (
-            <p className="px-3 py-2 text-[11px] text-on-surface-variant">
+            <p className="px-3 py-2 text-[0.6875rem] text-on-surface-variant">
               No one to assign yet — add people to this trip first.
             </p>
           )}
@@ -178,7 +178,7 @@ export default function AssigneePicker({
                   )}
                 </span>
                 {m.email && (
-                  <span className="block truncate text-[10px] text-on-surface-variant">{m.email}</span>
+                  <span className="block truncate text-[0.625rem] text-on-surface-variant">{m.email}</span>
                 )}
               </span>
               {m.id === value && (

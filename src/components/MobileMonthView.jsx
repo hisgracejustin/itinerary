@@ -526,7 +526,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
         {/* Day headers */}
         <div className="grid grid-cols-7 px-2 pt-1.5 pb-1.5">
           {DAY_NAMES.map((name, i) => (
-            <div key={i} className="py-2 text-center text-[10px] font-medium text-on-surface-variant uppercase tracking-wide">
+            <div key={i} className="py-2 text-center text-[0.625rem] font-medium text-on-surface-variant uppercase tracking-wide">
               {name}
             </div>
           ))}
@@ -615,7 +615,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                     {date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                   </button>
                   {isSameDay(date, today) && (
-                    <span className="text-[10px] bg-primary-light text-primary px-2 py-0.5 rounded-full font-medium">Today</span>
+                    <span className="text-[0.625rem] bg-primary-light text-primary px-2 py-0.5 rounded-full font-medium">Today</span>
                   )}
                   {/* Only offered when a trip can own the note — an editor that
                       can never save is worse than no editor. */}
@@ -658,7 +658,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       <button
                         key={b.id}
                         onClick={() => onBookingClick?.(b)}
-                        className="inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-medium hover:bg-amber-200 transition-colors"
+                        className="inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[0.6875rem] font-medium hover:bg-amber-200 transition-colors"
                       >
                         <span className="shrink-0">🏡</span>
                         <span className={`truncate ${isCancelled(b) ? 'line-through opacity-70' : ''}`}>{b.title}</span>
@@ -690,7 +690,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       <button
                         key={b.id}
                         onClick={() => onBookingClick?.(b)}
-                        className="inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[11px] font-medium hover:bg-purple-200 transition-colors"
+                        className="inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[0.6875rem] font-medium hover:bg-purple-200 transition-colors"
                       >
                         <span className="shrink-0">🚢</span>
                         <span className="truncate">On board</span>
@@ -720,7 +720,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       <button
                         key={b.id}
                         onClick={() => onBookingClick?.(b)}
-                        className="inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-medium hover:bg-indigo-200 transition-colors"
+                        className="inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[0.6875rem] font-medium hover:bg-indigo-200 transition-colors"
                       >
                         <span className="shrink-0">{getRentalIcon(details)}</span>
                         <span className={`truncate ${isCancelled(b) ? 'line-through opacity-70' : ''}`}>{b.title}</span>
@@ -758,7 +758,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       <button
                         key={`transit-${b.id}`}
                         onClick={() => onBookingClick?.(b)}
-                        className={`inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors ${chipColors}`}
+                        className={`inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full text-[0.6875rem] font-medium transition-colors ${chipColors}`}
                       >
                         <span className="shrink-0">{typeIcon}</span>
                         <span className={`truncate ${isCancelled(b) ? 'line-through opacity-70' : ''}`}>{b.title}</span>
@@ -784,7 +784,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                     return (
                       <span
                         key={`overnight-${b.id}`}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${chipColors} transition-colors`}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.6875rem] font-medium whitespace-nowrap ${chipColors} transition-colors`}
                       >
                         {typeIcon} Overnight
                       </span>
@@ -800,7 +800,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                     if (viewDay < spanStartDay || viewDay >= spanEndDay) return null
                     if (!hasOvernightCoverage(bookings, date)) {
                       return (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-500 text-[11px]" title="No accommodation booked">
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-500 text-[0.6875rem]" title="No accommodation booked">
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
@@ -859,7 +859,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                       <div className="space-y-1.5">
                         {dayTodos.map((todo) => (
                           <div key={todo.id} className="flex items-center gap-2 pl-1">
-                            <span className={`w-3.5 h-3.5 rounded-md border flex items-center justify-center text-[9px] ${
+                            <span className={`w-3.5 h-3.5 rounded-md border flex items-center justify-center text-[0.5625rem] ${
                               todo.status === 'done' ? 'bg-primary/10 border-primary/30 text-primary' : 'border-gray-300'
                             }`}>
                               {todo.status === 'done' && '✓'}
@@ -1049,7 +1049,7 @@ function AgendaItem({ booking, displayDate, onClick }) {
                 {booking.title}
               </div>
               {isCancelled(booking) && (
-                <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-on-surface-variant bg-surface-container border border-outline/30 rounded-full px-1.5 py-0.5">
+                <span className="shrink-0 text-[0.625rem] font-medium uppercase tracking-wide text-on-surface-variant bg-surface-container border border-outline/30 rounded-full px-1.5 py-0.5">
                   Cancelled
                 </span>
               )}
@@ -1074,7 +1074,7 @@ function AgendaItem({ booking, displayDate, onClick }) {
               <div className="flex items-center justify-end gap-0.5">
                 <span className="text-on-surface-variant/60">→ {formatTime(booking.end_date)}</span>
                 {nextDayIndicator && (
-                  <span className="text-[10px] text-orange-500 font-semibold">{nextDayIndicator}</span>
+                  <span className="text-[0.625rem] text-orange-500 font-semibold">{nextDayIndicator}</span>
                 )}
               </div>
             )}
@@ -1126,7 +1126,7 @@ function AgendaItem({ booking, displayDate, onClick }) {
       {/* Layover route visual */}
       {layovers.length > 0 && (
         <div className="mt-2 pt-2 border-t border-gray-100">
-          <div className="flex items-center gap-1 text-[10px] text-on-surface-variant">
+          <div className="flex items-center gap-1 text-[0.625rem] text-on-surface-variant">
             <span className="font-medium text-on-surface">{details.departure_airport}</span>
             {layovers.map((lo, i) => (
               <span key={i} className="flex items-center gap-1">

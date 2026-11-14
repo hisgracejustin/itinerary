@@ -105,7 +105,7 @@ export default function GlobalAddMenu({ onSelect, onClose, disabled = false }) {
               <span className="text-xl shrink-0" aria-hidden>{action.icon}</span>
               <span className="min-w-0">
                 <span className="block text-sm font-medium text-on-surface">{action.title}</span>
-                <span className="block text-[11px] leading-snug text-on-surface-variant mt-0.5">{action.detail}</span>
+                <span className="block text-[0.6875rem] leading-snug text-on-surface-variant mt-0.5">{action.detail}</span>
               </span>
             </button>
           ))}

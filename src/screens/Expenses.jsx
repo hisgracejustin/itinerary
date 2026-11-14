@@ -211,10 +211,10 @@ export default function Expenses({ expenses: allExpenses, currentUserId }) {
             {days.map(({ date, rows }) => (
               <div key={date || "undated"}>
                 <div className="flex items-baseline justify-between gap-3 border-b border-outline/20 pb-1 mb-0.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant truncate min-w-0">
+                  <span className="text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant truncate min-w-0">
                     {dayLabel(date)}
                   </span>
-                  <span className="text-[11px] text-on-surface-variant/70 shrink-0">
+                  <span className="text-[0.6875rem] text-on-surface-variant/70 shrink-0">
                     {totalsByCurrency(rows)}
                   </span>
                 </div>
@@ -248,12 +248,12 @@ export default function Expenses({ expenses: allExpenses, currentUserId }) {
                               {expense.title}
                             </span>
                             {trip && (
-                              <span className="text-[10px] text-on-surface-variant bg-surface-container rounded-full px-2 py-0.5 truncate max-w-36 shrink-0">
+                              <span className="text-[0.625rem] text-on-surface-variant bg-surface-container rounded-full px-2 py-0.5 truncate max-w-36 shrink-0">
                                 {trip.name}
                               </span>
                             )}
                             {attention && (
-                              <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 shrink-0">
+                              <span className="text-[0.625rem] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 shrink-0">
                                 {attention}
                               </span>
                             )}
@@ -269,7 +269,7 @@ export default function Expenses({ expenses: allExpenses, currentUserId }) {
                           </span>
                           {showNet && (
                             <span
-                              className={`block text-[11px] font-medium ${mine.net > 0 ? "text-emerald-700" : "text-red-600"}`}
+                              className={`block text-[0.6875rem] font-medium ${mine.net > 0 ? "text-emerald-700" : "text-red-600"}`}
                             >
                               {mine.net > 0 ? "+" : "−"}
                               {formatCurrency(Math.abs(mine.net), mine.currency)}

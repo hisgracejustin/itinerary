@@ -54,7 +54,7 @@ export default function TripAgenda({ tripStart, tripEnd, bookings, todos = [], d
                   {day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                 </span>
                 {isToday && (
-                  <span className="text-[10px] bg-primary-light text-primary px-2 py-0.5 rounded-full font-medium">Today</span>
+                  <span className="text-[0.625rem] bg-primary-light text-primary px-2 py-0.5 rounded-full font-medium">Today</span>
                 )}
                 {dayNote && (
                   <span className="text-xs italic text-on-surface-variant truncate">{dayNote.title}</span>
@@ -65,7 +65,7 @@ export default function TripAgenda({ tripStart, tripEnd, bookings, todos = [], d
                 <ul className="space-y-1.5 mb-2">
                   {dayTodos.map((todo) => (
                     <li key={todo.id} className="flex items-center gap-2.5">
-                      <span className={`w-4 h-4 rounded-md border flex items-center justify-center text-[10px] shrink-0 ${
+                      <span className={`w-4 h-4 rounded-md border flex items-center justify-center text-[0.625rem] shrink-0 ${
                         todo.status === 'done' ? 'bg-primary/10 border-primary/30 text-primary' : 'border-gray-300'
                       }`}>
                         {todo.status === 'done' && '✓'}

@@ -281,10 +281,10 @@ function DaySection({
           </span>
         )}
         {isToday && (
-          <span className="text-[10px] bg-primary-light text-primary px-2 py-0.5 rounded-full font-medium shrink-0">Today</span>
+          <span className="text-[0.625rem] bg-primary-light text-primary px-2 py-0.5 rounded-full font-medium shrink-0">Today</span>
         )}
         {noStay && (
-          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-500 text-[11px] shrink-0" title="No accommodation booked">
+          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-500 text-[0.6875rem] shrink-0" title="No accommodation booked">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -349,7 +349,7 @@ function DaySection({
         <ul className="space-y-1.5 mb-2">
           {dayTodos.map((todo) => (
             <li key={todo.id} className="flex items-center gap-2.5 pl-3">
-              <span className={`w-4 h-4 rounded-md border flex items-center justify-center text-[10px] shrink-0 ${
+              <span className={`w-4 h-4 rounded-md border flex items-center justify-center text-[0.625rem] shrink-0 ${
                 todo.status === 'done' ? 'bg-primary/10 border-primary/30 text-primary' : 'border-gray-300'
               }`}>
                 {todo.status === 'done' && '✓'}
@@ -403,7 +403,7 @@ function DaySection({
               <button
                 key={bk.id}
                 onClick={() => onBookingClick?.(bk)}
-                className={`inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors ${
+                className={`inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full text-[0.6875rem] font-medium transition-colors ${
                   isCruise
                     ? 'bg-purple-100 text-purple-800 hover:bg-purple-200'
                     : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
@@ -498,7 +498,7 @@ function RunDivider({ days, tripMetas, colorMap, expanded, onToggle, onExtendTri
       key={`${trip.id}-${patch.start_date || patch.end_date}`}
       onClick={() => extend(trip, patch)}
       disabled={busy}
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors disabled:opacity-50 ${colorMap[trip.id]?.text || 'text-on-surface-variant'} ${colorMap[trip.id]?.border || 'border-outline/40'} hover:bg-surface-container`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.6875rem] font-medium border transition-colors disabled:opacity-50 ${colorMap[trip.id]?.text || 'text-on-surface-variant'} ${colorMap[trip.id]?.border || 'border-outline/40'} hover:bg-surface-container`}
     >
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${colorMap[trip.id]?.rail || 'bg-outline/40'}`} aria-hidden />
       <span className="truncate max-w-[9rem]">add to {trip.name}</span>
@@ -509,7 +509,7 @@ function RunDivider({ days, tripMetas, colorMap, expanded, onToggle, onExtendTri
     <div className="py-1">
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-2 text-[11px] text-on-surface-variant hover:text-on-surface transition-colors"
+        className="w-full flex items-center gap-2 text-[0.6875rem] text-on-surface-variant hover:text-on-surface transition-colors"
       >
         <span className="flex-1 border-t border-dashed border-outline/40" />
         <span className="inline-flex items-center gap-1 px-2 whitespace-nowrap min-w-0">

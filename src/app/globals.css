@@ -52,12 +52,13 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* Prevent iOS Safari zoom on input focus */
+  /* Prevent iOS Safari zoom on input focus (it zooms below 16px). max() lets a
+   * larger text size (src/lib/text-size) still grow them; 16px by default. */
   @supports (-webkit-touch-callout: none) {
     input,
     select,
     textarea {
-      font-size: 16px !important;
+      font-size: max(16px, 1rem) !important;
     }
     input[type="date"],
     input[type="datetime-local"] {

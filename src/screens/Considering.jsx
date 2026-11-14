@@ -279,7 +279,7 @@ function ModalShell({ title, onClose, children, footer }) {
         aria-modal="true"
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant sticky top-0 bg-white z-10">
-          <h2 className="text-[17px] font-semibold text-on-surface">{title}</h2>
+          <h2 className="text-[1.0625rem] font-semibold text-on-surface">{title}</h2>
           <button
             type="button"
             onClick={onClose}
@@ -495,7 +495,7 @@ function DecisionForm({ trips, initial, defaultTripId, onClose, onSave }) {
       </Field>
       <Field label="Brief note" hint="(optional)">
         <textarea
-          className={`${inputClass} min-h-[72px] resize-y`}
+          className={`${inputClass} min-h-[4.5rem] resize-y`}
           value={form.notes}
           onChange={(e) => set("notes", e.target.value)}
         />
@@ -739,7 +739,7 @@ function OptionForm({ setId, initial, onClose, onSave }) {
                 />
                 <button
                   type="button"
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-on-surface text-white text-[10px] leading-none"
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-on-surface text-white text-[0.625rem] leading-none"
                   title="Remove photo"
                   onClick={() =>
                     setForm((f) => ({
@@ -763,7 +763,7 @@ function OptionForm({ setId, initial, onClose, onSave }) {
               />
               <button
                 type="button"
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-on-surface text-white text-[10px]"
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-on-surface text-white text-[0.625rem]"
                 onClick={() => removeStaged(i)}
               >
                 ×
@@ -793,14 +793,14 @@ function OptionForm({ setId, initial, onClose, onSave }) {
       <div className="grid grid-cols-2 gap-3">
         <Field label="Pros" hint="(one per line)">
           <textarea
-            className={`${inputClass} min-h-[80px] resize-y`}
+            className={`${inputClass} min-h-[5rem] resize-y`}
             value={form.pros}
             onChange={(e) => set("pros", e.target.value)}
           />
         </Field>
         <Field label="Cons" hint="(one per line)">
           <textarea
-            className={`${inputClass} min-h-[80px] resize-y`}
+            className={`${inputClass} min-h-[5rem] resize-y`}
             value={form.cons}
             onChange={(e) => set("cons", e.target.value)}
           />
@@ -808,7 +808,7 @@ function OptionForm({ setId, initial, onClose, onSave }) {
       </div>
       <Field label="Notes" hint="(**bold**, - bullets, 1. numbers)">
         <textarea
-          className={`${inputClass} min-h-[80px] resize-y`}
+          className={`${inputClass} min-h-[5rem] resize-y`}
           value={form.notes}
           onChange={(e) => set("notes", e.target.value)}
         />
@@ -841,14 +841,14 @@ function OptionCard({
       }`}
     >
       {option.is_pick && (
-        <div className="absolute top-3 left-0 z-10 bg-primary text-white text-[10px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-r-full shadow-elevation-1">
+        <div className="absolute top-3 left-0 z-10 bg-primary text-white text-[0.625rem] font-bold tracking-wider uppercase px-2.5 py-1 rounded-r-full shadow-elevation-1">
           Picked
         </div>
       )}
       <ImageCarousel images={option.images} />
       <div className="p-4 flex flex-col gap-2.5 flex-1">
         <div>
-          <h3 className="text-[15px] font-semibold text-on-surface leading-snug m-0">{option.title}</h3>
+          <h3 className="text-[0.9375rem] font-semibold text-on-surface leading-snug m-0">{option.title}</h3>
           {option.url ? (
             <a
               href={option.url}
@@ -869,7 +869,7 @@ function OptionCard({
         )}
         <div className="grid grid-cols-2 gap-2.5 text-xs">
           <div>
-            <h4 className="m-0 mb-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700">Pros</h4>
+            <h4 className="m-0 mb-1 text-[0.6875rem] font-bold uppercase tracking-wide text-emerald-700">Pros</h4>
             {(option.pros || []).length ? (
               <ul className="m-0 pl-4 text-emerald-800 space-y-0.5 list-disc">
                 {option.pros.map((p, i) => (
@@ -881,7 +881,7 @@ function OptionCard({
             )}
           </div>
           <div>
-            <h4 className="m-0 mb-1 text-[11px] font-bold uppercase tracking-wide text-red-700">Cons</h4>
+            <h4 className="m-0 mb-1 text-[0.6875rem] font-bold uppercase tracking-wide text-red-700">Cons</h4>
             {(option.cons || []).length ? (
               <ul className="m-0 pl-4 text-red-800 space-y-0.5 list-disc">
                 {option.cons.map((c, i) => (
@@ -1421,8 +1421,8 @@ export default function Considering({ initialSets }) {
         {confirmDialog}
         <div className="flex items-start justify-between gap-3 mb-2">
           <div>
-            <h1 className="text-[22px] font-semibold tracking-tight text-on-surface m-0">Considering</h1>
-            <p className="text-[13px] text-on-surface-variant mt-1 mb-0">
+            <h1 className="text-[1.375rem] font-semibold tracking-tight text-on-surface m-0">Considering</h1>
+            <p className="text-[0.8125rem] text-on-surface-variant mt-1 mb-0">
               Options you’re weighing — not on the calendar until you book.
             </p>
           </div>
@@ -1560,7 +1560,7 @@ export default function Considering({ initialSets }) {
         </div>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-[22px] font-semibold m-0 text-on-surface">{active.title}</h1>
+            <h1 className="text-[1.375rem] font-semibold m-0 text-on-surface">{active.title}</h1>
             <div className="flex flex-wrap gap-2 items-center text-xs text-on-surface-variant mt-2">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold bg-amber-50 text-amber-700">
                 {TYPE_ICONS[active.type]} {TYPE_LABELS[active.type]}
@@ -1609,14 +1609,14 @@ export default function Considering({ initialSets }) {
 
       {canToggleView && (
         <div className="sm:hidden mb-3">
-          <div role="tablist" className="flex bg-surface-container rounded-full p-[3px] gap-[3px]">
+          <div role="tablist" className="flex bg-surface-container rounded-full p-[0.1875rem] gap-[0.1875rem]">
             {["list", "details"].map((view) => (
               <button
                 key={view}
                 type="button"
                 role="tab"
                 aria-selected={optionView === view}
-                className={`flex-1 min-h-[38px] rounded-full text-[13.5px] font-medium ${
+                className={`flex-1 min-h-[2.375rem] rounded-full text-[0.84375rem] font-medium ${
                   optionView === view
                     ? "bg-white text-accent-ink font-semibold shadow-elevation-1"
                     : "text-on-surface-variant"
@@ -1665,7 +1665,7 @@ export default function Considering({ initialSets }) {
                 : "Sort by price"}
           </button>
           {priceSort && hasMixedCurrencies ? (
-            <span className="text-[11px] text-on-surface-variant">
+            <span className="text-[0.6875rem] text-on-surface-variant">
               Amounts are compared without currency conversion.
             </span>
           ) : null}
@@ -1716,7 +1716,7 @@ export default function Considering({ initialSets }) {
           type="button"
           disabled={!!pendingAction}
           onClick={() => setOptionModal({ setId: active.id })}
-          className="w-full mt-3 border-2 border-dashed border-outline rounded-2xl min-h-[80px] flex flex-col items-center justify-center gap-1 text-on-surface-variant hover:border-primary hover:bg-primary-light hover:text-accent-ink transition-colors disabled:opacity-50"
+          className="w-full mt-3 border-2 border-dashed border-outline rounded-2xl min-h-[5rem] flex flex-col items-center justify-center gap-1 text-on-surface-variant hover:border-primary hover:bg-primary-light hover:text-accent-ink transition-colors disabled:opacity-50"
         >
           <div className="font-semibold text-sm">+ Add option</div>
           <div className="text-xs">Another place you’re considering</div>
@@ -1742,7 +1742,7 @@ export default function Considering({ initialSets }) {
           type="button"
           disabled={!!pendingAction}
           onClick={() => setOptionModal({ setId: active.id })}
-          className="border-2 border-dashed border-outline rounded-2xl min-h-[320px] flex flex-col items-center justify-center gap-2 text-on-surface-variant hover:border-primary hover:bg-primary-light hover:text-accent-ink transition-colors disabled:opacity-50"
+          className="border-2 border-dashed border-outline rounded-2xl min-h-[20rem] flex flex-col items-center justify-center gap-2 text-on-surface-variant hover:border-primary hover:bg-primary-light hover:text-accent-ink transition-colors disabled:opacity-50"
         >
           <div className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-2xl font-light">
             +

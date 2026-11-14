@@ -7,10 +7,11 @@ import { formatReminderTime } from './DayReminders'
 import useMediaQuery from '../hooks/useMediaQuery'
 import useDayNoteEditor, { noteTripId } from '../hooks/useDayNoteEditor'
 import { useToast } from './Toast'
+import { remScale } from '../lib/text-size'
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-// Vertical budget per week row (px): the day-number strip, one stay-bar lane
+// Vertical budget per week row (px at the default text size): the day-number strip, one stay-bar lane
 // (bar + gap), and one content line (chip/todo/reminder incl. its gap). The
 // grid never scrolls — each cell shows what fits and folds the rest into a
 // "+N more" line, so these constants ARE the fit-to-viewport math.
@@ -199,13 +200,18 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
   const weekCount = weeks.length
 
   // Measure the week area so each cell knows how many lines fit (the grid
-  // itself NEVER scrolls — overflow folds into "+N more").
+  // itself NEVER scrolls — overflow folds into "+N more"), and the text size,
+  // which the px constants grow with (src/lib/text-size; 1 at the default).
   const weeksRef = useRef(null)
   const [rowH, setRowH] = useState(0)
+  const [scale, setScale] = useState(1)
   useEffect(() => {
     const el = weeksRef.current
     if (!el) return
-    const measure = () => setRowH(el.clientHeight / weekCount)
+    const measure = () => {
+      setRowH(el.clientHeight / weekCount)
+      setScale(remScale())
+    }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(el)
@@ -245,6 +251,10 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
     requestScroll(toLocalDateStr(day))
   }
 
+  const headerPx = HEADER_PX * scale
+  const barStride = BAR_STRIDE * scale
+  const lineH = LINE_H * scale
+
   const renderBar = (seg) => {
     const b = seg.booking
     const colors = SPAN_BAR_COLORS[b.type] || SPAN_BAR_COLORS.hotel
@@ -259,7 +269,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
         style={{
           left: `calc(${leftPct}% + ${insetL}px)`,
           width: `calc(${widthPct}% - ${insetL + insetR}px)`,
-          top: HEADER_PX + seg.lane * BAR_STRIDE,
+          top: headerPx + seg.lane * barStride,
         }}
         title={isCancelled(b) ? `${b.title} (cancelled)` : b.title}
         aria-label={
@@ -269,11 +279,11 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
           // Opacity and a strike say nothing to a screen reader.
           (isCancelled(b) ? ' (cancelled)' : '')
         }
-        className={`absolute z-10 h-4 flex items-center gap-1 px-1.5 text-[10px] font-medium leading-none transition-colors ${colors} ${
+        className={`absolute z-10 h-4 flex items-center gap-1 px-1.5 text-[0.625rem] font-medium leading-none transition-colors ${colors} ${
           seg.isStart ? 'rounded-l-full' : ''
         } ${seg.isEnd ? 'rounded-r-full' : ''} ${isCancelled(b) ? 'opacity-50' : ''}`}
       >
-        <span className="shrink-0 text-[9px]" aria-hidden>
+        <span className="shrink-0 text-[0.5625rem]" aria-hidden>
           {/* Stays open with a key (the check-in moment); everything else just
               wears its type icon the whole way across. */}
           {isStay(b) && seg.isStart && b.type !== 'cruise' ? '🔑' : spanIcon(b)}
@@ -304,7 +314,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
           <button
             key="note"
             onClick={(e) => { e.stopPropagation(); setEditingNoteDate(dateStr); setNoteText(dayNote.title) }}
-            className="block w-full text-left text-[10px] italic text-on-surface-variant truncate px-1 py-0.5 hover:text-primary transition-colors duration-150"
+            className="block w-full text-left text-[0.625rem] italic text-on-surface-variant truncate px-1 py-0.5 hover:text-primary transition-colors duration-150"
           >
             {dayNote.title}
           </button>
@@ -317,7 +327,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
         .forEach((r) => {
           const time = formatReminderTime(r.time)
           items.push(
-            <div key={`rem-${r.id}`} className="flex items-center gap-1 px-1 py-0.5 text-[10px] text-on-surface-variant">
+            <div key={`rem-${r.id}`} className="flex items-center gap-1 px-1 py-0.5 text-[0.625rem] text-on-surface-variant">
               <span className="shrink-0" aria-hidden>📌</span>
               <span className="truncate">
                 {time && <span className="font-medium text-primary mr-1">{time}</span>}
@@ -340,7 +350,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
         const spanEndDay = midnight(spanEnd)
         if (viewDay >= spanStartDay && viewDay < spanEndDay && !hasOvernightCoverage(bookings, day)) {
           items.push(
-            <div key="no-stay" className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-50 text-amber-500 text-[10px]" title="No accommodation booked">
+            <div key="no-stay" className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-50 text-amber-500 text-[0.625rem]" title="No accommodation booked">
               <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -353,7 +363,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
         items.push(
           <div key={`todo-${todo.id}`} className="flex items-center gap-1 px-1 py-0.5">
             <span className="w-3 h-3 rounded-sm border border-gray-300 shrink-0" aria-hidden />
-            <span className="text-[11px] truncate text-on-surface">{todo.title}</span>
+            <span className="text-[0.6875rem] truncate text-on-surface">{todo.title}</span>
           </div>
         )
       })
@@ -383,7 +393,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
       >
         <div className="flex items-center justify-between h-5 mb-0.5">
           <span
-            className={`text-[11px] w-5 h-5 flex items-center justify-center rounded-full transition-colors ${
+            className={`text-[0.6875rem] w-5 h-5 flex items-center justify-center rounded-full transition-colors ${
               isToday
                 ? 'bg-primary text-white font-medium'
                 : inMonth
@@ -408,7 +418,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
         </div>
 
         {/* Reserved band the week's stay bars float over */}
-        {laneCount > 0 && <div style={{ height: laneCount * BAR_STRIDE }} className="shrink-0" aria-hidden />}
+        {laneCount > 0 && <div style={{ height: laneCount * barStride }} className="shrink-0" aria-hidden />}
 
         {/* Inline day-title editor stays visible even in a full cell */}
         {isEditingThis && (
@@ -424,7 +434,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
               onChange={(e) => setNoteText(e.target.value)}
               onBlur={(e) => blurSave(e, dateStr, noteText, noteTripId(dayNote))}
               placeholder="Day title"
-              className="flex-1 min-w-0 px-1.5 py-0.5 text-[10px] italic text-on-surface-variant bg-surface-container border-0 rounded focus:outline-none focus:ring-1 focus:ring-primary/30"
+              className="flex-1 min-w-0 px-1.5 py-0.5 text-[0.625rem] italic text-on-surface-variant bg-surface-container border-0 rounded focus:outline-none focus:ring-1 focus:ring-primary/30"
             />
             {dayNote && (
               <button
@@ -446,7 +456,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
             {hiddenCount > 0 && (
               <button
                 onClick={(e) => { e.stopPropagation(); handleDayActivate(day) }}
-                className="block w-full text-left text-[10px] text-primary font-medium px-1 hover:underline"
+                className="block w-full text-left text-[0.625rem] text-primary font-medium px-1 hover:underline"
                 aria-label={`Show ${hiddenCount} more items for ${day.toLocaleDateString()}`}
               >
                 +{hiddenCount} more
@@ -466,7 +476,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
         {/* Day headers */}
         <div className="grid grid-cols-7 border-b border-outline/30 shrink-0">
           {DAY_NAMES.map((name) => (
-            <div key={name} className="py-1 text-center text-[10px] font-medium text-on-surface-variant uppercase tracking-wide">
+            <div key={name} className="py-1 text-center text-[0.625rem] font-medium text-on-surface-variant uppercase tracking-wide">
               {name}
             </div>
           ))}
@@ -477,7 +487,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
           {weeks.map((week, wi) => {
             const { segs, laneCount } = staySegmentsForWeek(stays, week)
             const maxLines = rowH
-              ? Math.max(1, Math.floor((rowH - HEADER_PX - laneCount * BAR_STRIDE - 6) / LINE_H))
+              ? Math.max(1, Math.floor((rowH - headerPx - laneCount * barStride - 6) / lineH))
               : 2
             return (
               <div

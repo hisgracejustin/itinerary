@@ -315,7 +315,7 @@ export default function SplitEditor({
         <div className="text-xs font-medium text-on-surface-variant mb-1.5">Split between</div>
         <div className="flex flex-wrap gap-1.5">
           {units.length === 0 && (
-            <p className="text-[11px] text-on-surface-variant/70">
+            <p className="text-[0.6875rem] text-on-surface-variant/70">
               Add people to this trip to split its cost.
             </p>
           )}
@@ -338,7 +338,7 @@ export default function SplitEditor({
                   type="button"
                   onClick={() => toggleUnit(unit)}
                   title={offBook ? `${unit.name} doesn't share trip costs — tap to add them to this one` : undefined}
-                  className={`inline-flex items-center gap-1.5 min-w-0 max-w-[10rem] pl-1 pr-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${chipTone} ${offBook && !some ? 'border-dashed opacity-60' : ''}`}
+                  className={`inline-flex items-center gap-1.5 min-w-0 max-w-[10rem] pl-1 pr-2.5 py-1 rounded-full text-[0.6875rem] font-medium border transition-colors ${chipTone} ${offBook && !some ? 'border-dashed opacity-60' : ''}`}
                 >
                   <span className="flex -space-x-1.5 shrink-0">
                     <Avatar member={unit.members[0]} size="xs" />
@@ -353,7 +353,7 @@ export default function SplitEditor({
             return (
               <div key={unit.key} className="flex flex-col gap-1 min-w-0">
                 <div
-                  className={`inline-flex items-center min-w-0 max-w-[12rem] rounded-full border text-[11px] font-medium transition-colors ${chipTone}`}
+                  className={`inline-flex items-center min-w-0 max-w-[12rem] rounded-full border text-[0.6875rem] font-medium transition-colors ${chipTone}`}
                 >
                   <button
                     type="button"
@@ -393,7 +393,7 @@ export default function SplitEditor({
                           key={m.id}
                           type="button"
                           onClick={() => toggleMember(m.id)}
-                          className={`inline-flex items-center gap-1 min-w-0 max-w-[8rem] pl-1 pr-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors ${
+                          className={`inline-flex items-center gap-1 min-w-0 max-w-[8rem] pl-1 pr-2 py-0.5 rounded-full text-[0.625rem] font-medium border transition-colors ${
                             on
                               ? 'border-primary bg-primary-light text-primary'
                               : 'border-outline/30 bg-white text-on-surface-variant'
@@ -411,7 +411,7 @@ export default function SplitEditor({
           })}
         </div>
         {missingPayer && (
-          <p className="text-[11px] text-amber-600 mt-1.5">Pick who paid before splitting this cost.</p>
+          <p className="text-[0.6875rem] text-amber-600 mt-1.5">Pick who paid before splitting this cost.</p>
         )}
       </div>
 
@@ -421,7 +421,7 @@ export default function SplitEditor({
           <button
             type="button"
             onClick={() => setShowShares((v) => !v)}
-            className="flex items-center gap-1 text-[11px] font-medium text-primary"
+            className="flex items-center gap-1 text-[0.6875rem] font-medium text-primary"
           >
             <svg
               className={`w-3.5 h-3.5 transition-transform ${showShares ? 'rotate-90' : ''}`}
@@ -479,7 +479,7 @@ export default function SplitEditor({
                       />
                     </span>
                   </label>
-                  <p className="text-[10px] text-on-surface-variant/70">
+                  <p className="text-[0.625rem] text-on-surface-variant/70">
                     Both apply only to people with an amount above 0 — leave someone at 0 and they
                     drop off this expense.
                   </p>
@@ -531,7 +531,7 @@ export default function SplitEditor({
                         {formatCurrency(share, currency)}
                       </span>
                     </div>
-                    <label className="flex items-center justify-end gap-2 text-[11px] text-on-surface-variant">
+                    <label className="flex items-center justify-end gap-2 text-[0.6875rem] text-on-surface-variant">
                       <span>Paid separately</span>
                       <input
                         type="text"
@@ -547,15 +547,15 @@ export default function SplitEditor({
                 )
               })}
               {extrasExceed && (
-                <p className="text-[11px] text-amber-600">Extras exceed the total cost.</p>
+                <p className="text-[0.6875rem] text-amber-600">Extras exceed the total cost.</p>
               )}
               {shareMode === 'amounts' && !extrasExceed && Math.abs(remainder) > 0.01 && (
-                <p className="text-[11px] text-amber-600">
+                <p className="text-[0.6875rem] text-amber-600">
                   {formatCurrency(Math.abs(remainder), currency)} {remainder > 0 ? 'still to assign' : 'over the total'}.
                 </p>
               )}
               {contributionsExceed && (
-                <p className="text-[11px] text-amber-600">
+                <p className="text-[0.6875rem] text-amber-600">
                   Paid separately amounts exceed the total cost.
                 </p>
               )}
@@ -568,7 +568,7 @@ export default function SplitEditor({
       {transferPreview.length > 0 && (
         <div className="pt-2 border-t border-outline/20 space-y-1">
           {transferPreview.map((t, i) => (
-            <p key={i} className="text-[11px] text-on-surface-variant min-w-0 truncate">
+            <p key={i} className="text-[0.6875rem] text-on-surface-variant min-w-0 truncate">
               <span className="font-medium text-on-surface">{t.fromName}</span>
               <span aria-hidden> → </span>
               <span className="font-medium text-on-surface">{t.toName}</span>{' '}

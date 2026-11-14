@@ -7,7 +7,7 @@ export default function FilterChip({ active, onClick, label, count, avatar, warn
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap transition-colors shrink-0 ${
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[0.6875rem] font-medium border whitespace-nowrap transition-colors shrink-0 ${
         active
           ? 'bg-primary text-white border-primary'
           : warn && count > 0

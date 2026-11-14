@@ -3,7 +3,7 @@
 export default function TripSelect({ trips = [], value, onChange, label = "Trip" }) {
   return (
     <label className="block">
-      <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">
+      <span className="text-[0.6875rem] font-medium text-on-surface-variant uppercase tracking-wide block mb-1">
         {label}
       </span>
       <select
