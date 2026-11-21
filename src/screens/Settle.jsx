@@ -15,6 +15,7 @@ import BookingModal from '../components/BookingModal'
 import ExpenseModal from '../components/ExpenseModal'
 import PaymentModal from '../components/PaymentModal'
 import SplitPaymentModal from '../components/SplitPaymentModal'
+import TripSummaryExport from '../components/TripSummaryExport'
 import { useToast } from '../components/Toast'
 import { useConfirmDanger } from '../components/ConfirmDanger'
 import { friendlyError } from '../lib/friendlyError'
@@ -56,6 +57,7 @@ export default function Settle({
   const [paymentModalKey, setPaymentModalKey] = useState(0)
   // A transfer spanning several trips, being settled as one payment.
   const [splitPayment, setSplitPayment] = useState(null)
+  const [exportOpen, setExportOpen] = useState(false)
   const openBooking = (booking) => {
     setEditingBooking(booking)
     setBookingModalOpen(true)
@@ -84,6 +86,10 @@ export default function Settle({
   const bookings = (allBookings || []).filter((b) => inSel(b.trip_id))
   const expenses = (allExpenses || []).filter((e) => inSel(e.trip_id))
   const settlements = (allSettlements || []).filter((s) => inSel(s.trip_id))
+  // Trips in the selection with something to summarise — the PDF is per trip.
+  // Reads the props, not the filtered arrays the balances memo depends on.
+  const exportTrips = trips.filter((trip) => inSel(trip.id) && (
+    (allBookings || []).some((b) => b.trip_id === trip.id) || (allExpenses || []).some((e) => e.trip_id === trip.id)))
 
   // Name/avatar lookup across the filtered roster (a user may appear once per
   // trip; first row wins).
@@ -411,38 +417,54 @@ export default function Settle({
       <div className="space-y-4 pb-10">
         {/* 1 — Hero: your position. */}
         <section className="rounded-2xl bg-gradient-to-br from-primary to-primary-dark text-white p-6">
-          {heroNets.length === 0 ? (
-            <>
-              <p className="text-sm font-medium text-white/75">All settled</p>
-              <p className="text-2xl font-bold tracking-tight mt-1">🎉 Nothing outstanding</p>
-              {transfers.length > 0 && (
-                <p className="text-sm text-white/75 mt-2">
-                  {transfers.length} transfer{transfers.length === 1 ? '' : 's'} pending between others
-                </p>
-              )}
-            </>
-          ) : (
-            <>
-              <p className="text-sm font-medium text-white/75">{heroLabel}</p>
-              <p className="text-3xl font-bold tracking-tight mt-1">
-                {heroHkdOnly ? '' : '~'}
-                {heroTotalHKD >= 0 ? '+' : '−'}
-                {wholeHKD(Math.abs(heroTotalHKD))}
-              </p>
-              {!heroHkdOnly && (
-                <div className="mt-1 space-y-0.5 text-white/85">
-                  {heroNets.map(([cur, amt]) => (
-                    <p key={cur} className="text-lg font-semibold tracking-tight">
-                      {amt > 0 ? '+' : '−'}{formatCurrency(Math.abs(amt), cur)}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              {heroNets.length === 0 ? (
+                <>
+                  <p className="text-sm font-medium text-white/75">All settled</p>
+                  <p className="text-2xl font-bold tracking-tight mt-1">🎉 Nothing outstanding</p>
+                  {transfers.length > 0 && (
+                    <p className="text-sm text-white/75 mt-2">
+                      {transfers.length} transfer{transfers.length === 1 ? '' : 's'} pending between others
                     </p>
-                  ))}
-                </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-white/75">{heroLabel}</p>
+                  <p className="text-3xl font-bold tracking-tight mt-1">
+                    {heroHkdOnly ? '' : '~'}
+                    {heroTotalHKD >= 0 ? '+' : '−'}
+                    {wholeHKD(Math.abs(heroTotalHKD))}
+                  </p>
+                  {!heroHkdOnly && (
+                    <div className="mt-1 space-y-0.5 text-white/85">
+                      {heroNets.map(([cur, amt]) => (
+                        <p key={cur} className="text-lg font-semibold tracking-tight">
+                          {amt > 0 ? '+' : '−'}{formatCurrency(Math.abs(amt), cur)}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-sm text-white/75 mt-2">
+                    settles in {transfers.length} transfer{transfers.length === 1 ? '' : 's'}
+                  </p>
+                </>
               )}
-              <p className="text-sm text-white/75 mt-2">
-                settles in {transfers.length} transfer{transfers.length === 1 ? '' : 's'}
-              </p>
-            </>
-          )}
+            </div>
+            {exportTrips.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setExportOpen(true)}
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-white/15 hover:bg-white/25 px-3 py-1.5 text-xs font-semibold text-white transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2zM12 11v6m0 0l-2.5-2.5M12 17l2.5-2.5" />
+                </svg>
+                Export PDF
+              </button>
+            )}
+          </div>
           {statItems.length > 0 && (
             <div className="mt-4 pt-3 border-t border-white/15 space-y-0.5 text-[0.78125rem]">
               <p className="flex items-baseline justify-between text-white/65">
@@ -826,6 +848,13 @@ export default function Settle({
           onClose={() => setSplitPayment(null)}
         />
       )}
+      {exportOpen && (
+        <TripSummaryExport
+          trips={exportTrips}
+          initialTripId={exportTrips.some((trip) => trip.id === selectedTrip) ? selectedTrip : ''}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
       {paymentInitialValues && (
         <PaymentModal
           key={paymentModalKey}
@@ -974,7 +1003,7 @@ function TransferCard({ t, memberByUserId, currentUserId, onSettle }) {
   } else if (viewerIn(t.fromUnit)) {
     sentence = `You pay ${t.toUnit.name}`
   } else {
-    sentence = `${t.fromUnit.name} pay ${t.toUnit.name}`
+    sentence = `${t.fromUnit.name} ${t.fromUnit.memberIds.length === 1 ? 'pays' : 'pay'} ${t.toUnit.name}`
   }
   return (
     <div className="mat-surface p-4">

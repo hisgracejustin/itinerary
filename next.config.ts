@@ -86,12 +86,15 @@ const nextConfig: NextConfig = {
   // Native / wasm packages that must be loaded by Node directly, not bundled:
   //  - PGlite (local-dev embedded Postgres) ships wasm assets.
   //  - pg (node-postgres) is the production driver.
-  serverExternalPackages: ["@electric-sql/pglite", "pg"],
+  //  - @react-pdf/renderer (the trip-summary PDF) lays out with yoga's wasm.
+  serverExternalPackages: ["@electric-sql/pglite", "pg", "@react-pdf/renderer"],
   // Serverless (Vercel): dbReady() reads drizzle/meta/_journal.json from the
   // filesystem at runtime; file tracing can't see fs reads, so include the
   // migrations folder in every function bundle explicitly.
   outputFileTracingIncludes: {
     "/*": ["./drizzle/**/*"],
+    // The trip-summary PDF reads its fonts and category icons from disk.
+    "/api/trips/[tripId]/summary": ["./src/assets/pdf/**/*"],
   },
 
   experimental: {

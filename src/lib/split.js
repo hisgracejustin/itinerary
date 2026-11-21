@@ -344,6 +344,9 @@ function add(map, currency, amount) {
  *   unallocated: Array,   // cost-bearing items with no splits
  *   missingPayer: Array,  // items with splits but no payer
  *   pairTransfers: Array<{ fromUnit: any, toUnit: any, amount: number, currency: string }>,
+ *   costs: Array<{ kind: 'booking' | 'expense', ref: any, currency: string, amount: number,
+ *                  shares: Map<string, number>, paid: Map<string, number>,
+ *                  payers: Map<string, number> }>,  // shares/paid by unit key, payers by user id
  * }}
  */
 export function computeBalances({
@@ -418,6 +421,9 @@ export function computeBalances({
 
   // Settleable items are also kept for the pairwise (un-simplified) pass below.
   const settleable = []
+  // Each settled cost as the balances see it: in its settle currency (the
+  // charged currency when there is one), with each unit's share and payment.
+  const costs = []
   for (const item of items) {
     if (item.splits.length === 0) {
       unallocated.push(item.ref)
@@ -445,12 +451,19 @@ export function computeBalances({
     // Every funder's trip-unit is credited; each share-holder's trip-unit is
     // debited. paid_by appears in funding only for the remainder after separate
     // contributions. Co-party amounts cancel within the same unit naturally.
+    const cost = { kind: item.kind, ref: item.ref, currency: cur, amount: item.amount * rate, shares: new Map(), paid: new Map(), payers: new Map() }
     for (const [userId, paid] of funding) {
-      add(totals(paidByUnit, registerUnit(tripId, userId)), cur, paid * rate)
+      const key = registerUnit(tripId, userId)
+      add(totals(paidByUnit, key), cur, paid * rate)
+      cost.paid.set(key, (cost.paid.get(key) || 0) + paid * rate)
+      cost.payers.set(userId, (cost.payers.get(userId) || 0) + paid * rate)
     }
     for (const [userId, share] of shares) {
-      add(totals(owedByUnit, registerUnit(tripId, userId)), cur, share * rate)
+      const key = registerUnit(tripId, userId)
+      add(totals(owedByUnit, key), cur, share * rate)
+      cost.shares.set(key, (cost.shares.get(key) || 0) + share * rate)
     }
+    costs.push(cost)
   }
 
   // A settlement's participants form units even with no paid/owed activity of
@@ -580,7 +593,7 @@ export function computeBalances({
     pairTransfers.push(...rows)
   }
 
-  return { units, unallocated, missingPayer, pairTransfers }
+  return { units, unallocated, missingPayer, pairTransfers, costs }
 }
 
 /**

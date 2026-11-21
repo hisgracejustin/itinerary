@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from 'react'
+import { avatarIndex } from '../lib/avatar'
 
 /** Display name for a member row (falls back to the email local-part). */
 export function memberLabel(member) {
@@ -37,9 +38,7 @@ const AVATAR_COLORS = [
 ]
 function colorFor(id) {
   if (!id) return 'bg-surface-container text-on-surface-variant'
-  let hash = 0
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0
-  return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+  return AVATAR_COLORS[avatarIndex(id, AVATAR_COLORS.length)]
 }
 
 /** Small round avatar — image when available, otherwise coloured initials. */
