@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { dbReady } from "@/db";
 import { requireTripAccess } from "@/lib/authz";
-import { getLatestFxRates } from "@/lib/fx";
+import { getFxRatesOn, getLatestFxRates } from "@/lib/fx";
 import { getSettleData, getTripsWithMembers } from "@/lib/queries";
 import { buildTripSummary } from "@/lib/trip-summary";
 import { renderTripSummaryPdf } from "@/lib/trip-summary-pdf";
@@ -32,8 +32,9 @@ function json(body: unknown, status: number) {
 /**
  * The trip-summary PDF for one trip: settle-up, balances, where the money went
  * and every shared cost — the same numbers as Settle up. Any member of the trip
- * can export it (read-only). `?tz=` is the exporter's time zone, so "prepared"
- * and payment dates are their days rather than the server's UTC ones.
+ * can export it (read-only). `?tz=` is the exporter's time zone, so "prepared",
+ * payment dates and whether the trip is over are their days rather than the
+ * server's UTC ones.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ tripId: string }> }) {
   const session = await auth();
@@ -55,6 +56,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ tripId: 
   const only = (row: { trip_id: string }) => row.trip_id === tripId;
   const timeZone = zoneOrUtc(new URL(req.url).searchParams.get("tz"));
   const today = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  // Once the trip is over, ≈ HK$ figures use the rates at its end, so the PDF
+  // says the same whenever it's made; until then, the latest rates.
+  const tripEnd = String(trip.end_date ?? "").slice(0, 10);
+  const atEnd = tripEnd && tripEnd < today ? await getFxRatesOn(tripEnd) : null;
+  const rates = atEnd ? { ...atEnd, basis: "trip-end" as const } : { ...fx, basis: "latest" as const };
 
   const summary = buildTripSummary({
     trip,
@@ -63,8 +69,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ tripId: 
     bookings: data.bookings.filter(only),
     expenses: data.expenses.filter(only),
     settlements: data.settlements.filter(only),
-    rates: fx.rates,
-    rateDate: fx.rateDate,
+    rates: rates.rates,
+    rateDate: rates.rateDate,
+    rateBasis: rates.basis,
     preparedBy: session.user?.name || session.user?.email?.split("@")[0] || "",
     generatedOn: today,
     timeZone,

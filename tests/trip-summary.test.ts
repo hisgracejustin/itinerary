@@ -117,8 +117,30 @@ test("costs are grouped by category, biggest first, with each person's share", (
     ["Bob Lee", "Alice Chan", 500, "HKD", null],
     ["Sophie Wong", "Alice Chan", 40, "CAD", { currency: "HKD", amount: 227.2 }],
   ]);
-  assert.deepEqual(sum.rates, { live: true, date: "2026-11-20", list: [{ currency: "CAD", rate: 5.6789 }] });
+  assert.deepEqual(sum.rates, { live: true, date: "2026-11-20", basis: "latest", missing: [], list: [{ currency: "CAD", rate: 5.6789 }] });
   assert.equal(sum.trip.nights, 14);
+});
+
+test("costs by currency: exact totals, the ≈ home value, share and the rate used", () => {
+  const sum = buildTripSummary(sample());
+  assert.deepEqual(sum.currencies.map((c) => [c.currency, c.rate]), [["CAD", 5.6789], ["HKD", null]]);
+  const exact = (currency: string) =>
+    sum.categories.flatMap((c) => c.costs).filter((r) => r.currency === currency).reduce((t, r) => t + r.amount, 0);
+  for (const c of sum.currencies) near(c.amount, exact(c.currency), 0.001);
+  near(sum.currencies[0].approx, sum.currencies[0].amount * 5.6789, 0.01);
+  near(sum.currencies.reduce((t, c) => t + c.approx, 0), sum.totals.approx, 0.01);
+  near(sum.currencies.reduce((t, c) => t + c.share, 0), 1, 1e-9);
+});
+
+test("rates: the basis passes through, and a currency with no daily rate is named", () => {
+  const s = sample();
+  s.expenses.push(expense("e9", "Bubble tea", "food", "2026-11-19", 120, "TWD", "alice"));
+  const sum = buildTripSummary({ ...s, rateBasis: "trip-end" });
+  assert.equal(sum.rates.basis, "trip-end");
+  assert.deepEqual([sum.rates.live, sum.rates.date, sum.rates.missing], [false, "2026-11-20", ["TWD"]]);
+  assert.equal(sum.currencies.find((c) => c.currency === "TWD")!.rate, 0.24); // the built-in table
+  const none = buildTripSummary({ ...sample(), rates: {}, rateBasis: "bogus" as never });
+  assert.deepEqual([none.rates.basis, none.rates.date, none.rates.missing], ["latest", null, ["CAD"]]);
 });
 
 test("a couple who share costs is one person in the summary", () => {

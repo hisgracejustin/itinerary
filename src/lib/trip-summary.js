@@ -6,7 +6,8 @@
  *
  * People are settlement UNITS, as on Settle up: a couple who share costs is one
  * row. Amounts stay exact in their own currency; ≈ home-currency figures use
- * the daily rates (toHKD) and are only a guide.
+ * one set of daily rates (toHKD) — the trip's last day's once it's over — and
+ * are only a guide.
  */
 import { computeBalances, suggestTransfers } from './split'
 import { FX_RATES_TO_HKD, HOME_CURRENCY, formatCurrency, toHKD } from './currencies'
@@ -22,6 +23,9 @@ import { avatarIndex } from './avatar'
  *   shares: Record<string, number>, approx: number }} SummaryCost
  * @typedef {{ key: string, label: string, icon: string, color: string, approx: number,
  *   totals: Money[], costs: SummaryCost[] }} SummaryCategory
+ * @typedef {{ currency: string, amount: number, approx: number, share: number,
+ *   rate: number | null }} SummaryCurrency  shared costs in one currency; rate is
+ *   "1 currency = rate home", null for home itself
  * @typedef {{
  *   trip: { name: string, start: string | null, end: string | null, nights: number | null },
  *   preparedBy: string, generatedOn: string, home: string,
@@ -29,12 +33,14 @@ import { avatarIndex } from './avatar'
  *   settleUp: Array<{ from: string, to: string, amounts: Money[], approx: number }>,
  *   balances: Array<{ key: string, paid: number, share: number, net: Money[], owed: Money[] }>,
  *   categories: SummaryCategory[],
+ *   currencies: SummaryCurrency[],
  *   upfront: Array<{ key: string, approx: number, share: number }>,
  *   payments: Array<{ date: string | null, from: SummaryPerson, to: SummaryPerson, amount: number,
  *     currency: string, paid: Money | null, note: string | null }>,
  *   totals: { approx: number, perPerson: number, costCount: number, paymentCount: number },
  *   notSplit: number,
- *   rates: { live: boolean, date: string | null, list: Array<{ currency: string, rate: number | null }> },
+ *   rates: { live: boolean, date: string | null, basis: 'trip-end' | 'latest', missing: string[],
+ *     list: Array<{ currency: string, rate: number | null }> },
  * }} TripSummary
  */
 
@@ -175,6 +181,8 @@ function categoryOf(row, kind) {
  * @param {Array} input.settlements
  * @param {Record<string, number>} [input.rates]  live "1 ccy = Y HKD" rates
  * @param {string|null} [input.rateDate]
+ * @param {'trip-end'|'latest'} [input.rateBasis]  whether those are the rates at
+ *   the trip's end or the latest ones
  * @param {string} input.preparedBy
  * @param {string} input.generatedOn  YYYY-MM-DD
  * @param {string} [input.timeZone]   the exporter's IANA zone, for payment dates
@@ -189,6 +197,7 @@ export function buildTripSummary({
   settlements = [],
   rates = {},
   rateDate = null,
+  rateBasis = 'latest',
   preparedBy,
   generatedOn,
   timeZone = 'UTC',
@@ -265,6 +274,26 @@ export function buildTripSummary({
   const total = categories.reduce((s, c) => s + c.approx, 0)
   const travellers = people.reduce((s, p) => s + p.members.length, 0)
 
+  // ---- The same costs by the currency they're split in -------------------
+  const rateOf = (currency) =>
+    currency === HOME_CURRENCY ? null : rates?.[currency] > 0 ? rates[currency] : FX_RATES_TO_HKD[currency] ?? null
+  const byCur = new Map()
+  for (const r of rows) {
+    const c = byCur.get(r.currency) ?? { currency: r.currency, amount: 0, approx: 0 }
+    c.amount += r.amount
+    c.approx += r.approx
+    byCur.set(r.currency, c)
+  }
+  const currencies = [...byCur.values()]
+    .map((c) => ({
+      currency: c.currency,
+      amount: round(c.amount, c.currency),
+      approx: c.approx,
+      share: total > 0 ? c.approx / total : 0,
+      rate: rateOf(c.currency),
+    }))
+    .sort((a, b) => b.approx - a.approx || byCurrency(a, b))
+
   // ---- Settle up: fewest transfers, one line per pair ------------------
   const pairs = new Map()
   for (const t of suggestTransfers(units)) {
@@ -302,7 +331,9 @@ export function buildTripSummary({
   for (const r of rows) used.add(r.currency)
   for (const s of settlements) used.add(s.currency)
   used.delete(HOME_CURRENCY)
-  const live = [...used].every((c) => rates?.[c] > 0)
+  // Currencies with no daily rate fall back to the built-in table.
+  const missing = [...used].filter((c) => !(rates?.[c] > 0)).sort()
+  const live = missing.length === 0
 
   return {
     trip: {
@@ -318,6 +349,7 @@ export function buildTripSummary({
     settleUp,
     balances,
     categories,
+    currencies,
     upfront: people.map((p) => {
       const paid = hkdOf(unitByKey.get(p.key).paid)
       return { key: p.key, approx: paid, share: total > 0 ? paid / total : 0 }
@@ -332,8 +364,11 @@ export function buildTripSummary({
     notSplit: notSplit.length,
     rates: {
       live,
-      date: live ? rateDate : null,
-      list: [...used].sort().map((c) => ({ currency: c, rate: rates?.[c] > 0 ? rates[c] : FX_RATES_TO_HKD[c] ?? null })),
+      // The daily rates' date, when any of them were used.
+      date: used.size > missing.length ? rateDate : null,
+      basis: rateBasis === 'trip-end' ? 'trip-end' : 'latest',
+      missing,
+      list: [...used].sort().map((c) => ({ currency: c, rate: rateOf(c) })),
     },
   }
 }

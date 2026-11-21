@@ -590,8 +590,9 @@ export const settlements = pgTable(
 // approximate ~HKD conversions on the Costs/Settle pages — never settlement
 // math. `rate_to_hkd` is our semantic "1 currency = Y HKD" (matching the static
 // FX_RATES_TO_HKD table), NOT the Frankfurter base=HKD inverse; src/lib/fx.ts
-// stores Y = 1/X. Refreshed lazily after the response when stale and pruned to a
-// rolling ~30-day window; toHKD prefers the newest row, falling back to the
+// stores Y = 1/X. Refreshed lazily after the response when stale; a past day is
+// fetched once when the trip-summary PDF needs it. Rows are kept (a few dozen a
+// day) so old days read back. toHKD prefers the newest row, falling back to the
 // static table when the cache is empty.
 export const fxRates = pgTable(
   "fx_rates",
