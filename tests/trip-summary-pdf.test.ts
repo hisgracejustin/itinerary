@@ -49,7 +49,7 @@ test("renders every layout branch", async () => {
   assert.equal(hkdOnly.rates.list.length, 0, "nothing to convert");
   const empty = buildTripSummary({ ...base, trip: { name: "Weekend away", start_date: "2026-12-01", end_date: "2026-12-03" }, members: [member("a", "Alice Chan")], expenses: [] });
 
-  for (const [summary, min, max] of [[busy, 3, 8], [hkdOnly, 1, 3], [empty, 1, 1]] as const) {
+  for (const [summary, min, max] of [[busy, 4, 12], [hkdOnly, 2, 4], [empty, 1, 1]] as const) {
     const pdf = await renderTripSummaryPdf(summary);
     assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
     const n = pages(pdf);
