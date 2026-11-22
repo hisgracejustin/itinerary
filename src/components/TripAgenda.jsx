@@ -1,6 +1,8 @@
 import { getBookingsForDate, isSameDay } from '../lib/calendar'
 import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
+import { APP_LOCALE } from '../lib/locale'
+import { useToday } from '../lib/today'
 
 // Timezone-safe local date string (YYYY-MM-DD) — matches the calendar views.
 function toLocalDateStr(date) {
@@ -17,7 +19,7 @@ function toLocalDateStr(date) {
  * day detail. Empty days are skipped to keep the list tight.
  */
 export default function TripAgenda({ tripStart, tripEnd, bookings, todos = [], dayNotes = [], dayReminders = [], selectedTrip, onBookingClick, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder }) {
-  const today = new Date()
+  const today = useToday()
   const days = []
   for (let d = new Date(tripStart); d <= tripEnd; d.setDate(d.getDate() + 1)) {
     days.push(new Date(d.getFullYear(), d.getMonth(), d.getDate()))
@@ -51,7 +53,7 @@ export default function TripAgenda({ tripStart, tripEnd, bookings, todos = [], d
             <section key={dateStr}>
               <div className="flex items-baseline gap-2 mb-2 sticky top-0 bg-surface/95 backdrop-blur-sm py-1 z-10">
                 <span className={`text-sm font-semibold ${isToday ? 'text-primary' : 'text-on-surface'}`}>
-                  {day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {day.toLocaleDateString(APP_LOCALE, { weekday: 'short', month: 'short', day: 'numeric' })}
                 </span>
                 {isToday && (
                   <span className="text-[0.625rem] bg-primary-light text-primary px-2 py-0.5 rounded-full font-medium">Today</span>

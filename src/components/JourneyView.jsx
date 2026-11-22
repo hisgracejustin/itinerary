@@ -6,6 +6,8 @@ import { parseDetails } from '../lib/bookingStats'
 import DayReminders from './DayReminders'
 import { useToast } from './Toast'
 import useDayNoteEditor, { noteTripId } from '../hooks/useDayNoteEditor'
+import { APP_LOCALE } from '../lib/locale'
+import { useToday } from '../lib/today'
 
 // Timezone-safe local date string (YYYY-MM-DD) — matches the calendar views.
 function toLocalDateStr(date) {
@@ -70,7 +72,7 @@ export default function JourneyView({
   compact = false,
   allTripIds,
 }) {
-  const today = new Date()
+  const today = useToday()
   // Colors keyed on the FULL trip list (stable regardless of selection) so the
   // sidebar's legend dots always match the rail stripes.
   const colorMap = tripColorMap(allTripIds?.length ? allTripIds : tripMetas.map((t) => t.id))
@@ -273,11 +275,11 @@ function DaySection({
             title="Open day view"
             className={`text-sm font-semibold hover:underline shrink-0 whitespace-nowrap ${isToday ? 'text-primary' : 'text-on-surface'}`}
           >
-            {day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+            {day.toLocaleDateString(APP_LOCALE, { weekday: 'short', month: 'short', day: 'numeric' })}
           </button>
         ) : (
           <span className={`text-sm font-semibold shrink-0 whitespace-nowrap ${isToday ? 'text-primary' : 'text-on-surface'}`}>
-            {day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+            {day.toLocaleDateString(APP_LOCALE, { weekday: 'short', month: 'short', day: 'numeric' })}
           </span>
         )}
         {isToday && (
@@ -541,7 +543,7 @@ function RunDivider({ days, tripMetas, colorMap, expanded, onToggle, onExtendTri
             return (
               <div key={d.dateStr} className="flex items-center gap-2 flex-wrap text-xs text-on-surface-variant">
                 <span className="w-28 shrink-0">
-                  {d.day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {d.day.toLocaleDateString(APP_LOCALE, { weekday: 'short', month: 'short', day: 'numeric' })}
                 </span>
                 {isGap ? (
                   onExtendTrip && (before || after) ? (

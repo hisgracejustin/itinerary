@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors,
 } from '@dnd-kit/core'
@@ -11,6 +11,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { useToast } from './Toast'
 import { useConfirmDanger } from './ConfirmDanger'
 import { friendlyError } from '../lib/friendlyError'
+import { APP_LOCALE } from '../lib/locale'
 
 // Lock drag to the vertical axis (one-line modifier — no extra package).
 const restrictToVerticalAxis = ({ transform }) => ({ ...transform, x: 0 })
@@ -22,7 +23,7 @@ export function formatReminderTime(hhmm) {
   if (Number.isNaN(h) || Number.isNaN(m)) return null
   const d = new Date()
   d.setHours(h, m, 0, 0)
-  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return d.toLocaleTimeString(APP_LOCALE, { hour: 'numeric', minute: '2-digit' })
 }
 
 /**
@@ -35,6 +36,9 @@ export function formatReminderTime(hhmm) {
  * notes — the offline day sheet has no handlers to call.
  */
 export default function DayReminders({ reminders = [], date, tripId, onAdd, onEdit, onRemove, onReorder, readOnly = false, variant = 'panel' }) {
+  // dnd-kit numbers its aria ids from a global counter unless given one, and
+  // the server's count never matches the browser's (a hydration error).
+  const dndId = useId()
   const { toast } = useToast()
   const { ask, dialog: confirmDialog } = useConfirmDanger()
   const [adding, setAdding] = useState(false)
@@ -49,7 +53,7 @@ export default function DayReminders({ reminders = [], date, tripId, onAdd, onEd
   // Manual order (matches the server); optimistic reorder updates positions.
   const ordered = [...reminders].sort(
     (a, b) => (a.position ?? 0) - (b.position ?? 0) ||
-      String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')),
+      String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''), APP_LOCALE),
   )
   const ids = ordered.map((r) => r.id)
   const sortable = !readOnly && !!onReorder && ordered.length > 1
@@ -135,6 +139,7 @@ export default function DayReminders({ reminders = [], date, tripId, onAdd, onEd
 
       {sortable ? (
         <DndContext
+          id={dndId}
           sensors={sensors}
           collisionDetection={closestCenter}
           modifiers={[restrictToVerticalAxis]}

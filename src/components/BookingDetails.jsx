@@ -8,6 +8,7 @@ import { useTripContext } from '../lib/trip-context'
 import { getEntityAudit } from '@/lib/client-actions'
 import { memberLabel } from './AssigneePicker'
 import AuditFeed from './AuditFeed'
+import { APP_LOCALE } from '../lib/locale'
 
 const TYPE_LABELS = {
   flight: '✈️ Flight',
@@ -64,7 +65,7 @@ function formatDate(iso, dateOnly) {
   if (!iso) return null
   const d = new Date(iso)
   if (isNaN(d)) return iso
-  return d.toLocaleString(undefined, dateOnly
+  return d.toLocaleString(APP_LOCALE, dateOnly
     ? { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }
     : { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
@@ -108,7 +109,7 @@ export default function BookingDetails({ booking, action = null }) {
     const d = new Date(booking.cancelled_at)
     return Number.isNaN(d.getTime())
       ? null
-      : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+      : d.toLocaleDateString(APP_LOCALE, { day: 'numeric', month: 'short' })
   })()
   const details = booking.details || {}
   // The same href the cards' pin uses: the saved override, else a search derived
@@ -181,7 +182,7 @@ export default function BookingDetails({ booking, action = null }) {
     if (!iso) return ''
     const d = new Date(iso)
     if (isNaN(d)) return ''
-    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    return d.toLocaleString(APP_LOCALE, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
   }
   const stopDuration = (lo) => {
     const ms = new Date(lo.departure) - new Date(lo.arrival)

@@ -6,6 +6,7 @@ import { useTripContext } from '../lib/trip-context'
 import { getEntityAudit } from '@/lib/client-actions'
 import { memberLabel } from './AssigneePicker'
 import AuditFeed from './AuditFeed'
+import { APP_LOCALE } from '../lib/locale'
 
 /** "Sat, Aug 8, 2026" for a 'YYYY-MM-DD' expense date. */
 function formatDate(iso) {
@@ -14,7 +15,7 @@ function formatDate(iso) {
   // the day before for anyone west of Greenwich.
   const d = new Date(`${iso}T00:00:00`)
   if (isNaN(d)) return iso
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString(APP_LOCALE, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',

@@ -1,6 +1,7 @@
 import { getAirportTimezone } from './airports'
 import { parseDetails } from './bookingStats'
 import { isCancelled } from './booking-cost'
+import { APP_LOCALE } from './locale'
 
 /**
  * Which clock a booking's dates belong to — the PROVIDER's, not the reader's.
@@ -171,7 +172,7 @@ const code = (value) => String(value || '').trim().toUpperCase()
 function shortDay(value) {
   const day = String(value || '').slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null
-  return new Date(`${day}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return new Date(`${day}T00:00:00`).toLocaleDateString(APP_LOCALE, { month: 'short', day: 'numeric' })
 }
 
 /**

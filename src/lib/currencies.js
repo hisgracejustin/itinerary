@@ -3,6 +3,8 @@
  * Rates as of June 3, 2026 (approximate).
  */
 
+import { APP_LOCALE } from './locale'
+
 export const CURRENCIES = [
   { code: 'HKD', symbol: 'HK$', name: 'Hong Kong Dollar' },
   { code: 'USD', symbol: '$', name: 'US Dollar' },
@@ -91,5 +93,5 @@ export function formatCurrency(amount, currency) {
   const symbol = curr?.symbol || currency
   // For JPY/KRW use no decimals
   const decimals = ['JPY', 'KRW', 'TWD'].includes(currency) ? 0 : 2
-  return `${symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`
+  return `${symbol}${amount.toLocaleString(APP_LOCALE, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`
 }

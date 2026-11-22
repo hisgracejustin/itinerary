@@ -12,6 +12,8 @@ import BookingModal from '../components/BookingModal'
 import { updateTrip } from '@/lib/client-actions'
 import { useToast } from '../components/Toast'
 import { friendlyError } from '../lib/friendlyError'
+import { APP_LOCALE } from '../lib/locale'
+import { useTodayKey } from '../lib/today'
 
 // Day notes are props-only (server-rendered), so a plain `await onUpsertDayNote()`
 // then close-the-editor can flash blank for a frame or two: the save resolves
@@ -98,8 +100,10 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
   // so the chosen view simply persists. No storage, no URL, no remounts.
   const [view, setView] = useState('month')
   const persistView = setView
+  // Drawn on the server too, so "today" comes from the hydration-safe hook.
+  const todayKey = useTodayKey()
   const [currentDate, setCurrentDate] = useState(() =>
-    spanStart ? new Date(spanStart + 'T00:00:00') : new Date()
+    new Date(`${spanStart || todayKey}T00:00:00`)
   )
   // Jump to the selection's start when the selection changes (the one thing
   // the old remount-per-selection behavior did that we want to keep).
@@ -267,11 +271,11 @@ export default function Calendar({ initialBookings, initialTodos, initialDayNote
     if (view === 'journey' && hasSpan) {
       const sameYear = journeyStart.getFullYear() === journeyEnd.getFullYear()
       const fmt = (d, withYear) =>
-        d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(withYear ? { year: 'numeric' } : {}) })
+        d.toLocaleDateString(APP_LOCALE, { month: 'short', day: 'numeric', ...(withYear ? { year: 'numeric' } : {}) })
       return `${fmt(journeyStart, !sameYear)} – ${fmt(journeyEnd, true)}`
     }
-    if (view === 'day') return currentDate.toLocaleDateString(undefined, { ...opts, day: 'numeric', weekday: 'long' })
-    return currentDate.toLocaleDateString(undefined, opts)
+    if (view === 'day') return currentDate.toLocaleDateString(APP_LOCALE, { ...opts, day: 'numeric', weekday: 'long' })
+    return currentDate.toLocaleDateString(APP_LOCALE, opts)
   }
 
   return (

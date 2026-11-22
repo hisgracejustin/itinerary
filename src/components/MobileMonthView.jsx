@@ -7,6 +7,8 @@ import BookingCard from './BookingCard'
 import DayReminders from './DayReminders'
 import { useToast } from './Toast'
 import useDayNoteEditor, { noteTripId } from '../hooks/useDayNoteEditor'
+import { APP_LOCALE } from '../lib/locale'
+import { useTodayKey } from '../lib/today'
 
 const DAY_NAMES = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
@@ -18,6 +20,12 @@ function toLocalDateStr(date) {
   return `${y}-${m}-${d}`
 }
 
+/** The day to open on: `today` when it falls in [start, end] (or there's no span), else the span's first day. */
+function defaultDay(today, start, end) {
+  if (!start || !end || (today >= start && today <= end)) return new Date(`${today}T00:00:00`)
+  return new Date(`${start}T00:00:00`)
+}
+
 export default function MobileMonthView({ currentDate, bookings, todos = [], dayNotes = [], dayReminders = [], tripMeta, tripMetas = [], trips = [], selectedTrip, spanStart, spanEnd, onSelectDate, onDayHighlight, onBookingClick, onUpsertDayNote, onAddReminder, onEditReminder, onRemoveReminder, onReorderReminder, onNavigateMonth, collapsed = false, onCollapsedChange }) {
   // The selection's span as plain YYYY-MM-DD. The Date props are rebuilt on
   // every parent render, so effects and memos key on these strings instead.
@@ -27,16 +35,16 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
   // Default: today when today falls inside the selection's span (the usual
   // mid-journey case), else the span's first day. Anchoring on the trip start
   // meant an in-progress trip opened weeks back in its own history.
-  const getDefaultDay = useCallback(() => {
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    if (!spanStartStr || !spanEndStr) return today
-    const todayStr = toLocalDateStr(today)
-    if (todayStr >= spanStartStr && todayStr <= spanEndStr) return today
-    return new Date(spanStartStr + 'T00:00:00')
-  }, [spanStartStr, spanEndStr])
+  const getDefaultDay = useCallback(
+    () => defaultDay(toLocalDateStr(new Date()), spanStartStr, spanEndStr),
+    [spanStartStr, spanEndStr],
+  )
 
-  const [selectedDay, setSelectedDay] = useState(getDefaultDay)
+  // The first render is also drawn on the server, so it takes "today" the
+  // hydration-safe way; re-anchoring later (the effect below) runs in the
+  // browser and reads the device's own clock.
+  const todayKey = useTodayKey()
+  const [selectedDay, setSelectedDay] = useState(() => defaultDay(todayKey, spanStartStr, spanEndStr))
   const { toast } = useToast()
 
   // Day notes are trip-scoped (trip_id NOT NULL). This view never passed one,
@@ -175,7 +183,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
   const allDays = getMonthGrid(year, month)
-  const today = new Date()
+  const today = new Date(`${todayKey}T00:00:00`)
 
   // True when a day falls inside ANY selected trip's [start, end] range (union).
   // Mirrors the desktop MonthView range math (inclusive, end-of-day on end_date).
@@ -612,7 +620,7 @@ export default function MobileMonthView({ currentDate, bookings, todos = [], day
                     onClick={(e) => { e.stopPropagation(); onSelectDate?.(date) }}
                     className={`text-sm font-medium hover:underline shrink-0 whitespace-nowrap ${isSameDay(date, today) ? 'text-primary' : 'text-on-surface'}`}
                   >
-                    {date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                    {date.toLocaleDateString(APP_LOCALE, { weekday: 'short', month: 'short', day: 'numeric' })}
                   </button>
                   {isSameDay(date, today) && (
                     <span className="text-[0.625rem] bg-primary-light text-primary px-2 py-0.5 rounded-full font-medium">Today</span>

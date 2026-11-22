@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TYPE_ICONS } from "@/lib/calendar";
 import { formatCurrency } from "@/lib/currencies";
 import { renderSoftMarkdown } from "@/lib/soft-markdown";
+import { APP_LOCALE } from "../lib/locale";
 
 // Shared image-or-emoji fill for both the List thumb and the Details thumb —
 // the placeholder rules (never an empty/stretched box) are identical, only
@@ -69,7 +70,7 @@ export function OptionListRow({ option, type, isCheapest, delta, currency, onOpe
           {isCheapest ? (
             <span className="text-emerald-700 font-semibold">cheapest</span>
           ) : currency && delta > 0 ? (
-            <span className="text-on-surface-variant">+{delta.toLocaleString()}</span>
+            <span className="text-on-surface-variant">+{delta.toLocaleString(APP_LOCALE)}</span>
           ) : null}
         </div>
       </div>

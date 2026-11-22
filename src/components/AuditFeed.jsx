@@ -1,5 +1,7 @@
 "use client";
 
+import { APP_LOCALE } from "../lib/locale";
+
 // Reverse-chronological history, shared by the per-booking section and the
 // per-trip History card. Entries come from getAuditForEntity/getAuditForTrip,
 // which have already resolved every stored user id against the current roster —
@@ -46,7 +48,7 @@ function formatWhen(value) {
   const d = new Date(value)
   if (isNaN(d)) return ''
   const sameYear = d.getFullYear() === new Date().getFullYear()
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString(APP_LOCALE, {
     day: 'numeric',
     month: 'short',
     ...(sameYear ? {} : { year: 'numeric' }),

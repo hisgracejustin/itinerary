@@ -8,30 +8,33 @@ import { formatCurrency } from "../lib/currencies";
 import { expenseCategory } from "../lib/expense-categories";
 import { itemViewerNet } from "../lib/split";
 import { isTripWritable, writableTripsInSelection } from "../lib/trip-permissions";
+import { APP_LOCALE } from "../lib/locale";
+import { useTodayKey } from "../lib/today";
 
 // Same zero-decimal set the settle math special-cases, used here only to hide
 // dust on the per-expense "what this does to you" pill.
 const ZERO_DECIMAL = ["JPY", "KRW", "TWD"];
 const epsFor = (currency) => (ZERO_DECIMAL.includes(currency) ? 1 : 0.01);
 
-const todayIso = () => {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-};
-
-/** "Today" / "Yesterday" / "Sat, Aug 8" for a "YYYY-MM-DD" expense date. */
-const dayLabel = (iso) => {
+/**
+ * "Today" / "Yesterday" / "Sat, Aug 8" for a "YYYY-MM-DD" expense date.
+ * `today` comes from useTodayKey, so the server and the browser agree on it.
+ */
+const dayLabel = (iso, today) => {
   if (!iso) return "No date";
-  const today = todayIso();
   if (iso === today) return "Today";
-  const yesterday = new Date(`${today}T00:00:00`);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (iso === yesterday.toISOString().slice(0, 10)) return "Yesterday";
+  // Read back with local getters, not toISOString(): that's UTC, which east of
+  // Greenwich turns local midnight into the day before (so "Yesterday" landed
+  // on the day before yesterday in Hong Kong, and disagreed with the server).
+  const y = new Date(`${today}T00:00:00`);
+  y.setDate(y.getDate() - 1);
+  const yesterday = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, "0")}-${String(y.getDate()).padStart(2, "0")}`;
+  if (iso === yesterday) return "Yesterday";
   const date = new Date(`${iso}T00:00:00`);
   if (Number.isNaN(date.getTime())) return iso;
   const opts = { weekday: "short", month: "short", day: "numeric" };
   if (iso.slice(0, 4) !== today.slice(0, 4)) opts.year = "numeric";
-  return date.toLocaleDateString(undefined, opts);
+  return date.toLocaleDateString(APP_LOCALE, opts);
 };
 
 /** Sum amounts per currency — expense totals never cross-convert. */
@@ -44,6 +47,7 @@ const totalsByCurrency = (rows) => {
 };
 
 export default function Expenses({ expenses: allExpenses, currentUserId }) {
+  const todayKey = useTodayKey();
   const { trips, selectedTrips, selectedTrip } = useTripContext();
   const [modal, setModal] = useState(null);
   const [query, setQuery] = useState("");
@@ -109,7 +113,7 @@ export default function Expenses({ expenses: allExpenses, currentUserId }) {
     // in reverse order of entry.
     .sort(
       (a, b) =>
-        (b.date || "").localeCompare(a.date || "") ||
+        (b.date || "").localeCompare(a.date || "", APP_LOCALE) ||
         new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
     );
 
@@ -212,7 +216,7 @@ export default function Expenses({ expenses: allExpenses, currentUserId }) {
               <div key={date || "undated"}>
                 <div className="flex items-baseline justify-between gap-3 border-b border-outline/20 pb-1 mb-0.5">
                   <span className="text-[0.6875rem] font-semibold uppercase tracking-wider text-on-surface-variant truncate min-w-0">
-                    {dayLabel(date)}
+                    {dayLabel(date, todayKey)}
                   </span>
                   <span className="text-[0.6875rem] text-on-surface-variant/70 shrink-0">
                     {totalsByCurrency(rows)}

@@ -23,6 +23,7 @@ import FilterChip from '../components/FilterChip'
 import BookingModal from '../components/BookingModal'
 import ExpenseModal from '../components/ExpenseModal'
 import { memberFirstName } from '../components/AssigneePicker'
+import { APP_LOCALE } from '../lib/locale'
 
 // Plural labels for the By Type bars — naive `${type}s` gave "Activitys"/"Buss".
 // Wording matches the rest of the app (Sidebar/Header/BookingsByType), with the
@@ -306,7 +307,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
               {categoryNote && <span className="normal-case"> · {categoryNote}</span>} (approx. HKD)
             </div>
             <div className="text-3xl font-medium text-on-surface">
-              ~HK${totalHKD.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              ~HK${totalHKD.toLocaleString(APP_LOCALE, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
             </div>
             {/* Currency breakdown */}
             <div className="mt-4 flex flex-wrap gap-2">
@@ -324,11 +325,11 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
               <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-outline/20 pt-3 text-xs text-on-surface-variant">
                 <span className="font-medium shrink-0">{cancelledCount} cancelled</span>
                 <span className="line-through opacity-70 truncate">
-                  ~HK${cancelledHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  ~HK${cancelledHKD.toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })}
                 </span>
                 {keptHKD > 0 && (
                   <span className="text-amber-700 min-w-0">
-                    · ~HK${keptHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })} kept in fees, counted above
+                    · ~HK${keptHKD.toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })} kept in fees, counted above
                   </span>
                 )}
               </div>
@@ -340,7 +341,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                 </svg>
                 <p className="text-xs text-amber-700 min-w-0">
                   {unsplitCount} cost{unsplitCount === 1 ? " isn't" : "s aren't"} assigned to anyone yet, so {unsplitCount === 1 ? "it's" : "they're"} not in this figure.{' '}
-                  <span className="font-semibold whitespace-nowrap">~HK${unsplitTotalHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })} still to assign.</span>
+                  <span className="font-semibold whitespace-nowrap">~HK${unsplitTotalHKD.toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })} still to assign.</span>
                 </p>
               </div>
             )}
@@ -362,7 +363,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                             & drink" into "Food & Drink". */}
                         <span className="text-on-surface font-medium truncate">{typeLabel(type)}</span>
                         <span className="text-on-surface-variant shrink-0 ml-2">
-                          ~HK${hkdAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          ~HK${hkdAmount.toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })}
                         </span>
                       </div>
                       <div className="mt-1.5 h-2 bg-surface-container rounded-full overflow-hidden">
@@ -433,7 +434,7 @@ export default function Costs({ bookings: allBookings, expenses: allExpenses, cu
                     ) : (
                       it.currency !== 'HKD' && (
                         <div className="text-[0.6875rem] text-on-surface-variant">
-                          ~HK${toHKD(amount, it.currency, rates).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          ~HK${toHKD(amount, it.currency, rates).toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })}
                         </div>
                       )
                     )}

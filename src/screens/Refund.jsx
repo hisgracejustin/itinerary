@@ -25,6 +25,7 @@ import { TYPE_ICONS } from '../lib/calendar'
 import FilterChip from '../components/FilterChip'
 import BookingModal from '../components/BookingModal'
 import { memberFirstName } from '../components/AssigneePicker'
+import { APP_LOCALE } from '../lib/locale'
 
 // A tier's cash terms on one line. Shared by the refund row's sub-line and its
 // deadline warning, so "drops to 50%" is worded the same as the 50% it will read
@@ -329,13 +330,13 @@ export default function Refund({ bookings: allBookings, currentUserId }) {
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-xs text-on-surface-variant">Get back</span>
                   <span className="text-xl font-medium text-emerald-600">
-                    ~HK${refundableHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    ~HK${refundableHKD.toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })}
                   </span>
                 </div>
                 <div className="flex items-baseline justify-between gap-3 mt-1">
                   <span className="text-xs text-on-surface-variant">Forfeit</span>
                   <span className="text-xl font-medium text-red-600">
-                    ~HK${nonRefundableHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    ~HK${nonRefundableHKD.toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })}
                   </span>
                 </div>
               </div>
@@ -349,7 +350,7 @@ export default function Refund({ bookings: allBookings, currentUserId }) {
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="text-xs text-on-surface-variant">Hold in credits</span>
                     <span className="text-xl font-medium text-primary">
-                      ~HK${creditHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ~HK${creditHKD.toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })}
                     </span>
                   </div>
                   {creditByProvider.slice(0, 3).map(([name, hkd]) => (
@@ -357,7 +358,7 @@ export default function Refund({ bookings: allBookings, currentUserId }) {
                       {/* Airline names run long; truncate rather than wrap. */}
                       <span className="text-xs text-on-surface-variant truncate min-w-0">{name}</span>
                       <span className="text-xs text-on-surface-variant shrink-0">
-                        {hkd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        {hkd.toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })}
                       </span>
                     </div>
                   ))}
@@ -369,7 +370,7 @@ export default function Refund({ bookings: allBookings, currentUserId }) {
                   <div className="flex items-baseline justify-between gap-3 mt-1">
                     <span className="text-xs text-on-surface-variant">True loss</span>
                     <span className="text-xl font-medium text-red-600">
-                      ~HK${netLossHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ~HK${netLossHKD.toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })}
                     </span>
                   </div>
                 </div>
@@ -388,7 +389,7 @@ export default function Refund({ bookings: allBookings, currentUserId }) {
                 <p className="text-xs text-amber-700 min-w-0">
                   {noPolicyCount} booking{noPolicyCount === 1 ? '' : 's'}{' '}
                   <span className="font-semibold whitespace-nowrap">
-                    (~HK${noPolicyHKD.toLocaleString(undefined, { maximumFractionDigits: 0 })})
+                    (~HK${noPolicyHKD.toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })})
                   </span>{' '}
                   {noPolicyCount === 1 ? 'has' : 'have'} no cancellation policy info and{' '}
                   {noPolicyCount === 1 ? "isn't" : "aren't"} counted.

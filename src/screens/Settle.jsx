@@ -25,6 +25,7 @@ import {
   deleteSettlement,
   updateBooking, deleteBooking,
 } from '../lib/client-actions'
+import { APP_LOCALE, HOME_TIME_ZONE } from '../lib/locale'
 
 // Same zero-decimal set the settle math special-cases; used here only to hide
 // dust (a net a fraction of a unit away from zero reads as "settled up").
@@ -291,7 +292,7 @@ export default function Settle({
   ]
   const totalSpendHKD = statItems.reduce((s, v) => s + v, 0)
   const perPersonHKD = memberByUserId.size > 0 ? totalSpendHKD / memberByUserId.size : 0
-  const wholeHKD = (v) => `HK$${Math.round(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+  const wholeHKD = (v) => `HK$${Math.round(v).toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })}`
 
   // Only surface units that actually took part (paid, owed, or settled).
   const activeUnits = units
@@ -299,7 +300,7 @@ export default function Settle({
     .sort((a, b) => {
       const am = a.memberIds.includes(currentUserId) ? 0 : 1
       const bm = b.memberIds.includes(currentUserId) ? 0 : 1
-      return am - bm || a.name.localeCompare(b.name)
+      return am - bm || a.name.localeCompare(b.name, APP_LOCALE)
     })
 
   const markPaid = (t) => {
@@ -671,7 +672,7 @@ export default function Settle({
                           </span>
                           {disp.currency !== 'HKD' && netHKD != null && Math.abs(disp.net) >= eps && (
                             <span className="text-[0.6875rem] shrink-0">
-                              ≈ HK${Math.abs(netHKD).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                              ≈ HK${Math.abs(netHKD).toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })}
                             </span>
                           )}
                         </div>
@@ -751,7 +752,7 @@ export default function Settle({
                             ) : (
                               <span className={`text-xs font-medium ${netHKD > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
                                 {netHKD > 0 ? '+' : '−'}
-                                HK${Math.abs(netHKD).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                HK${Math.abs(netHKD).toLocaleString(APP_LOCALE, { maximumFractionDigits: 0 })}
                               </span>
                             )}
                           </td>
@@ -898,11 +899,17 @@ function RatesDisclosure({ currencies, fx }) {
   const rates = fx?.rates
   const rateDate = fx?.rateDate ?? null
   const fetchedAt = fx?.fetchedAt ? new Date(fx.fetchedAt) : null
+  // A moment, so it's shown on the home clock: read in each side's own zone,
+  // the server (UTC) and a Hong Kong phone disagreed on the date for eight
+  // hours of every day, and React redrew the page (a hydration error).
   const fetchedLabel = fetchedAt
-    ? fetchedAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    ? fetchedAt.toLocaleString(APP_LOCALE, {
+        month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+        timeZone: HOME_TIME_ZONE, timeZoneName: 'short',
+      })
     : null
   const updatedLabel = fetchedAt
-    ? fetchedAt.toLocaleDateString(undefined, { dateStyle: 'medium' })
+    ? fetchedAt.toLocaleDateString(APP_LOCALE, { dateStyle: 'medium', timeZone: HOME_TIME_ZONE })
     : rateDate
   return (
     <div className="mt-2">

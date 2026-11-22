@@ -100,7 +100,12 @@ function FlightDetails({ booking, details }) {
             </span>
           )}
           {flyingTime && (
-            <span className="text-[0.625rem] leading-tight opacity-50">{flyingTime}</span>
+            // Turning wall-clock times into a span reads each airport's
+            // time-zone rules, and the server's copy of those rules can be
+            // newer than a phone's (British Columbia dropped daylight saving
+            // in 2026): keep the server's figure instead of throwing the page
+            // away over an hour.
+            <span className="text-[0.625rem] leading-tight opacity-50" suppressHydrationWarning>{flyingTime}</span>
           )}
         </div>
         <div className="text-center">

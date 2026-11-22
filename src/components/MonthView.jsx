@@ -8,6 +8,8 @@ import useMediaQuery from '../hooks/useMediaQuery'
 import useDayNoteEditor, { noteTripId } from '../hooks/useDayNoteEditor'
 import { useToast } from './Toast'
 import { remScale } from '../lib/text-size'
+import { APP_LOCALE } from '../lib/locale'
+import { useToday } from '../lib/today'
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -172,7 +174,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
   const rangeMode = !!propDays
-  const today = new Date()
+  const today = useToday()
 
   // Faint teal wash for days inside a SELECTED trip's range.
   const inAnyTrip = (day) =>
@@ -457,7 +459,7 @@ export default function MonthView({ currentDate, days: propDays, bookings, todos
               <button
                 onClick={(e) => { e.stopPropagation(); handleDayActivate(day) }}
                 className="block w-full text-left text-[0.625rem] text-primary font-medium px-1 hover:underline"
-                aria-label={`Show ${hiddenCount} more items for ${day.toLocaleDateString()}`}
+                aria-label={`Show ${hiddenCount} more items for ${day.toLocaleDateString(APP_LOCALE)}`}
               >
                 +{hiddenCount} more
               </button>

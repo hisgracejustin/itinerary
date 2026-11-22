@@ -3,6 +3,7 @@
  */
 
 import { isCancelled } from './booking-cost'
+import { APP_LOCALE } from './locale'
 
 /**
  * Get the days to display in a month grid (includes leading/trailing days from adjacent months).
@@ -111,7 +112,7 @@ export function getStayEdge(booking, date) {
 export function formatTime(isoString) {
   if (!isoString) return ''
   const d = new Date(isoString)
-  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return d.toLocaleTimeString(APP_LOCALE, { hour: 'numeric', minute: '2-digit' })
 }
 
 /**

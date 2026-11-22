@@ -11,6 +11,7 @@ import { bookingOriginal, isCancelled } from '../lib/booking-cost'
 import { nowInstant, refundableAsOf, sanitizeCancellationPolicy } from '../lib/cancellation'
 import { resolveZone } from '../lib/booking-zones'
 import { formatCurrency } from '../lib/currencies'
+import { APP_LOCALE } from '../lib/locale'
 
 /** Upload files staged in the browser to a saved booking. Best-effort per file. */
 async function uploadStagedFiles(bookingId, files) {
@@ -760,8 +761,8 @@ function LayoverPreview({ legs }) {
           const dep = leg.details?.departure_airport || '???'
           const arr = leg.details?.arrival_airport || '???'
           const flightNum = leg.details?.flight_number || ''
-          const depTime = leg.start_date ? new Date(leg.start_date).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
-          const arrTime = leg.end_date ? new Date(leg.end_date).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+          const depTime = leg.start_date ? new Date(leg.start_date).toLocaleString(APP_LOCALE, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+          const arrTime = leg.end_date ? new Date(leg.end_date).toLocaleString(APP_LOCALE, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
 
           return (
             <div key={i}>

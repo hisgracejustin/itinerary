@@ -18,6 +18,7 @@ import useMediaQuery from '../hooks/useMediaQuery'
 import FilterChip from '../components/FilterChip'
 import AssigneePicker, { Avatar, memberLabel } from '../components/AssigneePicker'
 import { useConfirmDanger } from '../components/ConfirmDanger'
+import { APP_LOCALE } from '../lib/locale'
 
 // The board's three columns, in board order. `status` values match the DB enum.
 const COLUMNS = [
@@ -115,7 +116,7 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
   // dragged rows stay where the user dropped them. created_at breaks ties.
   const byPosition = (a, b) =>
     (a.position ?? 0) - (b.position ?? 0) ||
-    String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
+    String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''), APP_LOCALE)
   const visible = todos.filter(matchesFilter)
   // Bucket the filtered todos into their columns, each sorted by position.
   const byStatus = {
@@ -386,6 +387,8 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
       {/* Board */}
       {isDesktop ? (
         <DndContext
+          // A fixed id: dnd-kit's own counter differs between server and browser.
+          id="todos-board"
           sensors={sensors}
           collisionDetection={pointerFirstCollision}
           onDragStart={({ active }) => setActiveId(active.id)}
@@ -456,6 +459,7 @@ export default function Todos({ initialTodos, members: membersProp, currentUserI
               />
             ) : (
               <DndContext
+                id="todos-column"
                 sensors={sensors}
                 collisionDetection={closestCenter}
                 modifiers={[restrictToVerticalAxis]}
@@ -643,7 +647,7 @@ function TodoItem({
           />
           {todo.due_date && (
             <span className="text-[0.6875rem] text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full large-text:whitespace-nowrap">
-              📅 {new Date(todo.due_date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              📅 {new Date(todo.due_date + 'T00:00:00').toLocaleDateString(APP_LOCALE, { month: 'short', day: 'numeric' })}
             </span>
           )}
           {tripName && (

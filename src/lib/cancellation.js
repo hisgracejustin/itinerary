@@ -98,6 +98,8 @@
  *    there).
  */
 
+import { APP_LOCALE } from './locale'
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const CUTOFF_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/
 
@@ -292,7 +294,7 @@ export function formatCutoff(cutoff) {
   if (!cutoff) return ''
   const timed = cutoff.length > 10
   const d = new Date(timed ? `${cutoff}:00` : `${cutoff}T00:00:00`)
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString(APP_LOCALE, {
     month: 'short',
     day: 'numeric',
     ...(timed ? { hour: '2-digit', minute: '2-digit', hour12: false } : {}),
@@ -343,7 +345,7 @@ export function daysUntilCutoff(cutoff, asOf) {
  */
 export function formatExpiry(expiry) {
   if (!expiry) return ''
-  return new Date(`${expiry}T00:00:00`).toLocaleDateString(undefined, {
+  return new Date(`${expiry}T00:00:00`).toLocaleDateString(APP_LOCALE, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',

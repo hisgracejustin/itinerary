@@ -14,6 +14,7 @@ import AuditFeed from '../components/AuditFeed'
 import FilterChip from '../components/FilterChip'
 import { useConfirmDanger } from '../components/ConfirmDanger'
 import TextSizeSetting from '../components/TextSizeSetting'
+import { APP_LOCALE } from '../lib/locale'
 
 const ROLES = [
   { value: 'owner', label: 'Owner', hint: 'Full control, including people and deleting the trip' },
@@ -83,7 +84,7 @@ export default function Settings({ trips: tripsProp, currentUserId, isAdmin = fa
       if (b.id === currentUserId) return 1
       // Strays sink to the bottom of the list, together.
       if ((a.trips.length > 0) !== (b.trips.length > 0)) return a.trips.length > 0 ? -1 : 1
-      return memberLabel(a).localeCompare(memberLabel(b))
+      return memberLabel(a).localeCompare(memberLabel(b), APP_LOCALE)
     })
   const tripless = allPeople.filter((p) => p.trips.length === 0).length
 

@@ -1,10 +1,11 @@
 import { CURRENCIES } from '../lib/currencies'
 import { dailyRate, minorScale, rateInput, startPaid } from '../lib/settle-fx'
+import { APP_LOCALE } from '../lib/locale'
 
 const clean = (raw) => String(raw).replace(/[^0-9.]/g, '')
 // Noon local time, so the ECB date doesn't slide a day in a timezone behind UTC.
 const shortDate = (iso) =>
-  new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  new Date(`${iso}T12:00:00`).toLocaleDateString(APP_LOCALE, { month: 'short', day: 'numeric' })
 
 /**
  * Optional "paid in another currency" section for a payment, styled like

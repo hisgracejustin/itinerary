@@ -8,6 +8,7 @@ import { FIELD_LABELS, FIELD_ORDER, focusFormField } from '../lib/booking-fields
 import { useTripContext } from '../lib/trip-context'
 import SplitEditor from './SplitEditor'
 import ChargedRateEditor from './ChargedRateEditor'
+import { APP_LOCALE } from '../lib/locale'
 
 const BOOKING_TYPES = ['flight', 'train', 'bus', 'rental', 'cruise', 'hotel', 'activity']
 
@@ -904,10 +905,10 @@ export default function BookingForm({ booking, onSave, onDelete, onCancel, savin
                       : formatCurrency(cv, cur)
                   creditClause = `${(c.mode || 'or') === 'and' ? ' plus ' : ' — or instead, '}${creditAmt} in credit`
                   if (c.expiry) {
-                    creditClause += ` (use by ${new Date(c.expiry + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })})`
+                    creditClause += ` (use by ${new Date(c.expiry + 'T00:00:00').toLocaleDateString(APP_LOCALE, { month: 'short', day: 'numeric', year: 'numeric' })})`
                   }
                 }
-                const when = `${new Date(cutoffDate + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}${cutoffTime ? ` ${cutoffTime}` : ''}`
+                const when = `${new Date(cutoffDate + 'T00:00:00').toLocaleDateString(APP_LOCALE, { month: 'short', day: 'numeric' })}${cutoffTime ? ` ${cutoffTime}` : ''}`
                 preview = `Cancel by ${when} → ${cash} back${creditClause}`
               }
               return (

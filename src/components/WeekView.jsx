@@ -1,12 +1,13 @@
 import { getWeekDays, getBookingsForDate, isSameDay, getHour, getStayEdge, formatTime } from '../lib/calendar'
 import BookingChip from './BookingChip'
+import { useToday } from '../lib/today'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export default function WeekView({ currentDate, bookings, onSelectDate, onBookingClick }) {
   const days = getWeekDays(currentDate)
-  const today = new Date()
+  const today = useToday()
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
