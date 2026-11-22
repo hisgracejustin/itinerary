@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { avatarIndex } from '../lib/avatar'
+import { shownEmail } from '../lib/placeholder-email'
 
 /** Display name for a member row (falls back to the email local-part). */
 export function memberLabel(member) {
@@ -176,7 +177,7 @@ export default function AssigneePicker({
                     <span className="text-on-surface-variant font-normal"> (you)</span>
                   )}
                 </span>
-                {m.email && (
+                {shownEmail(m.email) && (
                   <span className="block truncate text-[0.625rem] text-on-surface-variant">{m.email}</span>
                 )}
               </span>

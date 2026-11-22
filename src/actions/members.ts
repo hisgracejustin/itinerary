@@ -9,6 +9,9 @@ import { requireAdmin, requireTripAccess, requireTripMembers } from "@/lib/authz
 import { partySchema } from "@/lib/schemas";
 import { hashPin } from "@/lib/pin";
 import { AppError } from "@/lib/errors";
+import { userFootprint, userHasFootprint } from "@/lib/user-footprint";
+import { requireManageableMember } from "@/lib/invites";
+import { placeholderEmail } from "@/lib/placeholder-email";
 import {
   partyMemberIds,
   partyMembersChange,
@@ -21,11 +24,23 @@ const revalidateApp = () => revalidatePath("/", "layout");
 
 const OWNER_ONLY = ["owner"] as const;
 
-const addMemberSchema = z.object({
-  trip_id: z.string().uuid(),
-  email: z.string().email().transform((e) => e.trim().toLowerCase()),
-  role: z.enum(["owner", "editor", "viewer"]).default("editor"),
-});
+const addMemberSchema = z
+  .object({
+    trip_id: z.string().uuid(),
+    email: z
+      .string()
+      .email()
+      .transform((e) => e.trim().toLowerCase())
+      .optional(),
+    // Or just a name, for someone who won't use the app (yet): they get an
+    // address no one can own (src/lib/placeholder-email.js) and can be sent an
+    // invite link later.
+    name: z.string().trim().min(1).max(80).optional(),
+    role: z.enum(["owner", "editor", "viewer"]).default("editor"),
+  })
+  .refine((d) => (d.email === undefined) !== (d.name === undefined), {
+    message: "Give a name or an email",
+  });
 
 /**
  * Add someone to a trip by email so they can be assigned to-dos.
@@ -42,18 +57,21 @@ export async function addTripMemberAction(input: unknown) {
 
     // The placeholder account only exists to be put on this trip, so it must not
     // outlive a failed membership insert as a hollow row.
+    const email = data.email ?? placeholderEmail(data.name);
     const targetId = await transaction(async (tx) => {
-      const [found] = await tx
-        .select({ id: tables.users.id })
-        .from(tables.users)
-        .where(eq(tables.users.email, data.email))
-        .limit(1);
+      const [found] = data.email
+        ? await tx
+            .select({ id: tables.users.id })
+            .from(tables.users)
+            .where(eq(tables.users.email, data.email))
+            .limit(1)
+        : [];
 
       let id = found?.id;
       if (!id) {
         const [created] = await tx
           .insert(tables.users)
-          .values({ email: data.email, name: data.email.split("@")[0] })
+          .values({ email, name: data.name ?? email.split("@")[0] })
           .returning();
         id = created.id;
       }
@@ -73,7 +91,28 @@ export async function addTripMemberAction(input: unknown) {
       return id;
     });
     revalidateApp();
-    return { id: targetId, email: data.email };
+    return { id: targetId, email };
+  });
+}
+
+const renameMemberSchema = z.object({
+  trip_id: z.string().uuid(),
+  user_id: z.string().min(1),
+  name: z.string().trim().min(1).max(80),
+});
+
+/**
+ * A trip owner renames someone who hasn't signed in yet (often a member added
+ * by name). Same gate as sending them an invite: once a person signs in, their
+ * name is theirs, and an owner only reaches people on trips they own.
+ */
+export async function renameMemberAction(input: unknown) {
+  return runAction(async (user) => {
+    const data = renameMemberSchema.parse(input);
+    await requireManageableMember(user, data.trip_id, data.user_id);
+    await db.update(tables.users).set({ name: data.name }).where(eq(tables.users.id, data.user_id));
+    revalidateApp();
+    return { user_id: data.user_id, name: data.name };
   });
 }
 
@@ -405,94 +444,6 @@ const updateMemberProfileSchema = z
     message: "Provide a name or an email to change",
   });
 
-/**
- * Everything pointing at this `users` row, named for a human. One probe per
- * table that references `users.id` with real content — the deliberate superset
- * of "would deleting this row lose or orphan anything?". Empty ⇒ the row is
- * hollow and can be absorbed or deleted outright.
- */
-async function userFootprint(userId: string): Promise<string[]> {
-  const probes: [string, Promise<unknown[]>][] = [
-    [
-      "a trip membership",
-      db
-        .select({ x: tables.tripMembers.user_id })
-        .from(tables.tripMembers)
-        .where(eq(tables.tripMembers.user_id, userId))
-        .limit(1),
-    ],
-    [
-      "booking splits",
-      db
-        .select({ x: tables.bookingSplits.user_id })
-        .from(tables.bookingSplits)
-        .where(eq(tables.bookingSplits.user_id, userId))
-        .limit(1),
-    ],
-    [
-      "expense splits",
-      db
-        .select({ x: tables.expenseSplits.user_id })
-        .from(tables.expenseSplits)
-        .where(eq(tables.expenseSplits.user_id, userId))
-        .limit(1),
-    ],
-    [
-      "bookings they paid for",
-      db
-        .select({ x: tables.bookings.id })
-        .from(tables.bookings)
-        .where(eq(tables.bookings.paid_by, userId))
-        .limit(1),
-    ],
-    [
-      "expenses they paid for",
-      db
-        .select({ x: tables.expenses.id })
-        .from(tables.expenses)
-        .where(eq(tables.expenses.paid_by, userId))
-        .limit(1),
-    ],
-    [
-      "settlements",
-      db
-        .select({ x: tables.settlements.id })
-        .from(tables.settlements)
-        .where(
-          or(eq(tables.settlements.from_user, userId), eq(tables.settlements.to_user, userId)),
-        )
-        .limit(1),
-    ],
-    [
-      "to-dos assigned to them",
-      db
-        .select({ x: tables.todos.id })
-        .from(tables.todos)
-        .where(eq(tables.todos.assignee_id, userId))
-        .limit(1),
-    ],
-    [
-      "uploaded attachments",
-      db
-        .select({ x: tables.bookingAttachments.id })
-        .from(tables.bookingAttachments)
-        .where(eq(tables.bookingAttachments.uploaded_by, userId))
-        .limit(1),
-    ],
-  ];
-  const results = await Promise.all(probes.map(([, q]) => q));
-  return probes.filter((_, i) => results[i].length > 0).map(([label]) => label);
-}
-
-/**
- * Zero rows anywhere that would make this `users` row worth keeping? Signup is
- * open, so a person can sign in with their NEW address before an admin moves it
- * onto their real row, leaving a hollow duplicate that then blocks the edit.
- * Such a row is safe to absorb only if nothing at all points at it.
- */
-async function userHasFootprint(userId: string) {
-  return (await userFootprint(userId)).length > 0;
-}
 
 /**
  * Owner edits a member's display name and/or email. Changing the email unlinks
@@ -528,6 +479,7 @@ export async function updateMemberProfileAction(input: unknown) {
       name?: string;
       email?: string;
       emailVerified?: Date | null;
+      email_unverified?: boolean;
       password_hash?: null;
       failed_pin_attempts?: number;
       pin_locked_until?: null;
@@ -554,6 +506,8 @@ export async function updateMemberProfileAction(input: unknown) {
       }
       updates.email = data.email;
       updates.emailVerified = null;
+      // An admin vouches for the address, so Google may sign in to it again.
+      updates.email_unverified = false;
       // The PIN was issued to the previous identity — clear it with the email.
       updates.password_hash = null;
       updates.failed_pin_attempts = 0;

@@ -299,6 +299,22 @@ export async function getTripsWithMembers(userId: string) {
     : [];
   const withAccount = new Set(accountRows.map((a) => a.userId));
 
+  // Pending invite links (unused, unexpired) — the Settings roster shows when
+  // one was sent and lets an owner replace or cancel it.
+  const inviteRows = memberIds.length
+    ? await db
+        .select({ user_id: tables.memberInvites.user_id, expires_at: tables.memberInvites.expires_at })
+        .from(tables.memberInvites)
+        .where(
+          and(
+            inArray(tables.memberInvites.user_id, memberIds),
+            isNull(tables.memberInvites.used_at),
+            gt(tables.memberInvites.expires_at, new Date()),
+          ),
+        )
+    : [];
+  const inviteExpiry = new Map(inviteRows.map((r) => [r.user_id, r.expires_at.toISOString()]));
+
   const byTrip = new Map<string, typeof rows>();
   for (const r of rows) {
     const list = byTrip.get(r.trip_id) ?? [];
@@ -329,6 +345,7 @@ export async function getTripsWithMembers(userId: string) {
       ...m,
       has_account: withAccount.has(m.id),
       has_pin: !!password_hash,
+      invite_expires_at: inviteExpiry.get(m.id) ?? null,
     }));
     return {
       ...trip,

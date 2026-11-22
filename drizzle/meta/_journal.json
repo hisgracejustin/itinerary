@@ -218,6 +218,13 @@
       "when": 1793090017481,
       "tag": "0030_settlement_paid_currency",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1795329664125,
+      "tag": "0031_member_invites",
+      "breakpoints": true
     }
   ]
 }

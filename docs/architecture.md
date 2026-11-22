@@ -26,6 +26,17 @@ admins (`ADMIN_EMAILS`) may edit another member's login identity.
 - [`src/app/login/page.tsx`](../src/app/login/page.tsx) — server component; Google
   (or dev) sign-in via Server Actions. Sign-out via
   [`src/actions/auth.ts`](../src/actions/auth.ts).
+- **Members without an account, and invite links.** A trip owner can add someone
+  by name only; they get an unownable `…@no-email.invalid` address
+  ([`src/lib/placeholder-email.js`](../src/lib/placeholder-email.js)). The owner
+  can later send a one-time invite link
+  ([`src/lib/invites.ts`](../src/lib/invites.ts),
+  [`src/app/join/[token]`](../src/app/join/[token]/page.tsx), allowed through
+  the proxy) for anyone who has never signed in and is only on the sender's
+  trips; whoever opens it signs in with Google or chooses an email + PIN and
+  becomes that member. Links are 256-bit, stored hashed, single-use, expire
+  after 7 days, and are re-checked when used. An email typed in with a PIN is
+  marked `email_unverified`, so Google sign-in can't reach it by email.
 
 ## Data layer
 
@@ -104,6 +115,7 @@ src/
 │   ├── globals.css             # Tailwind v4 tokens + Material utilities
 │   ├── manifest.ts             # PWA manifest (/manifest.webmanifest)
 │   ├── login/page.tsx          # sign-in (server component)
+│   ├── join/[token]/           # invite links: public, take over a member account
 │   ├── (app)/                  # authenticated route group
 │   │   ├── layout.tsx          # auth gate → AppShell
 │   │   ├── page.tsx            # Calendar

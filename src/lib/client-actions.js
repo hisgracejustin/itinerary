@@ -34,7 +34,9 @@ import {
   deletePartyAction,
   setMemberPartyAction,
   setMemberSharesCostsAction,
+  renameMemberAction,
 } from "@/actions/members";
+import { createMemberInviteAction, cancelMemberInviteAction } from "@/actions/invites";
 import {
   createExpenseAction,
   updateExpenseAction,
@@ -70,6 +72,9 @@ export const setMyAvatar = async (input) => unwrap(await setMyAvatarAction(input
 export const setMemberAvatar = async (input) => unwrap(await setMemberAvatarAction(input));
 export const deleteUser = async (input) => unwrap(await deleteUserAction(input));
 export const setMemberSharesCosts = async (input) => unwrap(await setMemberSharesCostsAction(input));
+export const renameMember = async (input) => unwrap(await renameMemberAction(input));
+export const createMemberInvite = async (input) => unwrap(await createMemberInviteAction(input));
+export const cancelMemberInvite = async (input) => unwrap(await cancelMemberInviteAction(input));
 
 export const createParty = async (input) => unwrap(await createPartyAction(input));
 export const renameParty = async (input) => unwrap(await renamePartyAction(input));

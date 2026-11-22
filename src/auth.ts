@@ -5,7 +5,10 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { eq, sql } from "drizzle-orm";
 import { db, dbReady, tables } from "@/db";
 import { authConfig } from "@/auth.config";
+import { cookies } from "next/headers";
 import { isAdmin } from "@/lib/authz";
+import { AppError } from "@/lib/errors";
+import { INVITE_COOKIE, googleMaySignIn, inviteErrorCode, redeemInvite } from "@/lib/invites";
 import { verifyPin } from "@/lib/pin";
 
 /** Dev-only password-less login, active only when Google creds are absent. */
@@ -118,12 +121,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
         if (account?.provider !== "google") return true;
         const email = user.email?.trim().toLowerCase();
         if (!email) return false;
+        // Redeeming an invite link (src/actions/invites.ts set the cookie just
+        // before sending them to Google): give the invited member account this
+        // Google-verified address first, so Auth.js then links Google to it.
+        const jar = await cookies();
+        const inviteToken = jar.get(INVITE_COOKIE)?.value;
+        if (inviteToken) {
+          jar.delete(INVITE_COOKIE);
+          try {
+            await redeemInvite(inviteToken, { email, verified: true, googleAccountId: account.providerAccountId });
+            return true;
+          } catch (err) {
+            if (!(err instanceof AppError)) console.error("[invite] Google redemption failed", err);
+            return `/join/${encodeURIComponent(inviteToken)}?error=${inviteErrorCode(err)}`;
+          }
+        }
         if (isAdmin({ email })) return true;
-        const existing = await db.query.users.findFirst({
-          where: eq(tables.users.email, email),
-          columns: { id: true },
-        });
-        return !!existing;
+        // Otherwise only an address that already has an account, and not one
+        // someone merely typed in with a PIN (see googleMaySignIn).
+        return googleMaySignIn(email, account.providerAccountId);
       },
       // JWT session revocation (H6). Sessions are stateless, so an admin changing
       // a user's email/PIN can't otherwise reach their live cookie. Here we revoke

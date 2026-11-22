@@ -5,6 +5,7 @@ import {
   createTrip, updateTrip, deleteTrip,
   addTripMember, removeTripMember, setTripMemberRole, updateMemberProfile, setMemberPin, setMyAvatar, setMemberAvatar, deleteUser,
   createParty, renameParty, deleteParty, getTripAudit, setMemberSharesCosts,
+  renameMember, createMemberInvite, cancelMemberInvite,
 } from '@/lib/client-actions'
 import { CURRENCIES, HOME_CURRENCY } from '../lib/currencies'
 import { friendlyError } from '../lib/friendlyError'
@@ -14,7 +15,8 @@ import AuditFeed from '../components/AuditFeed'
 import FilterChip from '../components/FilterChip'
 import { useConfirmDanger } from '../components/ConfirmDanger'
 import TextSizeSetting from '../components/TextSizeSetting'
-import { APP_LOCALE } from '../lib/locale'
+import { APP_LOCALE, HOME_TIME_ZONE } from '../lib/locale'
+import { isPlaceholderEmail, shownEmail } from '../lib/placeholder-email'
 
 const ROLES = [
   { value: 'owner', label: 'Owner', hint: 'Full control, including people and deleting the trip' },
@@ -324,7 +326,9 @@ function generatePin() {
 function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
   // 'edit' | 'pin' | 'avatar' | null — which inline panel is open.
   const [mode, setMode] = useState(null)
-  const [draft, setDraft] = useState({ name: p.name || '', email: p.email || '' })
+  const [draft, setDraft] = useState({ name: p.name || '', email: shownEmail(p.email) || '' })
+  // Added by name only: no address to show, and saving may leave it blank.
+  const nameOnly = isPlaceholderEmail(p.email)
   const [pinDraft, setPinDraft] = useState('')
   const { ask, dialog: confirmDialog } = useConfirmDanger()
 
@@ -342,7 +346,7 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
   const deleteAccount = async () => {
     const ok = await ask({
       title: `Delete ${memberLabel(p)}?`,
-      message: `Their account (${p.email}) and any sign-in are removed for good. Only possible while they're on no trip and have no costs, splits or to-dos — otherwise this refuses and nothing changes.`,
+      message: `Their account${nameOnly ? '' : ` (${p.email})`} and any sign-in are removed for good. Only possible while they're on no trip and have no costs, splits or to-dos — otherwise this refuses and nothing changes.`,
       confirmLabel: 'Delete account',
     })
     if (!ok) return
@@ -354,8 +358,8 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
       e.preventDefault()
       const name = draft.name.trim()
       const email = draft.email.trim()
-      if (!name || !email) return
-      const emailChanged = email.toLowerCase() !== (p.email || '').toLowerCase()
+      if (!name || (!email && !nameOnly)) return
+      const emailChanged = !!email && email.toLowerCase() !== (p.email || '').toLowerCase()
       if (emailChanged) {
         // One confirm covering both outcomes: the old sign-in is always dropped,
         // and if the new address already has an unused account it gets absorbed.
@@ -365,7 +369,7 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
         if (!ok) return
       }
       const done = await run(
-        () => updateMemberProfile({ ...tripArgs, user_id: p.id, name, email }),
+        () => updateMemberProfile({ ...tripArgs, user_id: p.id, name, ...(email ? { email } : {}) }),
         `${name} updated`,
       )
       if (done) close()
@@ -385,7 +389,7 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
             type="email"
             value={draft.email}
             onChange={(e) => setDraft({ ...draft, email: e.target.value })}
-            placeholder="Email"
+            placeholder={nameOnly ? 'Email (optional)' : 'Email'}
             aria-label="Email"
             className="mat-input"
           />
@@ -395,7 +399,7 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
             </button>
             <button
               type="submit"
-              disabled={busy || !draft.name.trim() || !draft.email.trim()}
+              disabled={busy || !draft.name.trim() || (!draft.email.trim() && !nameOnly)}
               className="mat-btn-filled text-xs disabled:opacity-40"
             >
               Save
@@ -552,7 +556,7 @@ function PersonRow({ p, ownerTripId, isSelf, isAdmin, showTrips, busy, run }) {
           {memberLabel(p)}
           {isSelf && <span className="text-on-surface-variant"> (you)</span>}
         </span>
-        <span className="block text-[0.6875rem] text-on-surface-variant truncate">{p.email}</span>
+        <span className="block text-[0.6875rem] text-on-surface-variant truncate">{shownEmail(p.email) ?? 'Not on the app'}</span>
         {/* Admin view only: which trips they're on, or a flag when the answer is
             "none" — the whole point of listing every account. Truncates rather
             than wrapping, so a long trip list can't blow up the row on mobile. */}
@@ -645,7 +649,9 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
     currency: trip.currency ?? null,
   })
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [email, setEmail] = useState('')
+  // A name, or an email: an @ means email (they can sign in with it), anything
+  // else adds them by name only (not on the app until they're sent an invite).
+  const [entry, setEntry] = useState('')
   const [role, setRole] = useState('editor')
 
   const isOwner = trip.myRole === 'owner'
@@ -663,15 +669,20 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
     if (ok) setEditing(false)
   }
 
+  const trimmedEntry = entry.trim()
+  const entryIsEmail = trimmedEntry.includes('@')
   const addPerson = async (e) => {
     e.preventDefault()
-    const trimmed = email.trim()
-    if (!trimmed) return
+    if (!trimmedEntry) return
     const ok = await run(
-      () => addTripMember({ trip_id: trip.id, email: trimmed, role }),
-      `${trimmed} added`,
+      () => addTripMember(
+        entryIsEmail
+          ? { trip_id: trip.id, email: trimmedEntry, role }
+          : { trip_id: trip.id, name: trimmedEntry, role },
+      ),
+      `${trimmedEntry} added`,
     )
-    if (ok) setEmail('')
+    if (ok) setEntry('')
   }
 
   return (
@@ -839,11 +850,11 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
                   disabled={busy}
                   aria-label="Add someone you know"
                   onChange={(e) => {
-                    const personEmail = e.target.value
-                    if (!personEmail) return
+                    const person = addable.find((p) => p.email === e.target.value)
+                    if (!person) return
                     run(
-                      () => addTripMember({ trip_id: trip.id, email: personEmail, role }),
-                      `${personEmail} added`,
+                      () => addTripMember({ trip_id: trip.id, email: person.email, role }),
+                      `${memberLabel(person)} added`,
                     )
                   }}
                   className="mat-select w-full disabled:opacity-50"
@@ -851,22 +862,32 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
                   <option value="">Add someone you know…</option>
                   {addable.map((p) => (
                     <option key={p.id} value={p.email}>
-                      {memberLabel(p)} ({p.email})
+                      {memberLabel(p)}{shownEmail(p.email) ? ` (${p.email})` : ''}
                     </option>
                   ))}
                 </select>
                 <p className="text-[0.6875rem] text-on-surface-variant text-center" aria-hidden>
-                  — or add by email —
+                  — or add someone new —
                 </p>
               </>
             )}
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Add someone by email"
+              type="text"
+              value={entry}
+              onChange={(e) => setEntry(e.target.value)}
+              placeholder="Name or email"
+              aria-label="Name or email of the person to add"
+              autoComplete="off"
+              autoCapitalize="words"
               className="mat-input"
             />
+            {trimmedEntry && (
+              <p className="text-[0.6875rem] text-on-surface-variant" aria-live="polite">
+                {entryIsEmail
+                  ? 'Added by email: they can sign in with it.'
+                  : `Added by name: ${trimmedEntry} isn’t on the app until you send them an invite link.`}
+              </p>
+            )}
             <div className="flex gap-2">
               <select
                 value={role}
@@ -880,15 +901,16 @@ function TripCard({ trip, allPeople, currentUserId, isAdmin = false, collapsed =
               </select>
               <button
                 type="submit"
-                disabled={busy || !email.trim()}
+                disabled={busy || !trimmedEntry}
                 className="mat-btn-filled flex-1 justify-center disabled:opacity-40"
               >
                 Add to trip
               </button>
             </div>
             <p className="text-[0.6875rem] text-on-surface-variant leading-relaxed">
-              They can be assigned to-dos and splits right away. When they sign in with
-              this email, they get this account automatically.
+              They can be given costs and to-dos right away. Add an email if they&apos;ll
+              sign in with it; just a name if they won&apos;t use the app yet. Either way,
+              you can send them an invite link later so they can see the trip.
             </p>
           </form>
         ) : (
@@ -1012,16 +1034,78 @@ function TripHistory({ tripId }) {
  */
 function MemberRow({ m, trip, currentUserId, isOwner, lastOwner, partyById, busy, run }) {
   const { ask, dialog: confirmDialog } = useConfirmDanger()
+  // Nobody has signed in as them yet (no Google login, no PIN): their owner can
+  // send them an invite link, or fix their name. The server checks the rest.
+  const notSignedIn = !m.has_account && !m.has_pin && m.id !== currentUserId
+  const nameOnly = isPlaceholderEmail(m.email)
+  // The link exists only right after it's made: just its hash is stored.
+  const [invite, setInvite] = useState(null)
+  const [copied, setCopied] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  // Rendered on the server too, so in one locale and the home clock.
+  const until = (iso) =>
+    new Date(iso).toLocaleDateString(APP_LOCALE, { day: 'numeric', month: 'short', timeZone: HOME_TIME_ZONE })
+
+  const makeLink = async () => {
+    let made = null
+    const ok = await run(async () => {
+      made = await createMemberInvite({ trip_id: trip.id, user_id: m.id })
+    })
+    if (ok && made) {
+      setCopied(false)
+      setInvite({ url: `${window.location.origin}/join/${made.token}`, expires: made.expires_at })
+    }
+  }
+  const cancelLink = async () => {
+    const ok = await run(() => cancelMemberInvite({ trip_id: trip.id, user_id: m.id }), 'Invite link cancelled')
+    if (ok) setInvite(null)
+  }
+  const saveName = async (e) => {
+    e.preventDefault()
+    const name = nameDraft.trim()
+    if (!name) return
+    const ok = await run(() => renameMember({ trip_id: trip.id, user_id: m.id, name }), `Renamed to ${name}`)
+    if (ok) setRenaming(false)
+  }
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(invite.url)
+      setCopied(true)
+    } catch {
+      // No clipboard access: the field is selectable.
+    }
+  }
+  const share = async () => {
+    try {
+      await navigator.share({ text: `Join "${trip.name}" on Itinerary to see the trip and your share: ${invite.url}` })
+    } catch (err) {
+      if (err?.name !== 'AbortError') copy()
+    }
+  }
+
   return (
-    <li className="flex items-center gap-2.5 py-1">
+    <li className="py-1">
       {confirmDialog}
+      <div className="flex items-center gap-2.5">
       <Avatar member={m} />
       <span className="flex-1 min-w-0">
         <span className="block text-sm text-on-surface truncate">
           {memberLabel(m)}
           {m.id === currentUserId && <span className="text-on-surface-variant"> (you)</span>}
         </span>
-        <span className="block text-[0.6875rem] text-on-surface-variant truncate">{m.email}</span>
+        <span className="block text-[0.6875rem] text-on-surface-variant truncate">
+          {nameOnly ? 'Not on the app' : m.email}
+        </span>
+        {m.invite_expires_at && notSignedIn ? (
+          <span className="block text-[0.6875rem] text-primary truncate">
+            Invite link sent · works until {until(m.invite_expires_at)}
+          </span>
+        ) : (
+          !nameOnly && notSignedIn && (
+            <span className="block text-[0.6875rem] text-on-surface-variant truncate">Hasn’t signed in yet</span>
+          )
+        )}
         {m.party_id && partyById.has(m.party_id) && (
           <span className="inline-flex items-center gap-1 mt-0.5 max-w-full text-[0.625rem] font-medium text-primary bg-primary-light px-1.5 py-0.5 rounded-full">
             <span aria-hidden>👥</span>
@@ -1035,73 +1119,138 @@ function MemberRow({ m, trip, currentUserId, isOwner, lastOwner, partyById, busy
           </span>
         )}
       </span>
-      {isOwner ? (
-        <select
-          value={m.role}
-          disabled={busy || lastOwner}
-          title={lastOwner ? 'A trip needs at least one owner' : 'Change role'}
-          onChange={(e) =>
-            run(
-              () => setTripMemberRole({ trip_id: trip.id, user_id: m.id, role: e.target.value }),
-              `${memberLabel(m)} is now ${e.target.value}`,
-            )
-          }
-          className="mat-select text-xs shrink-0 disabled:opacity-50"
-        >
-          {ROLES.map((r) => (
-            <option key={r.value} value={r.value}>{r.label}</option>
-          ))}
-        </select>
-      ) : (
-        <span className="text-[0.625rem] uppercase tracking-wide text-on-surface-variant shrink-0">
-          {m.role}
-        </span>
-      )}
-      {isOwner && (
-        <label
-          className="flex items-center gap-1 shrink-0 cursor-pointer"
-          title={`${memberLabel(m)} takes a share of this trip's costs. Untick for someone on the trip who isn't party to its money — an advisor, a guide. They can still be the payer, and splits already saved are left alone.`}
-        >
-          <input
-            type="checkbox"
-            checked={m.shares_costs !== false}
-            disabled={busy}
+        {isOwner ? (
+          <select
+            value={m.role}
+            disabled={busy || lastOwner}
+            title={lastOwner ? 'A trip needs at least one owner' : 'Change role'}
             onChange={(e) =>
               run(
-                () => setMemberSharesCosts({ trip_id: trip.id, user_id: m.id, shares_costs: e.target.checked }),
-                e.target.checked
-                  ? `${memberLabel(m)} shares costs`
-                  : `${memberLabel(m)} no longer shares costs`,
+                () => setTripMemberRole({ trip_id: trip.id, user_id: m.id, role: e.target.value }),
+                `${memberLabel(m)} is now ${e.target.value}`,
               )
             }
-            className="w-3.5 h-3.5 rounded border-outline/50 text-primary focus:ring-primary/30"
-          />
-          <span className="text-[0.625rem] uppercase tracking-wide text-on-surface-variant">Splits</span>
-        </label>
-      )}
-      {isOwner && (
-        <button
-          onClick={async () => {
-            const ok = await ask({
-              title: `Remove ${memberLabel(m)} from ${trip.name}?`,
-              message: 'They will lose access to this trip. Their account stays — only this trip membership is removed.',
-              confirmLabel: 'Remove',
-            })
-            if (!ok) return
-            run(
-              () => removeTripMember({ trip_id: trip.id, user_id: m.id }),
-              `${memberLabel(m)} removed`,
-            )
-          }}
-          disabled={busy || lastOwner}
-          aria-label={`Remove ${memberLabel(m)}`}
-          title={lastOwner ? 'A trip needs at least one owner' : 'Remove from trip'}
-          className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 disabled:hover:bg-transparent shrink-0"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+            className="mat-select text-xs shrink-0 disabled:opacity-50"
+          >
+            {ROLES.map((r) => (
+              <option key={r.value} value={r.value}>{r.label}</option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-[0.625rem] uppercase tracking-wide text-on-surface-variant shrink-0">
+            {m.role}
+          </span>
+        )}
+        {isOwner && (
+          <label
+            className="flex items-center gap-1 shrink-0 cursor-pointer"
+            title={`${memberLabel(m)} takes a share of this trip's costs. Untick for someone on the trip who isn't party to its money — an advisor, a guide. They can still be the payer, and splits already saved are left alone.`}
+          >
+            <input
+              type="checkbox"
+              checked={m.shares_costs !== false}
+              disabled={busy}
+              onChange={(e) =>
+                run(
+                  () => setMemberSharesCosts({ trip_id: trip.id, user_id: m.id, shares_costs: e.target.checked }),
+                  e.target.checked
+                    ? `${memberLabel(m)} shares costs`
+                    : `${memberLabel(m)} no longer shares costs`,
+                )
+              }
+              className="w-3.5 h-3.5 rounded border-outline/50 text-primary focus:ring-primary/30"
+            />
+            <span className="text-[0.625rem] uppercase tracking-wide text-on-surface-variant">Splits</span>
+          </label>
+        )}
+        {isOwner && (
+          <button
+            onClick={async () => {
+              const ok = await ask({
+                title: `Remove ${memberLabel(m)} from ${trip.name}?`,
+                message: 'They will lose access to this trip. Their account stays — only this trip membership is removed.',
+                confirmLabel: 'Remove',
+              })
+              if (!ok) return
+              run(
+                () => removeTripMember({ trip_id: trip.id, user_id: m.id }),
+                `${memberLabel(m)} removed`,
+              )
+            }}
+            disabled={busy || lastOwner}
+            aria-label={`Remove ${memberLabel(m)}`}
+            title={lastOwner ? 'A trip needs at least one owner' : 'Remove from trip'}
+            className="text-on-surface-variant hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors disabled:opacity-30 disabled:hover:bg-transparent shrink-0"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {isOwner && notSignedIn && (
+        <div className="pl-[2.375rem] mt-1 space-y-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <button type="button" onClick={makeLink} disabled={busy} className="font-medium text-primary hover:underline disabled:opacity-40">
+              {m.invite_expires_at || invite ? 'New invite link' : 'Invite to the app'}
+            </button>
+            {(m.invite_expires_at || invite) && (
+              <button type="button" onClick={cancelLink} disabled={busy} className="text-on-surface-variant hover:underline disabled:opacity-40">
+                Cancel invite
+              </button>
+            )}
+            {!renaming && (
+              <button
+                type="button"
+                onClick={() => {
+                  setNameDraft(m.name || '')
+                  setRenaming(true)
+                }}
+                disabled={busy}
+                className="text-on-surface-variant hover:underline disabled:opacity-40"
+              >
+                Rename
+              </button>
+            )}
+          </div>
+          {renaming && (
+            <form onSubmit={saveName} className="flex gap-2">
+              <input
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                aria-label={`New name for ${memberLabel(m)}`}
+                maxLength={80}
+                autoFocus
+                className="mat-input text-sm flex-1 min-w-0"
+              />
+              <button type="button" onClick={() => setRenaming(false)} className="mat-btn-outlined text-xs shrink-0">Cancel</button>
+              <button type="submit" disabled={busy || !nameDraft.trim()} className="mat-btn-filled text-xs shrink-0 disabled:opacity-40">Save</button>
+            </form>
+          )}
+          {invite && (
+            <div className="rounded-xl border border-primary/30 bg-primary-light/40 p-3 space-y-2" role="group" aria-label={`Invite link for ${memberLabel(m)}`}>
+              <p className="text-xs text-on-surface leading-relaxed">
+                Send this to {memberLabel(m)}. It works once, until {until(invite.expires)}. Whoever opens it first
+                signs in as {memberFirstName(m)}, so send it only to them.
+              </p>
+              <input
+                readOnly
+                value={invite.url}
+                onFocus={(e) => e.target.select()}
+                aria-label="Invite link"
+                className="mat-input text-xs"
+              />
+              <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={() => setInvite(null)} className="mat-btn-outlined text-xs">Done</button>
+                <button type="button" onClick={copy} className="mat-btn-outlined text-xs">{copied ? 'Copied ✓' : 'Copy link'}</button>
+                {typeof navigator !== 'undefined' && navigator.share && (
+                  <button type="button" onClick={share} className="mat-btn-filled text-xs">Share…</button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </li>
   )

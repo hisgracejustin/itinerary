@@ -9,10 +9,11 @@ export default auth;
 
 export const config = {
   // Everything except: auth endpoints, the self-guarded parse-booking route
-  // (large uploads shouldn't run through the gate), the login page, Next
+  // (large uploads shouldn't run through the gate), the login page, invite
+  // links (/join/<token>: opened before the person has an account), Next
   // internals, and static/public assets.
   matcher: [
     // mockups/ = static HTML prototypes under public/mockups (no session needed)
-    "/((?!api/auth|api/parse-booking|login|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|icon-192.png|manifest.webmanifest|sw.js|pdf.worker.min.mjs|mockups/).*)",
+    "/((?!api/auth|api/parse-booking|login|join/|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|icon-192.png|manifest.webmanifest|sw.js|pdf.worker.min.mjs|mockups/).*)",
   ],
 };

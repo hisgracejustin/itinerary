@@ -50,6 +50,12 @@ export const users = pgTable("users", {
   // PIN can't reach a live cookie. Bumped to now() on an email/PIN change; the
   // auth `jwt` callback treats any token issued before this instant as revoked.
   sessions_valid_after: timestamp("sessions_valid_after", { withTimezone: true }),
+  // True when the email was typed in by the person themselves while redeeming
+  // an invite with a PIN — never proven to be theirs. Google sign-in links to
+  // an account by email, so it must not let the real owner of a typed address
+  // (or a typo's) into this account; see the signIn callback in src/auth.ts.
+  // An admin setting the email clears it.
+  email_unverified: boolean("email_unverified").notNull().default(false),
 });
 
 export const authAccounts = pgTable(
@@ -677,6 +683,33 @@ export const tripsRelations = relations(trips, ({ many }) => ({
   expenses: many(expenses),
   settlements: many(settlements),
 }));
+
+// One-time links that let someone who hasn't signed in yet (often a member
+// added by name only) take over their member account: they open the link and
+// sign in with Google or choose an email + PIN. Only a SHA-256 of the link's
+// secret is stored, so the table can't be used to sign in. One live invite per
+// member: making a new one deletes the old.
+export const memberInvites = pgTable(
+  "member_invites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // The trip it was sent from: names the trip on the join page.
+    trip_id: uuid("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
+    token_hash: text("token_hash").notNull().unique(),
+    created_by: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expires_at: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // Set when someone signs in with it; kept so a second tap can say "already
+    // used — sign in" rather than "not valid".
+    used_at: timestamp("used_at", { withTimezone: true }),
+  },
+  (t) => [index("idx_member_invites_user").on(t.user_id)],
+);
 
 export const tripMembersRelations = relations(tripMembers, ({ one }) => ({
   trip: one(trips, { fields: [tripMembers.trip_id], references: [trips.id] }),
